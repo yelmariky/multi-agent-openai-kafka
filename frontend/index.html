@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Capture justificatifs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div>
+        <p class="eyebrow">Notes de frais</p>
+        <h1>Capture et upload de justificatifs</h1>
+        <p class="lede">Prends une photo (restaurant, taxi…) ou dépose un fichier PDF/JPG/PNG, puis envoie-le vers l’API d’ingestion.</p>
+      </div>
+      <div class="endpoint">
+        <label for="api-url">Endpoint upload</label>
+        <input id="api-url" type="text" placeholder="http://localhost:8081/receipts/upload">
+        <small>Modifie si l’API tourne ailleurs</small>
+      </div>
+    </header>
+
+    <main>
+      <section class="card camera">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Caméra</p>
+            <h2>Prendre une photo</h2>
+          </div>
+          <div class="actions">
+            <button id="start-camera">Activer la caméra</button>
+            <button id="capture" disabled>Capturer</button>
+          </div>
+        </div>
+        <div class="camera-wrap">
+          <video id="video" autoplay playsinline></video>
+          <canvas id="canvas" class="hidden"></canvas>
+        </div>
+        <div id="camera-status" class="status"></div>
+      </section>
+
+      <section class="card upload">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">Fichier</p>
+            <h2>Déposer un justificatif</h2>
+          </div>
+          <div class="controls">
+            <label class="inline">
+              Mode de paiement
+              <select id="payment-mode">
+                <option value="Personnel">Personnel</option>
+                <option value="Business">Business</option>
+              </select>
+            </label>
+          </div>
+          <label class="file-button">
+            Choisir un fichier
+            <input id="file-input" type="file" accept=".jpg,.jpeg,.png,.pdf" />
+          </label>
+        </div>
+        <div class="preview" id="preview"></div>
+        <div id="upload-status" class="status"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

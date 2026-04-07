@@ -1,0 +1,7 @@
+{
+    "java.configuration.updateBuildConfiguration": "interactive",
+    
+  "chatgpt.role": "Tu agis comme expert Java. Tu m'aides à compiler, corriger des erreurs et expliquer les messages de Java. Tu ne modifies jamais la structure du projet sans validation explicite.",
+  "chatgpt.strictMode": true
+
+}
