@@ -1,37 +1,45 @@
 package io.multiagent.core.client;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
-import com.openai.models.ResponseFormatJsonObject;
+import com.openai.models.ResponseFormatJsonSchema;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
-import com.openai.models.completions.Completion;
-import com.openai.models.completions.CompletionCreateParams;
 import com.openai.models.embeddings.CreateEmbeddingResponse;
 import com.openai.models.embeddings.Embedding;
 import com.openai.models.embeddings.EmbeddingCreateParams;
+import com.openai.errors.RateLimitException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import com.openai.errors.RateLimitException;
 import io.multiagent.core.exception.LLMClientException;
 import io.multiagent.core.model.ReRankScore;
 import io.multiagent.core.util.LLMUtils;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 /**
- * Centralized OpenAI client wrapper used by AI-Core services for chat, completion,
- * embeddings, and reranking while recording metrics.
+ * Centralized OpenAI client wrapper used by AI-Core services for chat, embeddings,
+ * and reranking while recording metrics.
+ *
+ * Changes vs previous version:
+ * - Removed legacy Completions API (completion() method) — not supported by gpt-4.x models
+ * - Added maxTokens parameter (configurable, default 2048) to all chat calls
+ * - Replaced JSON mode with Structured Outputs where a schema is provided
+ * - Unified embed() to always return float[] (removed inconsistent List<Double> overload)
+ * - Optimised rerank() to a single batch embedding call instead of two API calls
+ * - Removed dead code (commented-out main() method)
  */
 @Slf4j
 @Component
@@ -44,6 +52,7 @@ public class LLMAIClient {
     private final int maxAttempts;
     private final long baseBackoffMs;
     private final long maxBackoffMs;
+    private final long defaultMaxTokens;
 
     public LLMAIClient(
             @Value("${openai.api-key}") String apiKey,
@@ -52,6 +61,7 @@ public class LLMAIClient {
             @Value("${openai.retry.max-attempts:4}") int maxAttempts,
             @Value("${openai.retry.base-backoff-ms:1500}") long baseBackoffMs,
             @Value("${openai.retry.max-backoff-ms:15000}") long maxBackoffMs,
+            @Value("${openai.default-max-tokens:2048}") long defaultMaxTokens,
             MeterRegistry registry) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("openai.api-key must be provided (set OPENAI_API_KEY)");
@@ -67,33 +77,44 @@ public class LLMAIClient {
         this.maxAttempts = Math.max(1, maxAttempts);
         this.baseBackoffMs = Math.max(100, baseBackoffMs);
         this.maxBackoffMs = Math.max(this.baseBackoffMs, maxBackoffMs);
+        this.defaultMaxTokens = Math.max(256, defaultMaxTokens);
 
-        log.info("LLMClient initialized — model={}, embedding={}", llmModel, embeddingModel);
+        log.info("LLMClient initialized — model={}, embedding={}, maxTokens={}",
+                llmModel, embeddingModel, defaultMaxTokens);
     }
 
-    // 🔹 Embedding
+    // -------------------------------------------------------------------------
+    // Embeddings
+    // -------------------------------------------------------------------------
+
+    /** Embeds a single text using the configured default embedding model. */
     public float[] embed(String text) {
-        List<Float> vector = embedVector(this.embeddingModel, text);
-        float[] array = new float[vector.size()];
-        for (int i = 0; i < vector.size(); i++) {
-            array[i] = vector.get(i);
-        }
-        return array;
+        return embedVector(this.embeddingModel, text);
     }
 
-    public List<Double> embed(String model, String text) {
-        List<Float> vector = embedVector(model, text);
-        return vector.stream()
-                .map(Float::doubleValue)
-                .collect(Collectors.toList());
+    /** Embeds a single text using a specific model. */
+    public float[] embed(String model, String text) {
+        return embedVector(model, text);
     }
 
+    // -------------------------------------------------------------------------
+    // Chat — JSON mode (fallback when no schema is available)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Calls Chat Completions in JSON mode (response_format: json_object).
+     * Prefer {@link #chatStructured} when you have a JSON Schema — it is more reliable.
+     */
     public ChatCompletion chatJson(String model, String system, String user) {
+        return chatJson(model, system, user, defaultMaxTokens);
+    }
 
+    public ChatCompletion chatJson(String model, String system, String user, long maxTokens) {
         String targetModel = resolveModel(model, this.llmModel);
 
         ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
                 .model(targetModel)
+                .maxTokens(maxTokens)
                 .messages(List.of(
                         ChatCompletionMessageParam.ofSystem(
                                 ChatCompletionSystemMessageParam.builder()
@@ -107,42 +128,84 @@ public class LLMAIClient {
                         )
                 ))
                 .responseFormat(ChatCompletionCreateParams.ResponseFormat.Companion.ofJsonObject(
-                        ResponseFormatJsonObject.builder().build()
+                        com.openai.models.ResponseFormatJsonObject.builder().build()
                 ))
                 .build();
 
-        return safeCall("chat.json(model=" + targetModel + ")", () -> client.chat().completions().create(params));
+        return safeCall("chat.json(model=" + targetModel + ")",
+                () -> client.chat().completions().create(params));
     }
 
-    // 🔹 Completion (texte brut)
-    public String completion(String prompt) {
-        CompletionCreateParams params = CompletionCreateParams.builder()
-                .model(llmModel)
-                .prompt(prompt)
-                .maxTokens(200L)
+    // -------------------------------------------------------------------------
+    // Chat — Structured Outputs (OpenAI guarantees schema compliance)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Calls Chat Completions with Structured Outputs.
+     * OpenAI will strictly conform to the provided JSON Schema — no parsing errors.
+     *
+     * @param schemaName  A unique name for the schema (e.g. "ExpenseItem")
+     * @param schema      The JSON Schema as a JsonNode
+     */
+    public ChatCompletion chatStructured(String model, String system, String user,
+                                         String schemaName, JsonNode schema) {
+        return chatStructured(model, system, user, schemaName, schema, defaultMaxTokens);
+    }
+
+    public ChatCompletion chatStructured(String model, String system, String user,
+                                          String schemaName, JsonNode schema, long maxTokens) {
+        String targetModel = resolveModel(model, this.llmModel);
+
+        ResponseFormatJsonSchema.JsonSchema jsonSchema = ResponseFormatJsonSchema.JsonSchema.builder()
+                .name(schemaName)
+                .schema(schema)
+                .strict(true)
                 .build();
 
-        Completion res = safeCall("completion(model=" + llmModel + ")", () -> client.completions().create(params));
-        if (res.choices().isEmpty()) {
-            return "";
-        }
-        return res.choices().get(0).text();
+        ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+                .model(targetModel)
+                .maxTokens(maxTokens)
+                .messages(List.of(
+                        ChatCompletionMessageParam.ofSystem(
+                                ChatCompletionSystemMessageParam.builder().content(system).build()
+                        ),
+                        ChatCompletionMessageParam.ofUser(
+                                ChatCompletionUserMessageParam.builder().content(user).build()
+                        )
+                ))
+                .responseFormat(ChatCompletionCreateParams.ResponseFormat.Companion.ofJsonSchema(
+                        ResponseFormatJsonSchema.builder().jsonSchema(jsonSchema).build()
+                ))
+                .build();
+
+        return safeCall("chat.structured(model=" + targetModel + ", schema=" + schemaName + ")",
+                () -> client.chat().completions().create(params));
     }
 
-    // 🔹 Rerank par embeddings (similarité cosinus)
+    // -------------------------------------------------------------------------
+    // Rerank — single batch embedding call (optimised: was 2 API calls)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Reranks documents against a query using cosine similarity on embeddings.
+     * Query and all documents are sent in a single batch call to minimise latency.
+     */
     public List<ReRankScore> rerank(String query, List<String> documents) {
         if (documents == null || documents.isEmpty()) {
             return List.of();
         }
 
-        List<Float> queryVector = embedVector(this.embeddingModel, query);
-        List<List<Float>> docVectors = embedBatch(this.embeddingModel, documents);
+        // Single batch: query at index 0, documents at indices 1..N
+        List<String> allTexts = new ArrayList<>(documents.size() + 1);
+        allTexts.add(query);
+        allTexts.addAll(documents);
 
-        List<ReRankScore> scored = new ArrayList<>();
-        int limit = Math.min(docVectors.size(), documents.size());
-        for (int i = 0; i < limit; i++) {
-            List<Float> dVec = docVectors.get(i);
-            double score = cosine(queryVector, dVec);
+        List<float[]> allVectors = embedBatch(this.embeddingModel, allTexts);
+
+        float[] queryVector = allVectors.get(0);
+        List<ReRankScore> scored = new ArrayList<>(documents.size());
+        for (int i = 0; i < documents.size(); i++) {
+            double score = cosine(queryVector, allVectors.get(i + 1));
             scored.add(new ReRankScore(i, score));
         }
 
@@ -151,65 +214,9 @@ public class LLMAIClient {
                 .collect(Collectors.toList());
     }
 
-    // Fonction utilitaire pour la similarité cosinus
-    private static double cosine(List<Float> a, List<Float> b) {
-        double dot = 0.0, na = 0.0, nb = 0.0;
-        for (int i = 0; i < a.size(); i++) {
-            double x = a.get(i), y = b.get(i);
-            dot += x * y;
-            na += x * x;
-            nb += y * y;
-        }
-        return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-12);
-    }
-
-    private List<Float> embedVector(String model, String text) {
-        String targetModel = resolveModel(model, this.embeddingModel);
-
-        EmbeddingCreateParams params = EmbeddingCreateParams.builder()
-                .model(targetModel)
-                .input(text)
-                .build();
-
-        CreateEmbeddingResponse response = safeCall("embeddings.single(model=" + targetModel + ")", () -> client.embeddings().create(params));
-        if (response.data().isEmpty()) {
-            return List.of();
-        }
-        Embedding embedding = response.data().get(0);
-        return new ArrayList<>(embedding.embedding());
-    }
-
-    private List<List<Float>> embedBatch(String model, List<String> documents) {
-        String targetModel = resolveModel(model, this.embeddingModel);
-
-        EmbeddingCreateParams params = EmbeddingCreateParams.builder()
-                .model(targetModel)
-                .inputOfArrayOfStrings(documents)
-                .build();
-
-        CreateEmbeddingResponse response = safeCall("embeddings.batch(model=" + targetModel + ")", () -> client.embeddings().create(params));
-        return response.data().stream()
-                .map(Embedding::embedding)
-                .map(ArrayList::new)
-                .collect(Collectors.toList());
-    }
-
-    private String resolveModel(String candidate, String fallback) {
-        return (candidate == null || candidate.isBlank()) ? fallback : candidate;
-    }
-
-    private <T> T record(String metricSuffix, Supplier<T> supplier) {
-        if (metrics == null) {
-            return supplier.get();
-        }
-
-        Timer.Sample sample = Timer.start(metrics);
-        try {
-            return supplier.get();
-        } finally {
-            sample.stop(metrics.timer("openai." + metricSuffix));
-        }
-    }
+    // -------------------------------------------------------------------------
+    // High-level JSON extraction helpers
+    // -------------------------------------------------------------------------
 
     public String extractJSON(String prompt) {
         ChatCompletion completion = chatJson(
@@ -221,12 +228,85 @@ public class LLMAIClient {
     }
 
     public String extractJSON(String systemPrompt, String userPrompt) {
-        ChatCompletion completion = chatJson(
-                null,          // utilise le modèle par défaut (llmModel)
-                systemPrompt,  // system
-                userPrompt     // user
-        );
+        ChatCompletion completion = chatJson(null, systemPrompt, userPrompt);
         return extractContentOrThrow(completion);
+    }
+
+    public String extractJSON(String systemPrompt, String userPrompt, long maxTokens) {
+        ChatCompletion completion = chatJson(null, systemPrompt, userPrompt, maxTokens);
+        return extractContentOrThrow(completion);
+    }
+
+    // -------------------------------------------------------------------------
+    // Accessors
+    // -------------------------------------------------------------------------
+
+    public String getLlmModel() {
+        return llmModel;
+    }
+
+    public String getEmbeddingModel() {
+        return embeddingModel;
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    private float[] embedVector(String model, String text) {
+        String targetModel = resolveModel(model, this.embeddingModel);
+
+        EmbeddingCreateParams params = EmbeddingCreateParams.builder()
+                .model(targetModel)
+                .input(text)
+                .build();
+
+        CreateEmbeddingResponse response = safeCall(
+                "embeddings.single(model=" + targetModel + ")",
+                () -> client.embeddings().create(params));
+
+        if (response.data().isEmpty()) {
+            return new float[0];
+        }
+        List<Float> raw = response.data().get(0).embedding();
+        float[] array = new float[raw.size()];
+        for (int i = 0; i < raw.size(); i++) {
+            array[i] = raw.get(i);
+        }
+        return array;
+    }
+
+    private List<float[]> embedBatch(String model, List<String> texts) {
+        String targetModel = resolveModel(model, this.embeddingModel);
+
+        EmbeddingCreateParams params = EmbeddingCreateParams.builder()
+                .model(targetModel)
+                .inputOfArrayOfStrings(texts)
+                .build();
+
+        CreateEmbeddingResponse response = safeCall(
+                "embeddings.batch(model=" + targetModel + ", n=" + texts.size() + ")",
+                () -> client.embeddings().create(params));
+
+        return response.data().stream()
+                .map(Embedding::embedding)
+                .map(list -> {
+                    float[] arr = new float[list.size()];
+                    for (int i = 0; i < list.size(); i++) arr[i] = list.get(i);
+                    return arr;
+                })
+                .collect(Collectors.toList());
+    }
+
+    private static double cosine(float[] a, float[] b) {
+        double dot = 0.0, na = 0.0, nb = 0.0;
+        int len = Math.min(a.length, b.length);
+        for (int i = 0; i < len; i++) {
+            dot += (double) a[i] * b[i];
+            na  += (double) a[i] * a[i];
+            nb  += (double) b[i] * b[i];
+        }
+        return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-12);
     }
 
     private String extractContentOrThrow(ChatCompletion completion) {
@@ -237,12 +317,17 @@ public class LLMAIClient {
         return content;
     }
 
-    public String getLlmModel() {
-        return llmModel;
+    private String resolveModel(String candidate, String fallback) {
+        return (candidate == null || candidate.isBlank()) ? fallback : candidate;
     }
 
-    public String getEmbeddingModel() {
-        return embeddingModel;
+    private <T> T record(String metricSuffix, Supplier<T> supplier) {
+        Timer.Sample sample = Timer.start(metrics);
+        try {
+            return supplier.get();
+        } finally {
+            sample.stop(metrics.timer("openai." + metricSuffix));
+        }
     }
 
     private <T> T safeCall(String operation, Supplier<T> supplier) {
@@ -256,7 +341,7 @@ public class LLMAIClient {
                     throw new LLMClientException("OpenAI call failed for operation=" + operation, ex);
                 }
                 long sleepMs = computeBackoff(attempt);
-                log.warn("⏳ OpenAI rate-limited (op={} attempt {}/{}). Retry in {} ms: {}",
+                log.warn("OpenAI rate-limited (op={} attempt {}/{}). Retry in {} ms: {}",
                         operation, attempt, maxAttempts, sleepMs, ex.getMessage());
                 sleepQuietly(sleepMs);
                 attempt++;
@@ -303,28 +388,4 @@ public class LLMAIClient {
         }
         return null;
     }
-/** 
-    // Démo
-    public static void main(String[] args) {
-        LLMAIClient client = new LLMAIClient(System.getenv("OPENAI_API_KEY"));
-
-        // Embedding
-        System.out.println("Embedding size: " + client.embed("Bonjour").size());
-
-        // Chat JSON
-        System.out.println("Chat JSON: " + client.chatJson("Donne un objet JSON avec 'framework'='Spring Boot'"));
-
-        // Completion
-        System.out.println("Completion: " + client.completion("Écris une phrase inspirante sur l’IA"));
-
-        // Rerank
-        List<String> docs = List.of(
-                "Spring Boot est un framework pour créer des applications web.",
-                "TensorFlow Java API permet de faire du machine learning.",
-                "Hibernate est un ORM pour Java.",
-                "Deeplearning4j est une bibliothèque Java pour l’IA.");
-        client.rerank("Quels sont les frameworks Java utiles pour l’IA ?", docs)
-                .forEach(s -> System.out.println(s.doc() + " | score=" + String.format("%.3f", s.score())));
-    }
-                **/
 }

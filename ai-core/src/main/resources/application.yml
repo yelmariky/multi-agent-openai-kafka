@@ -4,6 +4,9 @@ server:
 spring:
   application:
     name: ai-core
+  threads:
+    virtual:
+      enabled: true   # Active les Virtual Threads (Project Loom) — Java 21 + Spring Boot 3.2+
   servlet:
     multipart:
       max-file-size: 20MB
@@ -39,6 +42,7 @@ openai:
   api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
   model: ${OPENAI_MODEL:gpt-4.1-mini}
   embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
+  default-max-tokens: ${OPENAI_DEFAULT_MAX_TOKENS:2048}
   retry:
     max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:4}
     base-backoff-ms: ${OPENAI_RETRY_BASE_BACKOFF_MS:1500}

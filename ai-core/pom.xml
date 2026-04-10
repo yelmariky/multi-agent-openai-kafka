@@ -49,7 +49,7 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
-        <!-- OpenAI Official Java SDK (GPT-5, Responses API, Embeddings v3) -->
+        <!-- OpenAI Official Java SDK (gpt-4.1 / gpt-4.1-mini, Structured Outputs, Embeddings v3) -->
         <!-- OpenAI SDK -->
 <dependency>
   <groupId>com.openai</groupId>

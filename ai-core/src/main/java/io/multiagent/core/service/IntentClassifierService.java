@@ -58,17 +58,15 @@ public class IntentClassifierService {
     public IntentResult classify(String userText) {
 
         try {
-            String fullPrompt = """
-                %s
-
+            // systemPrompt va dans le rôle "system", le user turn contient exemples + texte
+            String userPrompt = """
                 EXAMPLES:
                 %s
 
                 USER: %s
-                """.formatted(systemPrompt, examplesPrompt, userText);
+                """.formatted(examplesPrompt, userText);
 
-            // 🟢 version compatible avec TA méthode extractJSON()
-            String json = openai.extractJSON(systemPrompt, fullPrompt);
+            String json = openai.extractJSON(systemPrompt, userPrompt);
             log.info("classify: {}",json);
             JsonNode node = mapper.readTree(json);
 

@@ -160,7 +160,10 @@ public class RAGService {
                     if (id <= max) {
                         id = max + 1;
                     }
-                } catch (Exception ignored) {}
+                } catch (Exception weaviateEx) {
+                    log.warn("⚠️ Impossible de récupérer le max ID depuis Weaviate (risque de doublon d'ID): {}",
+                            weaviateEx.getMessage());
+                }
                 exp.setId(id);
             } catch (Exception e) {
                 log.warn("⚠️ Impossible de générer l'id incrémental: {}", e.getMessage());
@@ -412,20 +415,7 @@ public class RAGService {
     }
 
     private ExpenseItem copyExpense(ExpenseItem src) {
-        ExpenseItem e = new ExpenseItem();
-        e.setId(src.getId());
-        e.setAmount(src.getAmount());
-        e.setCurrency(src.getCurrency());
-        e.setStatus(src.getStatus());
-        e.setType(src.getType());
-        e.setKm(src.getKm());
-        e.setDate(src.getDate());
-        e.setDescription(src.getDescription());
-        e.setOriginalText(src.getOriginalText());
-        e.setPaymentMode(src.getPaymentMode());
-        e.setAddress(src.getAddress());
-        e.setCompany(src.getCompany());
-        return e;
+        return src.toBuilder().build();
     }
 
     private boolean isWorkingDay(LocalDate d, Set<MonthDay> holidays) {
