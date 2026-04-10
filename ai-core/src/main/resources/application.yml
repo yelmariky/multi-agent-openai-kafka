@@ -40,7 +40,8 @@ management:
 
 openai:
   api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
-  model: ${OPENAI_MODEL:gpt-4.1-mini}
+  # Modèle par défaut : gpt-5.4-mini (bon équilibre qualité/coût, 400K ctx)
+  model: ${OPENAI_MODEL:gpt-5.4-mini}
   embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
   default-max-tokens: ${OPENAI_DEFAULT_MAX_TOKENS:2048}
   retry:
@@ -50,9 +51,13 @@ openai:
 
 ai-core:
   openai:
-    intent-model: ${AI_CORE_INTENT_MODEL:gpt-4o-mini}
-    rewrite-model: ${AI_CORE_REWRITE_MODEL:gpt-4o-mini}
-    rag-model: ${AI_CORE_RAG_MODEL:gpt-4o}
+    # gpt-5.4-nano : classification & rewrite — tâches simples, haut volume, coût maîtrisé
+    # $0.20/1M input · $1.25/1M output  (vs gpt-4o-mini : $0.15/$0.60)
+    intent-model: ${AI_CORE_INTENT_MODEL:gpt-5.4-nano}
+    rewrite-model: ${AI_CORE_REWRITE_MODEL:gpt-5.4-nano}
+    # gpt-5.4 : RAG & raisonnement — qualité maximale pour l'extraction structurée
+    # $2.50/1M input · $15.00/1M output  (vs gpt-4o : $2.50/$10.00)
+    rag-model: ${AI_CORE_RAG_MODEL:gpt-5.4}
     embedding-model: ${AI_CORE_EMBED_MODEL:text-embedding-3-small}
   rag:
     top-k-search: ${AI_CORE_RAG_TOP_K_SEARCH:20}
