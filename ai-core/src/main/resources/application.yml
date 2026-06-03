@@ -4,27 +4,25 @@ server:
 spring:
   application:
     name: ai-core
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8090/realms/ia-insight/protocol/openid-connect/certs}
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
-  
-
+  cache:
+    type: caffeine
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    consumer:
-      group-id: ai-core-ingestion
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      auto-offset-reset: latest
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
-  kafka-topics:
-    reasoning-input: ${REASONING_INPUT_TOPIC:reasoning-input-topic}
-
-  cache:
-    type: caffeine
+      # acks=1 : le leader confirme la réception (compromis perf/durabilité pour du best-effort)
+      acks: 1
+      retries: 3
 
 management:
   endpoints:
@@ -59,9 +57,9 @@ ai-core:
     km-rate-7cv: ${AI_CORE_EXPENSE_KM_RATE_7CV:0.661}
     km-annual: ${AI_CORE_EXPENSE_KM_ANNUAL:11000}
   company-name: ${AI_CORE_COMPANY_NAME:IA-INSIGHT}
+  admin-key: ${AI_CORE_ADMIN_KEY:}
   monthly-location:
     enabled: ${MONTHLY_LOCATION_ENABLED:true}
-    topic: ${INTENT_INPUT_TOPIC:intent-input-topic}
     text: ${MONTHLY_LOCATION_TEXT:"je loue pour la domiciliation à 450 EUR ce mois-ci"}
   ocr:
     storage-path: ${AI_CORE_RECEIPTS_STORAGE_PATH:/tmp/receipts}
@@ -69,9 +67,6 @@ ai-core:
     pdftoppm-command: ${AI_CORE_OCR_PDFTOPPM_CMD:pdftoppm}
     lang: ${AI_CORE_OCR_LANG:eng+fra}
     dpi: ${AI_CORE_OCR_DPI:300}
-  ingestion:
-    topic: ${AI_CORE_DOCUMENTS_TOPIC:documents.raw}
-    chunk-sleep-ms: ${AI_CORE_INGESTION_CHUNK_SLEEP_MS:0}
 
 weaviate:
   scheme: ${WEAVIATE_SCHEME:http}
@@ -82,9 +77,16 @@ weaviate:
     max-attempts: ${WEAVIATE_SCHEMA_INIT_MAX_ATTEMPTS:6}
     backoff: ${WEAVIATE_SCHEMA_INIT_BACKOFF:10s}
 
+invoice:
+  service:
+    url: ${INVOICE_SERVICE_URL:http://invoice-service:8083}
+
 caffeine:
   spec: maximumSize=3000,expireAfterWrite=10m
 
 logging:
   level:
-    io.multiagent.core.service: DEBUG
+    "[io.multiagent.core.service]": DEBUG
+    # SSE broken pipe: connexion navigateur fermée — géré proprement, bruit inutile
+    "[org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitterReturnValueHandler]": WARN
+    "[org.apache.catalina.connector.ClientAbortException]": WARN

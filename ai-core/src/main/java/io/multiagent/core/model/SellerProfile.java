@@ -7,6 +7,7 @@ public record SellerProfile(
         String iban,
         String bic,
         String email,
-        String capital
+        String capital,
+        String latePaymentClause
 ) {
 }

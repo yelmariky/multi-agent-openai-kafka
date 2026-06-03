@@ -27,12 +27,16 @@ spec:
           httpGet:
             path: /actuator/health/liveness
             port: 8081
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /actuator/health/readiness
             port: 8081
-          initialDelaySeconds: 10
+          initialDelaySeconds: 45
+          periodSeconds: 10
+          failureThreshold: 6
         volumeMounts:
           - name: receipts-storage
             mountPath: /data/receipts

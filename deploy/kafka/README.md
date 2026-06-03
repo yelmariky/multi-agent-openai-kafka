@@ -1,124 +1,103 @@
-# Kafka KRaft Deployment
+# Kafka KRaft sur Kubernetes (namespace `agent-system`)
 
-Configuration complète pour déployer Apache Kafka en mode KRaft (sans Zookeeper) avec 3 nœuds combinés (broker + controller).
+Kafka 3 nœuds en mode KRaft (sans Zookeeper) avec **persistance hostPath** :
+les topics et données survivent aux crashs du cluster Kubernetes.
 
-## Architecture
+---
 
-- **Version**: Kafka 7.7.0 (Compatible avec Kafka 4.1.0)
-- **Mode**: KRaft (Kafka Raft)
-- **Nœuds**: 3 nœuds combinés (chaque nœud est à la fois broker et controller)
-- **Stockage**: 20Gi par nœud (PersistentVolumeClaim)
-- **Namespace**: agent-system
+## Pourquoi les données étaient perdues avant
 
-## Spécifications des Ressources
+Deux causes :
 
-### Par Nœud:
-- **CPU**:
-  - Request: 1 core (1000m)
-  - Limit: 2 cores (2000m)
-- **Mémoire**:
-  - Request: 2Gi
-  - Limit: 4Gi
-- **JVM Heap**: 1536m (Xms et Xmx)
-- **Stockage**: 20Gi persistant
+| Cause | Détail |
+|---|---|
+| **Pas de PVs hostPath** | Les PVCs utilisaient le StorageClass par défaut de Docker Desktop (données dans la VM Docker, perdues au crash) |
+| **`KAFKA_LOG_RETENTION_HOURS: 1`** | Les topics étaient purgés après **1 heure** — corrigé à 168 h (7 jours) |
 
-### Configuration Optimisée:
-- **Threads réseau**: 8
-- **Threads I/O**: 8
-- **Buffer d'envoi**: 100KB
-- **Buffer de réception**: 100KB
-- **GC**: G1GC avec optimisations
+---
 
-## Installation
+## Architecture de stockage
 
-### Prérequis
-- kubectl configuré
-- Accès au cluster Kubernetes
-- Namespace `agent-system` (créé automatiquement si absent)
+```
+kafka-0  →  PVC data-kafka-0  →  PV kafka-pv-0  →  /Users/younes/data/kafka/kafka-0
+kafka-1  →  PVC data-kafka-1  →  PV kafka-pv-1  →  /Users/younes/data/kafka/kafka-1
+kafka-2  →  PVC data-kafka-2  →  PV kafka-pv-2  →  /Users/younes/data/kafka/kafka-2
+```
 
-### Déploiement
+- **StorageClass `kafka-hostpath`** : `provisioner: kubernetes.io/no-provisioner`, `reclaimPolicy: Retain`
+- **`claimRef`** : chaque PV est pré-lié à son PVC exact — pas de risque d'échange entre nœuds
+- **`DirectoryOrCreate`** : le répertoire est créé automatiquement s'il n'existe pas
+- **`Retain`** : les données restent sur disque même si le PVC ou le pod est supprimé
+
+---
+
+## 1. Installation / Mise à jour
 
 ```bash
-cd /Users/younes/dev/multi-agent-openai-kafka/deploy/kafka
+cd deploy/kafka
 ./install.sh
 ```
 
-Le script va:
-1. Créer le namespace si nécessaire
-2. Générer un cluster ID unique
-3. Déployer les services et le StatefulSet
-4. Attendre que tous les pods soient prêts
+Le script fait dans l'ordre :
 
-### Vérification
+1. `mkdir -p /Users/younes/data/kafka/kafka-{0,1,2}` sur le host
+2. Crée le namespace `agent-system` si absent
+3. Applique `pv-kafka.yaml` (StorageClass + 3 PVs hostPath)
+4. **Récupère le `cluster.id`** depuis `meta.properties` dans les données existantes (priorité absolue) → aucune perte de topics au redémarrage
+5. Crée/met à jour le ConfigMap `kafka-cluster-id`
+6. Applique `statefulset.yaml`
+
+---
+
+## 2. Survie à un crash du cluster Kubernetes
+
+Au redémarrage du cluster :
 
 ```bash
-# Vérifier les pods
+# Ré-appliquer les PVs (ils ont pu être perdus du registre k8s, pas les données)
+kubectl apply -f deploy/kafka/pv-kafka.yaml
+
+# Relancer Kafka — cluster.id récupéré automatiquement depuis meta.properties
+./install.sh
+```
+
+Les topics et leurs messages sont intacts dans `/Users/younes/data/kafka/kafka-{0,1,2}`.
+
+---
+
+## 3. Vérifications
+
+```bash
+# État des pods
 kubectl get pods -n agent-system -l app=kafka
 
-# Vérifier les PVC
+# PVs et PVCs
+kubectl get pv -l app=kafka
 kubectl get pvc -n agent-system
 
-# Vérifier les services
-kubectl get svc -n agent-system -l app=kafka
+# Vérifier que les PVs sont Bound
+kubectl get pv kafka-pv-0 kafka-pv-1 kafka-pv-2
 
-# Logs d'un pod
-kubectl logs kafka-0 -n agent-system
+# Port-forward pour tester localement
+kubectl port-forward svc/kafka 9092:9092 -n agent-system
 ```
 
-## Configuration Kafka
+---
 
-### Réplication
-- **Facteur de réplication par défaut**: 3
-- **Min ISR**: 2
-- **Partitions par défaut**: 3
-
-### Rétention
-- **Durée**: 168 heures (7 jours)
-- **Taille**: 1GB par partition
-- **Segment**: 1GB
-
-### Topics Internes
-- **Offsets topic**: 
-  - Réplication: 3
-  - Partitions: 50
-- **Transaction log**:
-  - Réplication: 3
-  - Min ISR: 2
-
-## Connexion à Kafka
-
-### Depuis un pod dans le cluster
+## 4. Lister / vérifier les topics
 
 ```bash
-# Service DNS
-kafka.agent-system.svc.cluster.local:9092
+# Via port-forward (depuis le host)
+kubectl port-forward svc/kafka 9092:9092 -n agent-system &
+
+# Lister les topics
+kafka-topics --bootstrap-server localhost:9092 --list
+
+# Décrire un topic
+kafka-topics --bootstrap-server localhost:9092 --describe --topic intent-input-topic
 ```
 
-### Depuis un pod temporaire
-
-```bash
-kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- bash
-
-# Une fois dans le pod
-kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 --list
-```
-
-## Opérations Courantes
-
-### Créer un topic
-
-```bash
-kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --create --topic test-topic --partitions 3 --replication-factor 3
-```
-
-### Lister les topics
+Ou via un pod temporaire :
 
 ```bash
 kubectl run kafka-client --rm -ti --restart=Never \
@@ -127,193 +106,121 @@ kubectl run kafka-client --rm -ti --restart=Never \
   -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 --list
 ```
 
-### Décrire un topic
+---
+
+## 5. Topics du projet
+
+| Topic | Producteur | Consommateur |
+|---|---|---|
+| `intent-input-topic` | Externe / scheduler | intent-agent |
+| `reasoning-input-topic` | intent-agent | reasoning-agent |
+| `reassign-input-topic` | reasoning-agent | reassign-agent |
+| `audit.events.in` | tous agents | audit-agent |
+
+Créer un topic manuellement :
 
 ```bash
 kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
+  --image=confluentinc/cp-kafka:7.7.0 --namespace=agent-system \
   -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --describe --topic test-topic
+     --create --topic intent-input-topic --partitions 1 --replication-factor 1
 ```
 
-### Produire des messages
+---
+
+## 6. Configuration
+
+| Paramètre | Valeur | Raison |
+|---|---|---|
+| `KAFKA_LOG_RETENTION_HOURS` | `168` (7 jours) | corrigé (était `1`h) |
+| `KAFKA_DEFAULT_REPLICATION_FACTOR` | `1` | local dev mono-nœud k8s |
+| `KAFKA_MIN_INSYNC_REPLICAS` | `1` | cohérent avec RF=1 |
+| `KAFKA_NUM_PARTITIONS` | `1` | dev — augmenter en prod |
+| `KAFKA_HEAP_OPTS` | `-Xms1g -Xmx1g` | dev |
+| `storageClassName` | `kafka-hostpath` | PVs dédiés sur macOS |
+
+---
+
+## 7. Désinstallation (données conservées)
 
 ```bash
-kubectl run kafka-producer --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-console-producer --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --topic test-topic
-```
-
-### Consommer des messages
-
-```bash
-kubectl run kafka-consumer --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-console-consumer --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --topic test-topic --from-beginning
-```
-
-## Monitoring
-
-### Vérifier l'état du cluster
-
-```bash
-# Status des pods
-kubectl get pods -n agent-system -l app=kafka -o wide
-
-# Métriques des pods
-kubectl top pods -n agent-system -l app=kafka
-
-# Describe un pod
-kubectl describe pod kafka-0 -n agent-system
-```
-
-### Logs
-
-```bash
-# Logs d'un pod spécifique
-kubectl logs kafka-0 -n agent-system
-
-# Logs en temps réel
-kubectl logs -f kafka-0 -n agent-system
-
-# Logs des 3 nœuds
-kubectl logs -l app=kafka -n agent-system --tail=100
-```
-
-## Haute Disponibilité
-
-### Features
-- **Anti-affinity**: Les pods sont distribués sur différents nœuds
-- **Pod Disruption Budget**: Maximum 1 pod indisponible à la fois
-- **Replication**: Données répliquées sur 3 nœuds
-- **Min ISR**: Garantit au moins 2 répliques synchronisées
-
-### Tolérance aux pannes
-- Le cluster peut tolérer la perte d'1 nœud
-- Avec Min ISR=2, les écritures nécessitent 2 nœuds disponibles
-- Les lectures peuvent continuer avec un seul nœud
-
-## Scaling
-
-### Augmenter le nombre de nœuds
-
-```bash
-kubectl scale statefulset kafka -n agent-system --replicas=5
-```
-
-**Note**: Vous devrez mettre à jour `KAFKA_CONTROLLER_QUORUM_VOTERS` pour inclure les nouveaux nœuds.
-
-### Augmenter les ressources
-
-Éditez le StatefulSet:
-```bash
-kubectl edit statefulset kafka -n agent-system
-```
-
-Modifiez les sections `resources.requests` et `resources.limits`.
-
-## Désinstallation
-
-```bash
-cd /Users/younes/dev/multi-agent-openai-kafka/deploy/kafka
-./uninstall.sh
-```
-
-Le script vous demandera si vous souhaitez également supprimer les PVC (données).
-
-### Désinstallation manuelle
-
-```bash
-# Supprimer le StatefulSet
+# Supprime pods + PVCs mais PAS les données sur le host (Retain)
 kubectl delete statefulset kafka -n agent-system
-
-# Supprimer les services
 kubectl delete service kafka kafka-headless -n agent-system
-
-# Supprimer les PVC (ATTENTION: perte de données)
 kubectl delete pvc -l app=kafka -n agent-system
+kubectl delete configmap kafka-cluster-id -n agent-system
+
+# Les PVs passent en Released (données intactes dans /Users/younes/data/kafka/)
+kubectl delete pv kafka-pv-0 kafka-pv-1 kafka-pv-2
 ```
 
-## Troubleshooting
-
-### Les pods ne démarrent pas
+Pour **effacer définitivement** les données :
 
 ```bash
-# Vérifier les événements
-kubectl get events -n agent-system --sort-by='.lastTimestamp'
-
-# Describe le pod
-kubectl describe pod kafka-0 -n agent-system
-
-# Vérifier les PVC
-kubectl get pvc -n agent-system
+rm -rf /Users/younes/data/kafka
 ```
 
-### Problèmes de connexion
+---
+
+## 8. Connexion depuis les microservices
+
+DNS interne Kubernetes :
+
+```
+kafka.agent-system.svc.cluster.local:9092
+```
+
+Variable d'environnement dans les ConfigMaps :
 
 ```bash
-# Vérifier les services
-kubectl get svc -n agent-system
-
-# Tester la connectivité depuis un pod
-kubectl run test-pod --rm -ti --restart=Never \
-  --image=busybox \
-  --namespace=agent-system \
-  -- nc -zv kafka.agent-system.svc.cluster.local 9092
+KAFKA_BOOTSTRAP_SERVERS=kafka.agent-system.svc.cluster.local:9092
 ```
 
-### Problèmes de quorum
+---
+
+## 9. Fichiers
+
+| Fichier | Rôle |
+|---|---|
+| `pv-kafka.yaml` | StorageClass `kafka-hostpath` + 3 PVs hostPath (nouveau) |
+| `statefulset.yaml` | StatefulSet + Services (storageClass + rétention corrigés) |
+| `install.sh` | Script d'installation avec récupération cluster.id depuis hostPath |
+| `uninstall.sh` | Désinstallation propre |
+| `README.md` | Ce document |
+
+---
+
+## 10. Troubleshooting
+
+### Pod en `Pending` après install
 
 ```bash
-# Vérifier que les 3 nœuds sont en cours d'exécution
-kubectl get pods -n agent-system -l app=kafka
-
-# Vérifier les logs pour les erreurs de quorum
-kubectl logs kafka-0 -n agent-system | grep -i "quorum\|controller"
+kubectl describe pod kafka-0 -n agent-system | grep -A5 Events
+# → vérifier que les PVs sont Bound
+kubectl get pv -l app=kafka
 ```
 
-## Performance Tuning
+Si les PVs sont en `Released` (après un crash), les recréer :
 
-### Pour plus de throughput
-- Augmenter `num.io.threads` et `num.network.threads`
-- Augmenter `socket.send.buffer.bytes` et `socket.receive.buffer.bytes`
-- Utiliser compression (déjà configuré)
+```bash
+kubectl apply -f deploy/kafka/pv-kafka.yaml
+```
 
-### Pour plus de rétention
-- Augmenter `log.retention.hours`
-- Augmenter `log.retention.bytes`
-- Augmenter la taille des PVC
+### `ErrImagePull` sur l'image Confluent
 
-### Pour réduire la latence
-- Réduire `linger.ms` côté producer
-- Utiliser `acks=1` au lieu de `acks=all` (moins de durabilité)
+```bash
+# Pré-charger l'image dans Docker local
+docker pull confluentinc/cp-kafka:7.7.0
+# Puis supprimer le pod bloqué pour qu'il redémarre avec l'image en cache
+kubectl delete pod kafka-0 -n agent-system
+```
 
-## Sécurité
+### Cluster ID mismatch au redémarrage
 
-**Note**: Cette configuration utilise PLAINTEXT (pas de chiffrement).
+Le script `install.sh` lit automatiquement le `cluster.id` depuis
+`/Users/younes/data/kafka/kafka-N/meta.properties` — prioritaire sur le ConfigMap.
+En cas de doute :
 
-Pour la production, considérez:
-- Activer SSL/TLS
-- Activer SASL pour l'authentification
-- Activer les ACLs
-- Utiliser des Network Policies
-
-## Fichiers
-
-- `statefulset.yaml`: Définition du StatefulSet et des services
-- `values-kraft.yaml`: Valeurs de configuration (référence)
-- `install.sh`: Script d'installation
-- `uninstall.sh`: Script de désinstallation
-- `README.md`: Cette documentation
-
-## Support
-
-Pour les problèmes ou questions:
-1. Vérifier les logs: `kubectl logs -l app=kafka -n agent-system`
-2. Vérifier les événements: `kubectl get events -n agent-system`
-3. Consulter la documentation Kafka: https://kafka.apache.org/documentation/
+```bash
+grep cluster.id /Users/younes/data/kafka/kafka-0/meta.properties
+```

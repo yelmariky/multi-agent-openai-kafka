@@ -39,22 +39,28 @@ kubectl run kafka-client --rm -ti --restart=Never \
   --image=confluentinc/cp-kafka:7.7.0 \
   --namespace=agent-system \
   -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
+     --create --topic reassign-output-topic \
+     --partitions 3 --replication-factor 3
+
+kubectl run kafka-client --rm -ti --restart=Never \
+  --image=confluentinc/cp-kafka:7.7.0 \
+  --namespace=agent-system \
+  -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
      --create --topic audit.events.out \
      --partitions 3 --replication-factor 3
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-
+source $ROOT/ai-core/deploy/k8s/init-secret.sh
 MANIFESTS=(
   "$ROOT/ai-core/deploy/k8s/configMap.yaml"
-  "$ROOT/ai-core/deploy/k8s/secret.yaml"
   "$ROOT/ai-core/deploy/k8s/deployment.yaml"
   "$ROOT/reasoning-agent/deploy/k8s/configMap.yaml"
   "$ROOT/reasoning-agent/deploy/k8s/deployment.yaml"
   "$ROOT/intent-agent//deploy/k8s/configMap.yaml"
   "$ROOT/intent-agent/deploy/k8s/deployment.yaml"
-  "$ROOT/reassign-agent//deploy/k8s/configMap.yaml"
+  "$ROOT/reassign-agent/deploy/k8s/configMap.yaml"
   "$ROOT/reassign-agent/deploy/k8s/deployment.yaml"
-  "$ROOT/audit-agent//deploy/k8s/configMap.yaml"
+  "$ROOT/audit-agent/deploy/k8s/configMap.yaml"
   "$ROOT/audit-agent/deploy/k8s/deployment.yaml"
 )
 

@@ -1,0 +1,113 @@
+# ConfigMap Kong en mode DB-less (config déclarative).
+# Toute modification de la config nécessite un rollout du pod Kong.
+#
+# AUTHENTIFICATION JWT / KEYCLOAK :
+#   Le plugin "jwt" ci-dessous valide les tokens JWT en mode basique (secret symétrique ou RSA).
+#   Pour une intégration OIDC complète avec Keycloak (validation via JWKS), deux options :
+#
+#   Option A — Plugin kong-oidc (tiers, recommandé prod) :
+#     image: kong/kong-gateway:3.6 (Kong Gateway avec plugins enterprise)
+#     plugin: oidc avec config.discovery = http://keycloak.keycloak.svc.cluster.local:8080/realms/ia-insight/.well-known/openid-configuration
+#
+#   Option B — Plugin JWT natif + clé publique Keycloak :
+#     1. Récupérer la clé publique : GET /realms/ia-insight/protocol/openid-connect/certs
+#     2. Créer un consumer Kong avec la clé RSA publique
+#     3. Keycloak signe les tokens avec cette clé → Kong les vérifie localement (sans roundtrip)
+#     JWKS endpoint : http://keycloak.keycloak.svc.cluster.local:8080/realms/ia-insight/protocol/openid-connect/certs
+#
+#   En dev local, le plugin JWT peut être désactivé en commentant le bloc plugin dans ce fichier.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: gateway
+  labels:
+    app: kong
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    _transform: true
+
+    services:
+      - name: invoice-service
+        # Route interne K8s vers invoice-service dans le namespace multi-agent
+        url: http://invoice-service.multi-agent.svc.cluster.local:8083
+        connect_timeout: 60000
+        write_timeout: 60000
+        read_timeout: 60000
+        routes:
+          - name: invoice-service-routes
+            paths:
+              - /invoices
+            strip_path: false
+            preserve_host: true
+
+      - name: ai-core
+        # Route interne K8s vers le service ai-core dans le namespace multi-agent
+        url: http://ai-core.multi-agent.svc.cluster.local:8081
+        connect_timeout: 60000
+        write_timeout: 60000
+        read_timeout: 60000
+        routes:
+          - name: ai-core-routes
+            paths:
+              - /reasoning
+              - /expenses
+              - /receipts
+              - /cra
+              - /admin
+              - /settings
+            strip_path: false
+            preserve_host: true
+        plugins:
+          # --- Validation JWT ---
+          # En prod : remplacer par le plugin OIDC ou configurer les consumers avec la clé publique Keycloak.
+          # En dev : commenter ce bloc pour désactiver la validation JWT.
+          - name: jwt
+            config:
+              secret_is_base64: false
+              key_claim_name: iss
+              # Algorithmes acceptés (Keycloak utilise RS256 par défaut)
+              algorithms:
+                - RS256
+                - HS256
+          # --- Rate limiting — protection contre les abus ---
+          - name: rate-limiting
+            config:
+              minute: 100
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+          # --- CORS — autoriser les deux frontends ---
+          - name: cors
+            config:
+              origins:
+                - "http://localhost:3000"
+                - "http://localhost:3001"
+              methods:
+                - GET
+                - POST
+                - PUT
+                - DELETE
+                - OPTIONS
+                - PATCH
+              headers:
+                - Authorization
+                - Content-Type
+                - X-Source
+                - X-Requested-With
+              credentials: true
+              max_age: 3600
+          # --- Request transformer — ajouter un header pour identifier la source ---
+          - name: request-transformer
+            config:
+              add:
+                headers:
+                  - "X-Gateway: kong"
+
+    # Les consumers JWT sont configurés dynamiquement via l'Admin API Kong
+    # ou via le plugin OIDC avec Keycloak (découverte automatique).
+    # Pour le plugin JWT natif, créer un consumer par realm Keycloak :
+    #   POST /consumers { "username": "keycloak-ia-insight" }
+    #   POST /consumers/keycloak-ia-insight/jwt { "algorithm": "RS256", "rsa_public_key": "<clé publique>", "key": "<issuer>" }
+    consumers: []

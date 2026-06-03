@@ -56,6 +56,18 @@ spec:
       labels:
         app: kafka
     spec:
+      # fsGroup n'est pas honoré par Docker Desktop / VirtioFS pour les hostPath
+      # → initContainer root qui chown explicitement avant le démarrage de Kafka
+      initContainers:
+      - name: fix-permissions
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        command: ['sh', '-c', 'chown -R 1000:1000 /var/lib/kafka/data && chmod 755 /var/lib/kafka/data']
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/kafka/data
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -133,7 +145,7 @@ spec:
           value: "1"
         # Log retention
         - name: KAFKA_LOG_RETENTION_HOURS
-          value: "1"
+          value: "2"
         - name: KAFKA_LOG_RETENTION_BYTES
           value: "1073741824"
         - name: KAFKA_LOG_SEGMENT_BYTES
@@ -172,6 +184,7 @@ spec:
       name: data
     spec:
       accessModes: ["ReadWriteOnce"]
+      storageClassName: kafka-hostpath   # lié aux PVs hostPath de pv-kafka.yaml
       resources:
         requests:
-          storage: 5Gi
+          storage: 10Gi

@@ -1,0 +1,28 @@
+# StorageClass locale pour Keycloak (pas de provisioner dynamique — hostPath statique)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: keycloak-hostpath
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+# PersistentVolume — stockage local Keycloak (dev/local K8s)
+# Données Keycloak : base H2 dev-file, realm runtime, sessions.
+# En production : remplacer par un PV cloud (EBS, PD, Azure Disk) + PostgreSQL.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: keycloak-pv
+  labels:
+    app: keycloak
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: keycloak-hostpath
+  hostPath:
+    path: /Users/younes/data/keycloak   # Créé automatiquement par install.sh
+    type: DirectoryOrCreate

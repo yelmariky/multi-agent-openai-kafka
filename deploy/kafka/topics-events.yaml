@@ -1,0 +1,114 @@
+# Topics Kafka cross-domaines — événements métier IA-INSIGHT Platform
+# Ces topics sont créés par le Job "kafka-topic-init" au démarrage du cluster.
+#
+# Partitionnement :
+#   - Dev (K8s local) : 3 partitions, replication 1 (pas de multi-broker)
+#   - Prod            : 3 partitions, replication 3 (3 brokers KRaft)
+#
+# Rétention par défaut Kafka : 7 jours (604800000 ms)
+# Modifier via : --config retention.ms=<valeur>
+---
+# ConfigMap contenant le script de création des topics
+# Monté dans le Job kafka-topic-init
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-event-topics
+  namespace: agent-system
+  labels:
+    app.kubernetes.io/part-of: ia-insight-platform
+    component: kafka-topics
+data:
+  create-topics.sh: |
+    #!/bin/bash
+    # Script de création des topics métier IA-INSIGHT
+    # Exécuté par le Job kafka-topic-init au démarrage
+    set -euo pipefail
+
+    BOOTSTRAP="${KAFKA_BOOTSTRAP_SERVERS:-kafka.agent-system.svc.cluster.local:9092}"
+    PARTITIONS="${TOPIC_PARTITIONS:-3}"
+    REPLICATION="${TOPIC_REPLICATION:-1}"
+
+    create_topic() {
+      local topic="$1"
+      local description="$2"
+      echo "[TOPIC] Création : ${topic} (${description})"
+      kafka-topics.sh \
+        --bootstrap-server "${BOOTSTRAP}" \
+        --create \
+        --topic "${topic}" \
+        --partitions "${PARTITIONS}" \
+        --replication-factor "${REPLICATION}" \
+        --if-not-exists \
+        --config retention.ms=604800000
+      echo "[OK] ${topic}"
+    }
+
+    echo "==> Attente de la disponibilité de Kafka (${BOOTSTRAP})..."
+    until kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list > /dev/null 2>&1; do
+      echo "    Kafka non disponible, retry dans 5s..."
+      sleep 5
+    done
+    echo "[OK] Kafka disponible."
+
+    echo "==> Création des topics événements domaine..."
+
+    # --- Domaine : Notes de frais ---
+    create_topic "expense.created"         "Nouvelle note de frais indexée (RAGService → indexExpenses)"
+    create_topic "expense.approved"        "Note de frais approuvée ou refusée par l'admin"
+    create_topic "expense.absence.updated" "Mise à jour des périodes d'absence km pour un consultant"
+
+    # --- Domaine : CRA (Compte Rendu d'Activité) ---
+    create_topic "cra.submitted"   "CRA soumis par le consultant (transition BROUILLON → SOUMIS)"
+    create_topic "cra.validated"   "CRA validé par l'admin (transition SOUMIS → VALIDE)"
+    create_topic "cra.refused"     "CRA refusé par l'admin (transition SOUMIS → REFUSE/BROUILLON)"
+
+    # --- Domaine : Factures ---
+    create_topic "invoice.generated" "Facture générée et indexée dans Weaviate"
+
+    # --- Domaine : Reasoning / Intent ---
+    create_topic "reasoning.intent.routed" "Intent classifié et routé par le pipeline ReasoningService"
+
+    echo ""
+    echo "==> Liste des topics créés :"
+    kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list | grep -E "expense\.|cra\.|invoice\.|reasoning\." || true
+    echo ""
+    echo "[DONE] Tous les topics ont été créés."
+---
+# Job K8s — crée les topics au démarrage du cluster
+# Utilise l'image Confluent Platform qui inclut kafka-topics.sh
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topic-init
+  namespace: agent-system
+  labels:
+    app.kubernetes.io/part-of: ia-insight-platform
+    component: kafka-init
+spec:
+  # Marquer le Job comme terminé après succès, ne pas le relancer automatiquement
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topic-creator
+          image: confluentinc/cp-kafka:7.7.0
+          command: ["/bin/bash", "/scripts/create-topics.sh"]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka.agent-system.svc.cluster.local:9092"
+            # Dev : 1 replica | Prod : 3 replicas
+            - name: TOPIC_PARTITIONS
+              value: "3"
+            - name: TOPIC_REPLICATION
+              value: "1"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: kafka-event-topics
+            defaultMode: 0755

@@ -3,72 +3,447 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Capture justificatifs</title>
+  <title>IA-INSIGHT Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- Configuration externalisée (URLs, realm, clientId) -->
+  <script src="config.js"></script>
+  <!-- Keycloak JS adapter — chargé dynamiquement depuis le serveur Keycloak -->
+  <script>
+    globalThis.KEYCLOAK_URL = (globalThis.APP_CONFIG || {}).keycloakUrl
+      || localStorage.getItem('keycloakUrl');
+  </script>
+  <script id="keycloak-script"></script>
+  <script>
+    (function() {
+      var s = document.getElementById('keycloak-script');
+      s.src = globalThis.KEYCLOAK_URL + '/js/keycloak.js';
+      s.onload = function() {
+        var a = document.createElement('script');
+        a.src = 'app.js';
+        document.body.appendChild(a);
+      };
+      s.onerror = function() {
+        document.body.innerHTML = `
+          <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+                      background:#0d1017;font-family:'Space Grotesk',system-ui">
+            <div style="text-align:center;color:#f0f0f0;max-width:480px;padding:2rem">
+              <div style="font-size:2.5rem;margin-bottom:1rem">⚠️</div>
+              <h2 style="color:#2ce5a7;margin-bottom:.5rem">Service d'authentification indisponible</h2>
+              <p style="color:#8892a4">
+                La connexion au serveur d'authentification a échoué.<br>
+                Veuillez contacter votre administrateur système.
+              </p>
+            </div>
+          </div>`;
+      };
+    })();
+  </script>
 </head>
 <body>
-  <div class="page">
-    <header>
-      <div>
-        <p class="eyebrow">Notes de frais</p>
-        <h1>Capture et upload de justificatifs</h1>
-        <p class="lede">Prends une photo (restaurant, taxi…) ou dépose un fichier PDF/JPG/PNG, puis envoie-le vers l’API d’ingestion.</p>
-      </div>
-      <div class="endpoint">
-        <label for="api-url">Endpoint upload</label>
-        <input id="api-url" type="text" placeholder="http://localhost:8081/receipts/upload">
-        <small>Modifie si l’API tourne ailleurs</small>
-      </div>
-    </header>
 
-    <main>
-      <section class="card camera">
-        <div class="card-head">
-          <div>
-            <p class="eyebrow">Caméra</p>
-            <h2>Prendre une photo</h2>
-          </div>
-          <div class="actions">
-            <button id="start-camera">Activer la caméra</button>
-            <button id="capture" disabled>Capturer</button>
-          </div>
-        </div>
-        <div class="camera-wrap">
-          <video id="video" autoplay playsinline></video>
-          <canvas id="canvas" class="hidden"></canvas>
-        </div>
-        <div id="camera-status" class="status"></div>
-      </section>
+  <!-- ====== APP ====== -->
+  <div id="app">
+    <div class="page">
 
-      <section class="card upload">
-        <div class="card-head">
-          <div>
-            <p class="eyebrow">Fichier</p>
-            <h2>Déposer un justificatif</h2>
-          </div>
-          <div class="controls">
-            <label class="inline">
-              Mode de paiement
-              <select id="payment-mode">
-                <option value="Personnel">Personnel</option>
-                <option value="Business">Business</option>
-              </select>
-            </label>
-          </div>
-          <label class="file-button">
-            Choisir un fichier
-            <input id="file-input" type="file" accept=".jpg,.jpeg,.png,.pdf" />
-          </label>
+      <!-- HEADER -->
+      <header class="admin-header">
+        <div class="header-brand">
+          <p class="eyebrow">Admin</p>
+          <h1 style="font-size:26px;margin-bottom:0">IA-INSIGHT</h1>
         </div>
-        <div class="preview" id="preview"></div>
-        <div id="upload-status" class="status"></div>
-      </section>
-    </main>
+
+        <div class="header-right">
+          <!-- Notification bell -->
+          <div id="notif-bell-wrap" style="position:relative">
+            <button id="notif-bell" class="btn-icon notif-bell-btn" title="Notifications">
+              🔔
+              <span id="notif-badge" class="badge hidden">0</span>
+            </button>
+            <div id="notif-dropdown" class="notif-dropdown hidden">
+              <div class="notif-header">
+                <span>Notifications</span>
+                <button id="notif-read-all" class="btn-xs">Tout lire</button>
+              </div>
+              <div id="notif-list" class="notif-list"></div>
+            </div>
+          </div>
+
+          <!-- User badge + logout -->
+          <div class="admin-user-badge">
+            <div class="admin-user-avatar" id="admin-avatar">A</div>
+            <div class="admin-user-info">
+              <span id="admin-name" class="admin-user-name">Admin</span>
+              <span id="admin-email" class="admin-user-email">admin@ia-insight.fr</span>
+            </div>
+          </div>
+          <button id="settings-btn" class="btn-ghost" title="Paramètres facturation" style="white-space:nowrap">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Paramètres
+          </button>
+          <button id="logout-btn" class="btn-ghost" style="white-space:nowrap">Déconnexion</button>
+        </div>
+      </header>
+
+      <!-- CONSULTANTS GRID VIEW -->
+      <div id="cons-grid-view">
+        <div class="cons-toolbar">
+          <div class="cons-search-wrap">
+            <span class="cons-search-icon-box">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </span>
+            <input id="cons-search" type="text" class="cons-search" placeholder="Nom, email, société…" autocomplete="off">
+          </div>
+          <button id="cons-add-btn" class="btn-primary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Ajouter
+          </button>
+        </div>
+
+        <!-- Add form (hidden) -->
+        <div id="cons-add-form" class="cons-add-form" style="display:none">
+          <div class="card" style="padding:20px">
+            <p class="eyebrow">Nouveau consultant</p>
+            <div class="form-row" style="margin-top:12px">
+              <label class="inline" style="flex:2">
+                Nom complet
+                <input id="cons-new-name" type="text" placeholder="Alice Martin">
+              </label>
+              <label class="inline" style="flex:2">
+                Email
+                <input id="cons-new-email" type="email" placeholder="alice@ia-insight.fr">
+              </label>
+              <label class="inline" style="flex:1">
+                Rôle
+                <select id="cons-new-role">
+                  <option value="Salarié">Salarié</option>
+                  <option value="Freelance">Freelance</option>
+                  <option value="Sous-traitant">Sous-traitant</option>
+                </select>
+              </label>
+              <label class="inline" style="flex:1">
+                Société (émetteur)
+                <input id="cons-new-company" type="text" value="IA-INSIGHT">
+              </label>
+              <label class="inline" style="flex:1">
+                Société cliente
+                <input id="cons-new-clientname" type="text" placeholder="INFOGENE DIGITAL">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="cons-add-save" class="btn-primary">Enregistrer</button>
+              <button id="cons-add-cancel" class="btn-ghost">Annuler</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="cons-grid" class="consultants-grid"></div>
+      </div>
+
+      <!-- CONSULTANT DETAIL VIEW -->
+      <div id="cons-detail-view" style="display:none">
+
+        <nav class="cons-breadcrumb" aria-label="Navigation">
+          <button id="cons-back-btn" class="breadcrumb-home">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+            Consultants
+          </button>
+          <span class="breadcrumb-sep">/</span>
+          <span id="breadcrumb-name" class="breadcrumb-current">—</span>
+        </nav>
+
+        <div class="cons-detail-header">
+          <div class="cons-avatar-lg" id="cons-detail-avatar"></div>
+          <div class="cons-detail-identity">
+            <h2 id="cons-detail-name">—</h2>
+            <p id="cons-detail-email" class="cons-detail-meta"></p>
+            <div class="cons-detail-badges">
+              <span id="cons-detail-role" class="cons-role-badge"></span>
+              <span id="cons-detail-company" class="cons-company-tag"></span>
+              <span id="cons-detail-clientname" class="cons-company-tag" style="border-color:var(--accent-2);color:var(--accent-2)"></span>
+            </div>
+          </div>
+          <div class="cons-kpi-strip" id="cons-kpi-strip">
+            <div class="cons-kpi-item">
+              <span class="cons-kpi-val" id="kpi-cra-pending">—</span>
+              <span class="cons-kpi-lbl">CRA en attente</span>
+            </div>
+            <div class="cons-kpi-sep"></div>
+            <div class="cons-kpi-item">
+              <span class="cons-kpi-val" id="kpi-expense-pending">—</span>
+              <span class="cons-kpi-lbl">Frais en attente</span>
+            </div>
+            <div class="cons-kpi-sep"></div>
+            <div class="cons-kpi-item cons-tjm-item">
+              <div class="cons-tjm-wrap">
+                <input type="text" id="cons-clientname-input" class="cons-tjm-input" style="width:130px" placeholder="Société cliente…">
+                <span class="cons-tjm-unit">Client</span>
+              </div>
+            </div>
+            <div class="cons-kpi-sep"></div>
+            <div class="cons-kpi-item cons-tjm-item">
+              <div class="cons-tjm-wrap">
+                <span id="cons-tjm-display" class="cons-tjm-val">—</span>
+                <span class="cons-tjm-unit">€/j TJM</span>
+              </div>
+            </div>
+            <div class="cons-kpi-sep"></div>
+            <button id="cons-edit-detail-btn" class="btn-secondary" style="padding:6px 14px;font-size:12px">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Modifier
+            </button>
+            <div class="cons-kpi-sep"></div>
+            <button id="cons-disable-btn" class="cons-remove-btn">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+              Désactiver
+            </button>
+          </div>
+        </div>
+
+        <!-- Client info row — read-only display (edit via "Modifier" on the card) -->
+        <div class="cons-client-row">
+          <div class="cons-client-field">
+            <span class="cons-client-lbl">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Adresse client
+            </span>
+            <span id="cons-clientaddress-display" class="cons-client-val">—</span>
+          </div>
+          <div class="cons-client-sep"></div>
+          <div class="cons-client-field">
+            <span class="cons-client-lbl">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8L2 7h20z"/></svg>
+              RCS client
+            </span>
+            <span id="cons-clientrcs-display" class="cons-client-val">—</span>
+          </div>
+        </div>
+
+        <!-- Sub-tabs -->
+        <div class="cons-subtabs">
+          <button class="cons-stab active" data-cons-tab="cra">CRA</button>
+          <button class="cons-stab" data-cons-tab="notes">Notes de frais</button>
+          <button class="cons-stab" data-cons-tab="factures">Factures</button>
+        </div>
+
+        <!-- Panel CRA -->
+        <div id="cons-panel-cra" class="cons-tab-panel active">
+          <div class="card">
+            <p class="eyebrow">Validation CRA</p>
+            <div class="form-row" style="margin-top:12px">
+              <label class="inline">
+                Mois
+                <input type="month" id="cons-cra-month">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:10px">
+              <button id="cons-cra-load" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Charger
+              </button>
+            </div>
+            <div id="cons-cra-status" class="status"></div>
+            <div id="cons-cra-result" style="display:none; margin-top:14px"></div>
+          </div>
+        </div>
+
+        <!-- Panel Notes de frais -->
+        <div id="cons-panel-notes" class="cons-tab-panel" style="display:none">
+          <div class="card">
+            <p class="eyebrow">Approbation des notes de frais</p>
+            <div class="form-row" style="margin-top:12px">
+              <label class="inline">
+                Mois
+                <input type="month" id="cons-notes-month">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:10px">
+              <button id="cons-notes-load" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Charger
+              </button>
+              <button id="cons-notes-approve-all" class="btn-secondary" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                Tout approuver
+              </button>
+              <button id="cons-notes-pdf" class="btn-secondary" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                PDF
+              </button>
+              <button id="cons-notes-excel" class="btn-secondary" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Excel
+              </button>
+            </div>
+            <div id="cons-notes-status" class="status"></div>
+            <div id="cons-notes-result" style="display:none; margin-top:14px"></div>
+          </div>
+        </div>
+
+        <!-- Panel Factures -->
+        <div id="cons-panel-factures" class="cons-tab-panel" style="display:none">
+          <div class="card">
+            <p class="eyebrow">Factures associées</p>
+            <div class="form-row" style="margin-top:12px">
+              <label class="inline">
+                De (mois)
+                <input type="month" id="cons-inv-start">
+              </label>
+              <label class="inline">
+                À (mois)
+                <input type="month" id="cons-inv-end">
+              </label>
+              <label class="inline">
+                Société
+                <input id="cons-inv-company" type="text" value="IA-INSIGHT">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:10px">
+              <button id="cons-inv-load" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Charger
+              </button>
+              <button id="cons-inv-delete-all" class="btn-delete-danger" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                Tout supprimer
+              </button>
+            </div>
+            <div id="cons-inv-status" class="status"></div>
+            <div id="cons-inv-result" style="display:none; margin-top:14px"></div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- ====== CONSULTANT EDIT MODAL ====== -->
+  <div id="cons-edit-overlay" class="cons-edit-overlay hidden"></div>
+  <div id="cons-edit-modal" class="cons-edit-modal hidden">
+    <div class="cons-edit-modal-header">
+      <p class="eyebrow" style="margin:0">Modifier le consultant</p>
+      <button id="cons-edit-modal-close" class="settings-close" aria-label="Fermer">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <p id="cons-edit-name-display" style="font-weight:600;margin:0 0 16px;color:var(--text);font-size:15px"></p>
+    <div class="form-row">
+      <label class="inline" style="flex:2">
+        Société cliente
+        <input id="cons-edit-clientname" type="text" placeholder="INFOGENE DIGITAL">
+      </label>
+      <label class="inline" style="flex:3">
+        Adresse client
+        <input id="cons-edit-clientaddress" type="text" placeholder="12 rue de la Paix, 75002 Paris">
+      </label>
+      <label class="inline" style="flex:2">
+        RCS client
+        <input id="cons-edit-clientrcs" type="text" placeholder="RCS Paris 123 456 789">
+      </label>
+      <label class="inline" style="flex:1">
+        TJM (€/j)
+        <input id="cons-edit-tjm" type="number" min="0" step="50" placeholder="570">
+      </label>
+    </div>
+    <div class="actions-row" style="margin-top:16px">
+      <button id="cons-edit-save" class="btn-primary">Enregistrer</button>
+      <button id="cons-edit-cancel" class="btn-ghost">Annuler</button>
+    </div>
+  </div>
+
+  <!-- ====== SETTINGS DRAWER ====== -->
+  <div id="settings-overlay" class="settings-overlay hidden"></div>
+  <div id="settings-drawer" class="settings-drawer hidden">
+    <div class="settings-drawer-header">
+      <div>
+        <p class="eyebrow">Facturation</p>
+        <h2 style="font-size:18px;margin:0">Paramètres</h2>
+      </div>
+      <button id="settings-close" class="btn-icon" title="Fermer">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="settings-drawer-body">
+
+      <!-- Section : Société émettrice -->
+      <div class="settings-section">
+        <p class="settings-section-title">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8L2 7h20z"/></svg>
+          Société émettrice (IA-INSIGHT)
+        </p>
+        <div class="form-stack" style="gap:10px">
+          <label class="inline">
+            Raison sociale
+            <input id="set-company" type="text" placeholder="IA-INSIGHT" readonly style="opacity:.6;cursor:default">
+          </label>
+          <label class="inline">
+            Adresse
+            <input id="set-address" type="text" placeholder="12 avenue de la République, 75011 Paris">
+          </label>
+          <label class="inline">
+            RCS / SIRET
+            <input id="set-rcs" type="text" placeholder="RCS Paris 123 456 789">
+          </label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label class="inline">
+              Capital social
+              <input id="set-capital" type="text" placeholder="10 000 €">
+            </label>
+            <label class="inline">
+              Email de facturation
+              <input id="set-email" type="email" placeholder="compta@ia-insight.fr">
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section : Coordonnées bancaires -->
+      <div class="settings-section">
+        <p class="settings-section-title">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          Coordonnées bancaires
+        </p>
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">
+          <label class="inline">
+            IBAN
+            <input id="set-iban" type="text" placeholder="FR76 1234 5678 9012 3456 7890 123" style="font-family:monospace;letter-spacing:.04em">
+          </label>
+          <label class="inline">
+            BIC
+            <input id="set-bic" type="text" placeholder="BNPAFRPP" style="font-family:monospace">
+          </label>
+        </div>
+      </div>
+
+      <!-- Section : Conditions de paiement -->
+      <div class="settings-section">
+        <p class="settings-section-title">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Conditions de paiement
+        </p>
+        <label class="inline">
+          Clause pénalités de retard
+          <textarea id="set-late-clause" rows="4" placeholder="En cas de retard de paiement…" style="resize:vertical;min-height:80px;font-size:12px"></textarea>
+        </label>
+      </div>
+
+    </div>
+
+    <div class="settings-drawer-footer">
+      <div id="settings-status" class="status" style="flex:1;font-size:12px"></div>
+      <button id="settings-save" class="btn-primary">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+        Enregistrer
+      </button>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container" class="toast-container"></div>
+
 </body>
 </html>

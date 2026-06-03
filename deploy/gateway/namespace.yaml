@@ -1,0 +1,9 @@
+# Namespace dédié à Kong API Gateway
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+  labels:
+    app.kubernetes.io/part-of: ia-insight-platform
+    # Istio sidecar injection activé pour mTLS entre Gateway et ai-core
+    istio-injection: enabled

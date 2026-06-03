@@ -4,6 +4,9 @@ metadata:
   name: multi-agent-config
   namespace: multi-agent
 data:
+  KEYCLOAK_ISSUER_URI: "http://keycloak.keycloak.svc.cluster.local:8080/realms/ia-insight"
+  KEYCLOAK_JWK_SET_URI: "http://keycloak.keycloak.svc.cluster.local:8080/realms/ia-insight/protocol/openid-connect/certs"
+  INVOICE_SERVICE_URL: "http://invoice-service.multi-agent.svc.cluster.local:8083"
   KAFKA_BOOTSTRAP_SERVERS: "kafka.agent-system.svc.cluster.local:9092"
   WEAVIATE_HOST: "weaviate.weaviate.svc.cluster.local:80"
   WEAVIATE_SCHEME: "http"
@@ -31,10 +34,12 @@ data:
         Quand l’utilisateur demande un regroupement, une liste, un récapitulatif, un rapport ou une analyse de ses dépenses sur une période.
     - "generate_invoice"
         Quand l'utilisateur demande de créer ou générer une facture pour un client.
-    - "delete_expense"  
-        Quand l’utilisateur demande de supprimer/retirer une ou plusieurs dépenses. 
-        Cela peut être par date relative (aujourd’hui, hier, avant-hier, il y a X jours) ou une date explicite (JJ/MM/AAAA, YYYY-MM-DD), par description ("le resto de midi") 
+    - "delete_expense"
+        Quand l’utilisateur demande de supprimer/retirer une ou plusieurs dépenses.
+        Cela peut être par date relative (aujourd’hui, hier, avant-hier, il y a X jours) ou une date explicite (JJ/MM/AAAA, YYYY-MM-DD), par description ("le resto de midi")
         ou par identifiants uniques (ex: "supprime les notes 452, 789 et 102").
+    - "delete_invoice"
+        Quand l’utilisateur demande de supprimer/retirer une facture. Cela peut être par mois de facturation (ex: "supprime la facture de mars 2026"), par numéro de facture (ex: "supprime la facture F-202605-01"), ou les deux combinés.
     - "smalltalk"  
         Quand l’utilisateur discute de façon informelle (bonjour, merci, comment vas-tu, etc.).
     - "unknown"  
@@ -210,6 +215,32 @@ data:
       "explanation": "Demande explicite de rapport mensuel (fichier PDF généré côté service)."
     }
 
+    USER: "supprime la facture de mars 2026 pour IA-INSIGHT"
+    OUTPUT:
+    {
+      "intent": "delete_invoice",
+      "confidence": 0.97,
+      "entities": {
+        "company": "IA-INSIGHT",
+        "month": "2026-03",
+        "date": null
+      },
+      "explanation": "Demande de suppression d'une facture par mois et société émettrice."
+    }
+
+    USER: "retire la facture F-202605-01 pour IA-INSIGHT"
+    OUTPUT:
+    {
+      "intent": "delete_invoice",
+      "confidence": 0.98,
+      "entities": {
+        "company": "IA-INSIGHT",
+        "month": null,
+        "date": null
+      },
+      "explanation": "Demande de suppression d'une facture par numéro de facture."
+    }
+
     USER: "Facture le client ACME pour 5 jours de dev à 600eur/j"
     OUTPUT:
     { "intent": "generate_invoice", "confidence": 0.98 }
@@ -267,7 +298,9 @@ data:
       "paymentMode": "...",
       "address": "...",
       "km": ...,
-      "company": "..."
+      "company": "...",
+      "absencePeriods": [{"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}],
+      "monthly": false
     }
 
     1. Détection langue : détecte automatiquement la langue et interprète dates relatives, heures, mots-clés.
@@ -278,7 +311,7 @@ data:
        - il y a une semaine/a week ago/... → J-7
        - ce mois-ci / ce mois / this month → 1er jour du mois courant (YYYY-MM-01)
        - mois dernier / last month → 1er jour du mois précédent
-       - si un mois est mentionné sans jour (ex: "janvier", "mois de janvier", "janvier 2026"), fixe la date au 1er jour de ce mois (YYYY-MM-01) et, s'il n'y a pas d'année, prends l'année en cours.
+       - si un mois est mentionné sans jour (ex: "janvier", "mois de janvier", "janvier 2026", "May", "mayo"), fixe la date au 1er jour de ce mois (YYYY-MM-01) et, s’il n’y a pas d’année, prends l’année en cours.
        - si le type est un abonnement ou une location et qu’aucune date n’est fournie, utilise le 1er jour du mois courant (YYYY-MM-01).
        - Si une date explicite est mentionnée (JJ/MM/AAAA, JJ-MM-AAAA, AAAA/MM/JJ, AAAA-MM-JJ, avec ou sans heure), utilise-la et convertis-la en ISO (YYYY-MM-DD).
        - Si aucune date trouvée → date = null
@@ -287,8 +320,11 @@ data:
        Exemples : "meknes"/"Meknès"/"مكناس" → "Meknès, Maroc" ; "paris"/"باريس" → "Paris, France" ; "london"/"لندن" → "London, United Kingdom".
        Exemples : "meknes"/"Meknès"/"مكناس" → "Meknès, Maroc" ; "paris"/"باريس" → "Paris, France" ; "london"/"لندن" → "London, United Kingdom".
     5. Cas particuliers km :
-       - Si l’utilisateur mentionne un kilométrage pour un mois entier (ex: \"parcourir 50 km durant le mois de janvier\", \"ce mois-ci\"), crée des dépenses JOURNALIÈRES pour chaque jour ouvré du mois (lundi-vendredi), en excluant les jours fériés français fixes (1/1, 1/5, 8/5, 14/7, 15/8, 1/11, 11/11, 25/12). La date de chaque ligne est le jour ouvré correspondant (YYYY-MM-DD).
+       - Si le type est frais_km et que la dépense porte sur un mois entier (quelle que soit la langue : "all working days in May", "todos los días de mayo", "tous les jours de mai", "ce mois-ci", "during the month of June"...) → mettre "monthly": true et "date" au 1er jour du mois concerné (YYYY-MM-01). L’expansion journalière est faite côté serveur.
+       - Si le type est frais_km et qu’une date précise est indiquée (ex: "le 25 mai", "on May 25th", "el 25 de mayo") → mettre "monthly": false et "date" à la date exacte. Une seule dépense est créée.
+       - Toute période d’absence détectée DOIT être extraite dans le champ "absencePeriods" sous forme de tableau d’objets {"from":"YYYY-MM-DD","to":"YYYY-MM-DD"} avec les dates converties en ISO. Si aucune absence n’est mentionnée → absencePeriods = [].
        - Si une date précise est fournie, crée une seule dépense pour cette date.
+       - paymentMode pour frais_km : appliquer la règle générale. Sans expression de PRIORITÉ ABSOLUE dans le texte, paymentMode = "Personnel" obligatoirement, même si une société est mentionnée.
 
     6. Champs à extraire :
        - amount (nombre), currency (code ISO si possible)
@@ -307,19 +343,23 @@ data:
          - "Location pour domiciliation d'entreprise, payé en espèces"
          Interdiction de recopier le ticket complet, pas de TVA, pas de texte parasite. Si le texte source est long, tronque et ne garde que ces éléments clés.
        - originalText : résumé ultra court (nom enseigne/société + ville + date + montant + mode de paiement)
-       - paymentMode : qui a payé (Personnel ou Business). Ne mets pas la méthode de paiement ici (carte/espèces/virement). Si la méthode est connue, place-la dans description/originalText, sauf pour location/domiciliation/abonnement où elle doit être ignorée.
-       - Règle stricte : si le texte mentionne seulement une société/organisation (ex: "avec la société IA-INSIGHT", "pour la société IA-INSIGHT"), cela ne suffit PAS pour mettre Business. Dans ce cas, paymentMode doit rester "Personnel".
-       - Ne mets "Business" que si le texte indique explicitement que le paiement a été fait via le compte de l'entreprise ou un moyen de paiement professionnel, par exemple : "compte business", "compte de l'entreprise", "carte société", "carte business", "payé par l'entreprise".
+       - paymentMode : qui a payé (Personnel ou Business). Ne mets pas la méthode de paiement ici (carte/espèces/virement). Si la méthode est connue, place-la dans description/originalText, sauf pour location/domiciliation/abonnement où elle doit être ignorée dans description — cette exception sur la description NE s'applique PAS à paymentMode.
+       - PRIORITÉ ABSOLUE : si le texte contient l'une des expressions suivantes, quelle que soit la suite de la phrase, paymentMode = "Business" OBLIGATOIREMENT : "compte business", "compte de l'entreprise", "carte société", "carte business", "payé par l'entreprise", "carte pro", "compte pro". Cette règle prime sur toutes les autres, y compris sur le type de dépense.
+       - Si le texte mentionne seulement une société/organisation sans exprimer le mode de paiement (ex: "avec la société IA-INSIGHT", "pour la société IA-INSIGHT", "pour IA-INSIGHT"), cela ne suffit PAS pour mettre Business : paymentMode = "Personnel".
        - Si rien d'explicite n'indique un moyen de paiement professionnel, mets "Personnel".
-       - Règle métier obligatoire : toute dépense de type location ou domiciliation doit avoir paymentMode = "Personnel", même si le texte mentionne une entreprise.
+       - Règle métier : toute dépense de type location ou domiciliation a paymentMode = "Personnel", SAUF si le texte contient l'une des expressions de PRIORITÉ ABSOLUE ci-dessus.
        - address : ville + pays normalisés
        - company : nom de la société/BU/organisation si mentionné, sinon null
        - Si une info manque → null (sauf amount/currency/type si impossibles à déduire → null)
     6. Sortie : JSON uniquement, sans texte autour.
     7. Exemples de paymentMode :
-       - "j'ai mangé le 25 mars au restaurant à Courbevoie et j'ai payé 6,5 euro avec la société IA-INSIGHT" -> paymentMode = "Personnel"
+       - "j'ai mangé le 25 mars au restaurant à Courbevoie et j'ai payé 6,5 euro avec la société IA-INSIGHT" -> paymentMode = "Personnel"  (mention de société seule, pas de compte business)
        - "j'ai mangé le 25 mars au restaurant à Courbevoie et j'ai payé 6,5 euro sur le compte de l'entreprise IA-INSIGHT" -> paymentMode = "Business"
        - "j'ai mangé le 25 mars au restaurant à Courbevoie et j'ai payé 6,5 euro avec le compte business" -> paymentMode = "Business"
+       - "j'ai payé abonnement Claude AI 5,14 euros en avril avec le compte business pour la société IA-INSIGHT" -> paymentMode = "Business"  (PRIORITÉ ABSOLUE : "compte business" prime sur "pour la société")
+       - "j'ai payé abonnement Bouygues Telecom 1,99 euros en avril avec le compte business pour la société IA-INSIGHT" -> paymentMode = "Business"  (PRIORITÉ ABSOLUE : "compte business" prime)
+       - "j'ai parcouru 50 km durant le mois de mai pour la société IA-INSIGHT, sauf la semaine du 11 au 15 mai car j'étais absent" -> frais_km journaliers pour chaque jour ouvré de mai, EN EXCLUANT les jours fériés (1/5, 8/5) ET les jours ouvrés du 11 au 15 mai inclus, paymentMode = "Personnel" (aucun "compte business" mentionné, la mention de la société ne suffit pas)
+       - "j'ai parcouru 50 km durant le mois de mai pour la société IA-INSIGHT, absent du 11 mai au 15 mai" -> même résultat : exclure 11, 12, 13, 14, 15 mai des lignes générées
   MONTHLY_LOCATION_ENABLED: "true"
   MONTHLY_LOCATION_TEXT: "je loue pour la domiciliation à 450 EUR ce mois-ci"
   AI_CORE_PROMPT_EXPENSE_LIST: |
@@ -342,7 +382,9 @@ data:
       "paymentMode": "...",
       "address": "...",
       "km": ...,
-      "company": "..."
+      "company": "...",
+      "absencePeriods": [{"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"}],
+      "monthly": false
     }
 
     1. Détection langue : détecte la langue du texte OCR et interprète dates/heures/mots-clés dans cette langue.
@@ -353,14 +395,17 @@ data:
        - il y a une semaine/a week ago/... → J-7
        - ce mois-ci / ce mois / this month → 1er jour du mois courant (YYYY-MM-01)
        - mois dernier / last month → 1er jour du mois précédent
-       - si un mois est mentionné sans jour (ex: "janvier", "mois de janvier", "janvier 2026"), fixe la date au 1er jour de ce mois (YYYY-MM-01) et, s'il n'y a pas d'année, prends l'année en cours.
+       - si un mois est mentionné sans jour (ex: "janvier", "mois de janvier", "janvier 2026", "May", "mayo"), fixe la date au 1er jour de ce mois (YYYY-MM-01) et, s’il n’y a pas d’année, prends l’année en cours.
        - Si une date explicite est mentionnée (JJ/MM/AAAA, JJ-MM-AAAA, AAAA/MM/JJ, AAAA-MM-JJ, avec ou sans heure), utilise-la et convertis-la en ISO (YYYY-MM-DD).
        - Si aucune date trouvée → date = null
     3. Heures : formats FR/EN/ES/AR, convertis en 24h HH:MM si présent, sinon ignore.
     4. Adresse : identifie la ville/pays dans n’importe quelle langue ; normalise en « Ville, Pays » si possible, sinon laisse la valeur brute.
     5. Cas particuliers km :
-       - Si l’utilisateur mentionne un kilométrage pour un mois entier (ex: \"parcourir 50 km durant le mois de janvier\", \"ce mois-ci\"), crée des dépenses JOURNALIÈRES pour chaque jour ouvré du mois (lundi-vendredi), en excluant les jours fériés français fixes (1/1, 1/5, 8/5, 14/7, 15/8, 1/11, 11/11, 25/12). La date de chaque ligne est le jour ouvré correspondant (YYYY-MM-DD).
+       - Si le type est frais_km et que la dépense porte sur un mois entier (quelle que soit la langue : "all working days in May", "todos los días de mayo", "tous les jours de mai", "ce mois-ci", "during the month of June"...) → mettre "monthly": true et "date" au 1er jour du mois concerné (YYYY-MM-01). L’expansion journalière est faite côté serveur.
+       - Si le type est frais_km et qu’une date précise est indiquée (ex: "le 25 mai", "on May 25th", "el 25 de mayo") → mettre "monthly": false et "date" à la date exacte. Une seule dépense est créée.
+       - Toute période d’absence détectée DOIT être extraite dans le champ "absencePeriods" sous forme de tableau d’objets {"from":"YYYY-MM-DD","to":"YYYY-MM-DD"} avec les dates converties en ISO. Si aucune absence n’est mentionnée → absencePeriods = [].
        - Si une date précise est fournie, crée une seule dépense pour cette date.
+       - paymentMode pour frais_km : appliquer la règle générale. Sans expression de PRIORITÉ ABSOLUE dans le texte, paymentMode = "Personnel" obligatoirement, même si une société est mentionnée.
 
     6. Champs à extraire :
        - amount (nombre), currency (code ISO si possible)
@@ -380,11 +425,11 @@ data:
          Interdiction de recopier le ticket complet, pas de TVA, pas de texte parasite. Si le texte source est long, tronque et ne garde que ces éléments clés.
        - originalText : résumé ULTRA COURT (une seule ligne) ne contenant QUE : nom/enseigne/société, ville, date, montant, et la méthode de paiement sous forme de phrase courte (ex: "paiement par carte bleue", "payé en espèces", "virement bancaire"). Interdiction de recopier le ticket complet, pas de TVA, pas de texte parasite. Si le texte source est long, tronque et ne garde que ces éléments clés.
          Exemple attendu : "LA NOSTRA, Antony, 2026-02-06, 18.50 EUR, paiement par carte bleue"
-       - paymentMode : qui a payé (Personnel ou Business). Ne mets pas ici la méthode de paiement. Place la méthode dans description/originalText si tu la connais, sauf pour location/domiciliation/abonnement où elle doit être ignorée.
-       - Règle stricte : si le texte mentionne seulement une société/organisation (ex: "avec la société IA-INSIGHT", "pour la société IA-INSIGHT"), cela ne suffit PAS pour mettre Business. Dans ce cas, paymentMode doit rester "Personnel".
-       - Ne mets "Business" que si le texte indique explicitement que le paiement a été fait via le compte de l'entreprise ou un moyen de paiement professionnel, par exemple : "compte business", "compte de l'entreprise", "carte société", "carte business", "payé par l'entreprise".
+       - paymentMode : qui a payé (Personnel ou Business). Ne mets pas ici la méthode de paiement. Place la méthode dans description/originalText si tu la connais, sauf pour location/domiciliation/abonnement où elle doit être ignorée dans description — cette exception sur la description NE s'applique PAS à paymentMode.
+       - PRIORITÉ ABSOLUE : si le texte contient l'une des expressions suivantes, quelle que soit la suite de la phrase, paymentMode = "Business" OBLIGATOIREMENT : "compte business", "compte de l'entreprise", "carte société", "carte business", "payé par l'entreprise", "carte pro", "compte pro". Cette règle prime sur toutes les autres, y compris sur le type de dépense.
+       - Si le texte mentionne seulement une société/organisation sans exprimer le mode de paiement (ex: "avec la société IA-INSIGHT", "pour la société IA-INSIGHT", "pour IA-INSIGHT"), cela ne suffit PAS pour mettre Business : paymentMode = "Personnel".
        - Si rien d'explicite n'indique un moyen de paiement professionnel, mets "Personnel".
-       - Règle métier obligatoire : toute dépense de type location ou domiciliation doit avoir paymentMode = "Personnel", même si le texte mentionne une entreprise.
+       - Règle métier : toute dépense de type location ou domiciliation a paymentMode = "Personnel", SAUF si le texte contient l'une des expressions de PRIORITÉ ABSOLUE ci-dessus.
        - address : ville + pays normalisés
        - company : nom exact de la société/BU/organisation si mentionné (ex: "IA-MAROC", "ACME Corp"). Ne pas inventer. Si absent → null.
        - Si une info manque → null (sauf amount/currency/type si impossibles à déduire → null)
@@ -426,15 +471,16 @@ data:
       "clientAddress": "...",
       "clientRcs": "...",
       "invoiceTitle": "Consulting IT",
-      "daysCount": 0,
+      "daysCount": null,
       "unitPriceHt": 0.0,
-      "totalHt": 0.0,
+      "totalHt": null,
       "vatRate": 0.20,
-      "totalTtc": 0.0,
+      "totalTtc": null,
       "currency": "EUR",
       "paymentDueDate": "YYYY-MM-DD",
       "latePaymentClause": "...",
-      "notes": null
+      "notes": null,
+      "absencePeriods": []
     }
 
     RÈGLES D'EXTRACTION
@@ -442,34 +488,38 @@ data:
     - `invoiceDate` : premier jour du deuxième mois après `billingMonth`, au format ISO YYYY-MM-DD.
     - `sellerCompanyName`, `sellerAddress`, `sellerRcs` : société émettrice.
     - `clientCompanyName`, `clientAddress`, `clientRcs` : société cliente.
-    - `daysCount` : nombre de jours de prestation.
     - `unitPriceHt` : prix unitaire HT par jour.
-    - `totalHt` = daysCount * unitPriceHt.
-    - `totalTtc` = totalHt * 1.20.
     - `paymentDueDate` : si absent dans le texte, date de facture + 1 mois.
     - Si une donnée obligatoire manque, mets `null`.
     - N'invente jamais un RCS, une adresse, une société, une date, ni un numéro séquentiel.
+
+    RÈGLE ABSENCES / JOURS OUVRÉS
+    - Si l'utilisateur mentionne des jours d'absence, de congé ou dit "jours ouvrés du mois sauf..." :
+      a) Extrais chaque période dans `absencePeriods` : [{"from":"YYYY-MM-DD","to":"YYYY-MM-DD"}] (bornes incluses, dates ISO).
+         Formes reconnues : "absent du X au Y", "sauf la semaine du X au Y", "en congé du X au Y", "sauf du X au Y", "la semaine qui commence le X et termine le Y".
+      b) Mets `daysCount = null` : le backend calculera automatiquement les jours ouvrés du `billingMonth` en excluant les weekends, les jours fériés français (1/1, 1/5, 8/5, 14/7, 15/8, 1/11, 11/11, 25/12) et les `absencePeriods`.
+      c) Mets également `totalHt = null` et `totalTtc = null` : le backend recalculera ces montants à partir du `daysCount` réel.
+    - Si le texte donne un nombre fixe de jours sans mention d'absence (ex: "12 jours"), mets `daysCount` = ce nombre et `absencePeriods = []`.
 
     CLAUSE DE RETARD
     Le champ `latePaymentClause` doit toujours contenir une clause de pénalités de retard et d'indemnité forfaitaire de recouvrement.
     Utilise cette formulation ou une variante très proche :
     "En cas de retard de paiement, des pénalités de retard sont exigibles dès le jour suivant la date de règlement figurant sur la facture, sans qu'un rappel soit nécessaire, à un taux au moins égal à trois fois le taux d'intérêt légal. Une indemnité forfaitaire pour frais de recouvrement de 40 euros est également due, conformément aux articles L441-9, L441-10 et D441-5 du Code de commerce."
 
-    EXEMPLE
-    Entrée :
-    "Génère une facture pour le mois de mars 2026 pour le client ACME SARL, adresse 10 rue Victor Hugo 75008 Paris, RCS Paris 123 456 789. Société émettrice IA-INSIGHT SAS, adresse 20 avenue de l'Opéra 75001 Paris, RCS Paris 987 654 321. 12 jours de prestation à 650 euros HT par jour."
+    EXEMPLES
 
+    Entrée : "Facture pour le mois de mars 2026, client ACME SARL, 12 jours à 650€ HT par jour, émettrice IA-INSIGHT SAS."
     Sortie :
     {
       "invoiceName": null,
       "invoiceDate": "2026-05-01",
       "billingMonth": "2026-03",
       "sellerCompanyName": "IA-INSIGHT SAS",
-      "sellerAddress": "20 avenue de l'Opéra 75001 Paris",
-      "sellerRcs": "RCS Paris 987 654 321",
+      "sellerAddress": null,
+      "sellerRcs": null,
       "clientCompanyName": "ACME SARL",
-      "clientAddress": "10 rue Victor Hugo 75008 Paris",
-      "clientRcs": "RCS Paris 123 456 789",
+      "clientAddress": null,
+      "clientRcs": null,
       "invoiceTitle": "Consulting IT",
       "daysCount": 12,
       "unitPriceHt": 650.0,
@@ -479,7 +529,33 @@ data:
       "currency": "EUR",
       "paymentDueDate": "2026-06-01",
       "latePaymentClause": "En cas de retard de paiement, des pénalités de retard sont exigibles dès le jour suivant la date de règlement figurant sur la facture, sans qu'un rappel soit nécessaire, à un taux au moins égal à trois fois le taux d'intérêt légal. Une indemnité forfaitaire pour frais de recouvrement de 40 euros est également due, conformément aux articles L441-9, L441-10 et D441-5 du Code de commerce.",
-      "notes": null
+      "notes": null,
+      "absencePeriods": []
+    }
+
+    Entrée : "Facture pour les jours ouvrés de mars 2026 à 750€/jour, client ACME SARL, émettrice IA-INSIGHT. J'étais absent du 10 au 14 mars."
+    Sortie :
+    {
+      "invoiceName": null,
+      "invoiceDate": "2026-05-01",
+      "billingMonth": "2026-03",
+      "sellerCompanyName": "IA-INSIGHT",
+      "sellerAddress": null,
+      "sellerRcs": null,
+      "clientCompanyName": "ACME SARL",
+      "clientAddress": null,
+      "clientRcs": null,
+      "invoiceTitle": "Consulting IT",
+      "daysCount": null,
+      "unitPriceHt": 750.0,
+      "totalHt": null,
+      "vatRate": 0.20,
+      "totalTtc": null,
+      "currency": "EUR",
+      "paymentDueDate": "2026-06-01",
+      "latePaymentClause": "En cas de retard de paiement, des pénalités de retard sont exigibles dès le jour suivant la date de règlement figurant sur la facture, sans qu'un rappel soit nécessaire, à un taux au moins égal à trois fois le taux d'intérêt légal. Une indemnité forfaitaire pour frais de recouvrement de 40 euros est également due, conformément aux articles L441-9, L441-10 et D441-5 du Code de commerce.",
+      "notes": null,
+      "absencePeriods": [{"from": "2026-03-10", "to": "2026-03-14"}]
     }
   AI_CORE_PROMPT_KM_7CV: |
     Tu es un assistant chargé de calculer les frais kilométriques selon le barème fiscal officiel pour un véhicule de 7 CV.
@@ -511,6 +587,7 @@ data:
        • le coût annuel exact
        • le coût journalier basé sur {kilometrage_journalier}
        • le coût mensuel (12 mois)
+  
   AI_CORE_RECEIPTS_STORAGE_PATH: "/data/receipts"
   AI_CORE_OCR_TESSERACT_CMD: "tesseract"
   AI_CORE_OCR_PDFTOPPM_CMD: "pdftoppm"

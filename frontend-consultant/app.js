@@ -1,0 +1,1040 @@
+// ============================================================
+// KEYCLOAK CONFIG — lue depuis window.APP_CONFIG (config.js)
+// ============================================================
+const _cfg = globalThis.APP_CONFIG || {};
+const DEFAULT_KEYCLOAK_URL = _cfg.keycloakUrl || 'http://localhost:30080';
+
+let _keycloak = null;
+
+async function initKeycloak() {
+  _keycloak = new Keycloak({
+    url:      DEFAULT_KEYCLOAK_URL,
+    realm:    _cfg.keycloakRealm    || 'ia-insight',
+    clientId: _cfg.keycloakClientId || 'frontend-consultant',
+  });
+
+  const authenticated = await _keycloak.init({
+    onLoad: 'login-required',
+    checkLoginIframe: false,
+    pkceMethod: 'S256',
+  });
+
+  if (!authenticated) {
+    _keycloak.login();
+    return null;
+  }
+
+  // Rafraîchit le token 30s avant expiration
+  setInterval(() => {
+    _keycloak.updateToken(30).catch(() => _keycloak.login());
+  }, 60000);
+
+  return _keycloak;
+}
+
+function getSession() {
+  if (!_keycloak?.tokenParsed) return null;
+  const p = _keycloak.tokenParsed;
+  return {
+    email:   p.email || p.preferred_username,
+    name:    p.name  || p.preferred_username,
+    role:    'Consultant',
+    company: p.company || 'IA-INSIGHT',
+  };
+}
+
+function clearSession() {
+  _keycloak?.logout({ redirectUri: window.location.origin });
+}
+
+function authHeaders(extra = {}) {
+  const token = _keycloak?.token;
+  return {
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    'Content-Type': 'application/json',
+    ...extra,
+  };
+}
+
+// ============================================================
+// CONFIG API — lue depuis globalThis.APP_CONFIG (config.js)
+// ============================================================
+const DEFAULT_BASE = _cfg.apiBase || 'http://localhost:8081';
+
+function base() {
+  return DEFAULT_BASE.replace(/\/$/, '');
+}
+
+// ============================================================
+// BOOT — login ou app
+// ============================================================
+const loginScreen = document.getElementById('login-screen');
+const appEl       = document.getElementById('app');
+
+function showApp(user) {
+  loginScreen.style.display = 'none';
+  appEl.style.display = '';
+  document.getElementById('user-display-name').textContent = user.name;
+  document.getElementById('user-email-badge').textContent  = user.email;
+  document.getElementById('user-role-badge').textContent   = user.role;
+  document.getElementById('user-role-badge').className     =
+    `user-role-badge ${user.role.toLowerCase()}`;
+  initNotifications(user);
+  initApp(user);
+}
+
+// ============================================================
+// BOOT — Keycloak puis app
+// ============================================================
+document.getElementById('logout-btn')?.addEventListener('click', () => clearSession());
+
+(async () => {
+  try {
+    await initKeycloak();
+    const user = getSession();
+    if (user) showApp(user);
+  } catch (e) {
+    console.error('Keycloak init failed:', e);
+    document.body.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+                  background:#0d1017;font-family:'Space Grotesk',system-ui">
+        <div style="text-align:center;color:#f0f0f0;max-width:480px;padding:2rem">
+          <div style="font-size:2.5rem;margin-bottom:1rem">⚠️</div>
+          <h2 style="color:#2ce5a7;margin-bottom:.5rem">Service d'authentification indisponible</h2>
+          <p style="color:#8892a4">
+            La connexion au serveur d'authentification a échoué.<br>
+            Veuillez contacter votre administrateur système.
+          </p>
+        </div>
+      </div>`;
+  }
+})();
+
+// ============================================================
+// TABS
+// ============================================================
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+    if (btn.dataset.tab === 'notes') {
+      const session = getSession();
+      if (session) loadAbsencesForNotes(session);
+    }
+  });
+});
+
+// ============================================================
+// UTILITAIRES
+// ============================================================
+const MONTHS_FR = ['Janvier','Février','Mars','Avril','Mai','Juin',
+                   'Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+
+const DAY_MS = 86400000;
+
+function pad(n) { return String(n).padStart(2, '0'); }
+function toMonthStr(y, m) { return `${y}-${pad(m + 1)}`; }
+
+function setStatus(el, msg, type = '') {
+  el.textContent = msg;
+  el.className   = 'status' + (type ? ` ${type}` : '');
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+function craHolidays(year) {
+  return new Set([
+    `${year}-01-01`, `${year}-05-01`, `${year}-05-08`,
+    `${year}-07-14`, `${year}-08-15`, `${year}-11-01`,
+    `${year}-11-11`, `${year}-12-25`,
+  ]);
+}
+
+// ============================================================
+// NOTIFICATIONS (SSE) — consultant
+// ============================================================
+let notifCount = 0;
+
+function initNotifications(user) {
+  const bell     = document.getElementById('notif-bell');
+  const dropdown = document.getElementById('notif-dropdown');
+  const readAll  = document.getElementById('notif-read-all');
+
+  bell.addEventListener('click', e => {
+    e.stopPropagation();
+    dropdown.classList.toggle('hidden');
+    if (!dropdown.classList.contains('hidden')) loadNotifications(user);
+  });
+
+  document.addEventListener('click', e => {
+    if (!document.getElementById('notif-bell-wrap').contains(e.target)) {
+      dropdown.classList.add('hidden');
+    }
+  });
+
+  readAll.addEventListener('click', async () => {
+    await fetch(`${base()}/consultant/notifications/read-all?consultant=${encodeURIComponent(user.name)}`,
+      { method: 'POST', headers: authHeaders() });
+    notifCount = 0;
+    updateNotifBadge();
+    loadNotifications(user);
+  });
+
+  connectConsultantSSE(user);
+}
+
+function connectConsultantSSE(user) {
+  try {
+    const token = _keycloak?.token;
+    const url   = `${base()}/consultant/notifications/stream?consultant=${encodeURIComponent(user.name)}`
+                + (token ? `&token=${encodeURIComponent(token)}` : '');
+    const es = new EventSource(url);
+    es.addEventListener('init', e => {
+      notifCount = parseInt(e.data, 10) || 0;
+      updateNotifBadge();
+    });
+    es.addEventListener('notification', e => {
+      try {
+        const n = JSON.parse(e.data);
+        notifCount++;
+        updateNotifBadge();
+        showConsultantToast(n.message, n.type === 'CRA_VALIDATED' ? 'ok' : 'err');
+        const dropdown = document.getElementById('notif-dropdown');
+        if (!dropdown.classList.contains('hidden')) loadNotifications(user);
+      } catch { /* ignore malformed */ }
+    });
+    es.onerror = () => setTimeout(() => connectConsultantSSE(user), 5000);
+  } catch { /* SSE not available */ }
+}
+
+function updateNotifBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  if (notifCount > 0) {
+    badge.textContent = notifCount > 99 ? '99+' : notifCount;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+async function loadNotifications(user) {
+  const list = document.getElementById('notif-list');
+  try {
+    const res = await fetch(
+      `${base()}/consultant/notifications?consultant=${encodeURIComponent(user.name)}`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) throw new Error();
+    const items = await res.json();
+    if (!items.length) {
+      list.innerHTML = '<p style="padding:12px 16px;color:var(--muted,#8892a4);font-size:13px">Aucune notification non lue.</p>';
+      return;
+    }
+    list.innerHTML = items.map(n => `
+      <div class="notif-item" data-id="${escapeHtml(n.id)}" style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">
+        <span style="font-size:16px">${n.type === 'CRA_VALIDATED' ? '✅' : '❌'}</span>
+        <div style="flex:1;min-width:0">
+          <p style="margin:0;font-size:13px;color:#f0f0f0">${escapeHtml(n.message)}</p>
+          <p style="margin:2px 0 0;font-size:11px;color:var(--muted,#8892a4)">${formatNotifTs(n.timestamp)}</p>
+        </div>
+      </div>`).join('');
+    list.querySelectorAll('.notif-item').forEach(item => {
+      item.addEventListener('click', async () => {
+        await fetch(
+          `${base()}/consultant/notifications/${item.dataset.id}/read?consultant=${encodeURIComponent(user.name)}`,
+          { method: 'POST', headers: authHeaders() }
+        );
+        notifCount = Math.max(0, notifCount - 1);
+        updateNotifBadge();
+        item.remove();
+      });
+    });
+  } catch {
+    list.innerHTML = '<p style="padding:12px 16px;color:#ff8a8a;font-size:13px">Erreur chargement.</p>';
+  }
+}
+
+function formatNotifTs(ts) {
+  if (!ts) return '';
+  try {
+    return new Date(ts).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  } catch { return ts; }
+}
+
+function showConsultantToast(msg, type = '') {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;padding:12px 18px;border-radius:10px;
+    font-size:13px;z-index:9999;max-width:360px;word-break:break-word;
+    background:${type === 'ok' ? '#1a3a2a' : '#3a1a1a'};
+    color:${type === 'ok' ? '#2ce5a7' : '#ff8a8a'};
+    border:1px solid ${type === 'ok' ? '#2ce5a740' : '#ff8a8a40'}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
+// ============================================================
+// INIT APP — appelé après connexion
+// ============================================================
+function initApp(user) {
+  const now      = new Date();
+  const curMonth = toMonthStr(now.getFullYear(), now.getMonth());
+  document.getElementById('cra-month').value          = curMonth;
+  document.getElementById('hist-start').value         = toMonthStr(now.getFullYear(), Math.max(0, now.getMonth() - 2));
+  document.getElementById('hist-end').value           = curMonth;
+  document.getElementById('abs-month').value          = curMonth;
+  document.getElementById('notes-km-month').value     = curMonth;
+  document.getElementById('notes-report-month').value = curMonth;
+  initCra(user);
+  initAbsences(user);
+  initNotes(user);
+}
+
+// ============================================================
+// CRA
+// ============================================================
+let craEntries     = {};
+let craStatus      = 'BROUILLON';
+let craId          = null;
+let craSubmittedAt = null;
+let currentUser    = null;
+
+// REFUSE is treated like BROUILLON for editability (consultant can re-edit after refusal)
+const CRA_READONLY = () => craStatus === 'SOUMIS' || craStatus === 'VALIDE';
+
+function initCra(user) {
+  currentUser = user;
+  document.getElementById('cra-load').addEventListener('click',             () => loadCra(user));
+  document.getElementById('cra-import-absences').addEventListener('click',  () => importKmAbsences(user));
+  document.getElementById('cra-save').addEventListener('click',             () => saveCra('/cra/save'));
+  document.getElementById('cra-submit').addEventListener('click',           submitCra);
+  document.getElementById('cra-recall').addEventListener('click',           () => recallCra(user));
+  document.getElementById('hist-load').addEventListener('click',            () => loadHistory(user));
+}
+
+function initCraMonth(monthStr, savedEntries) {
+  const [y, m]      = monthStr.split('-').map(Number);
+  const holidays    = craHolidays(y);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const map         = {};
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+    const dow     = new Date(y, m - 1, d).getDay();
+    if (dow === 0 || dow === 6)       map[dateStr] = { value: 0, type: 'WEEKEND' };
+    else if (holidays.has(dateStr))   map[dateStr] = { value: 0, type: 'FERIE'   };
+    else                              map[dateStr] = { value: 1, type: 'TRAVAIL'  };
+  }
+
+  if (savedEntries?.length) {
+    savedEntries.forEach(e => { if (map[e.date]) map[e.date] = { value: e.value, type: e.type }; });
+  }
+  craEntries = map;
+}
+
+function renderCraCalendar() {
+  const monthStr = document.getElementById('cra-month').value;
+  if (!monthStr) return;
+
+  const [y, m]      = monthStr.split('-').map(Number);
+  const firstDow    = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const readonly    = CRA_READONLY();
+
+  document.getElementById('cra-cal-title').textContent = `${MONTHS_FR[m - 1]} ${y}`;
+
+  let html = '';
+  for (let i = 0; i < firstDow; i++) html += '<div class="cra-day empty"></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr          = `${y}-${pad(m)}-${pad(d)}`;
+    const entry            = craEntries[dateStr] || { value: 1, type: 'TRAVAIL' };
+    const { value, type }  = entry;
+    const clickable        = !readonly && (type === 'TRAVAIL' || type === 'ABSENT');
+
+    let cls = 'cra-day';
+    let lbl = '';
+    if      (type === 'WEEKEND')               { cls += ' weekend'; }
+    else if (type === 'FERIE')                 { cls += ' holiday'; lbl = 'Férié'; }
+    else if (type === 'ABSENT' || value === 0) { cls += ' absent';  lbl = 'Abs.'; }
+    else if (value === 0.5)                    { cls += ' half';    lbl = '½j'; }
+    else                                       { cls += ' full';    lbl = '1j'; }
+    if (clickable) cls += ' clickable';
+
+    html += `<div class="${cls}" data-date="${dateStr}">
+      <span class="cra-day-num">${d}</span>
+      <span class="cra-day-val">${lbl}</span>
+    </div>`;
+  }
+
+  const grid = document.getElementById('cra-cal-grid');
+  grid.innerHTML = html;
+
+  grid.querySelectorAll('.cra-day.clickable').forEach(cell => {
+    cell.addEventListener('click', () => {
+      const e = craEntries[cell.dataset.date];
+      if (!e) return;
+      if (e.type === 'ABSENT' || e.value === 0) craEntries[cell.dataset.date] = { value: 1,   type: 'TRAVAIL' };
+      else if (e.value === 1)                   craEntries[cell.dataset.date] = { value: 0.5, type: 'TRAVAIL' };
+      else                                      craEntries[cell.dataset.date] = { value: 0,   type: 'ABSENT'  };
+      renderCraCalendar();
+    });
+  });
+
+  updateCraTotal();
+  updateCraButtons();
+}
+
+function updateCraTotal() {
+  const total = Object.values(craEntries)
+    .filter(e => e.type === 'TRAVAIL')
+    .reduce((s, e) => s + e.value, 0);
+  document.getElementById('cra-total-days').textContent =
+    total % 1 === 0 ? String(total) : total.toFixed(1);
+}
+
+function updateCraButtons() {
+  const badge = document.getElementById('cra-status-badge');
+  const LABEL = { BROUILLON: 'BROUILLON', SOUMIS: 'SOUMIS', VALIDE: 'VALIDÉ', REFUSE: 'REFUSÉ' };
+  badge.textContent = LABEL[craStatus] || craStatus;
+  badge.className   = `cra-status-badge ${craStatus.toLowerCase()}`;
+  // REFUSE resets to BROUILLON-like: consultant can re-edit and resubmit
+  const canSubmit = craStatus === 'BROUILLON' || craStatus === 'REFUSE';
+  document.getElementById('cra-submit').style.display = canSubmit ? '' : 'none';
+  document.getElementById('cra-save').disabled        = CRA_READONLY();
+  // "Retirer ma soumission" uniquement quand SOUMIS (avant action admin)
+  const recallBtn = document.getElementById('cra-recall');
+  if (recallBtn) recallBtn.style.display = craStatus === 'SOUMIS' ? '' : 'none';
+}
+
+async function loadCra(user) {
+  const monthStr = document.getElementById('cra-month').value;
+  const statusEl = document.getElementById('cra-load-status');
+
+  if (!monthStr) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
+
+  craId = null; craStatus = 'BROUILLON'; craSubmittedAt = null;
+  initCraMonth(monthStr, []);
+  document.getElementById('cra-cal-card').style.display = '';
+  renderCraCalendar();
+  setStatus(statusEl, 'Synchronisation avec le serveur…');
+
+  try {
+    const p = new URLSearchParams({ start: monthStr, end: monthStr, consultant: user.name, company: user.company });
+    const res = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const items = await res.json();
+
+    const existing = items.find(item =>
+      item.billingMonth === monthStr &&
+      (item.consultant || '').trim().toLowerCase() === user.name.toLowerCase()
+    );
+
+    if (existing) {
+      craId          = existing.id;
+      craStatus      = existing.status      || 'BROUILLON';
+      craSubmittedAt = existing.submittedAt || null;
+      if (existing.clientCompany) document.getElementById('cra-client').value = existing.clientCompany;
+      let saved = [];
+      try { saved = JSON.parse(existing.entriesJson || '[]'); } catch { saved = []; }
+      initCraMonth(monthStr, saved);
+      renderCraCalendar();
+
+      // Show refusal reason if CRA was refused
+      const refuseEl = document.getElementById('cra-refused-notice');
+      if (refuseEl) {
+        if (craStatus === 'REFUSE' && existing.refusedReason) {
+          refuseEl.textContent = `Motif de refus : ${existing.refusedReason}`;
+          refuseEl.style.display = '';
+        } else {
+          refuseEl.style.display = 'none';
+        }
+      }
+
+      const STATUS_LABEL = { BROUILLON: 'BROUILLON', SOUMIS: 'SOUMIS', VALIDE: 'VALIDÉ', REFUSE: 'REFUSÉ' };
+      setStatus(statusEl, `CRA chargé — statut : ${STATUS_LABEL[craStatus] || craStatus}.`, 'ok');
+    } else {
+      setStatus(statusEl, 'Nouveau CRA — saisissez vos jours puis sauvegardez.', 'ok');
+    }
+  } catch (e) {
+    setStatus(statusEl, `Serveur inaccessible — saisie locale possible (${e.message}).`, '');
+  }
+}
+
+async function importKmAbsences(user) {
+  const monthStr = document.getElementById('cra-month').value;
+  const statusEl = document.getElementById('cra-load-status');
+
+  if (!monthStr || !Object.keys(craEntries).length) {
+    setStatus(statusEl, 'Chargez d\'abord un CRA.', 'err');
+    return;
+  }
+
+  setStatus(statusEl, 'Import des absences km…');
+  try {
+    const p = new URLSearchParams({ month: monthStr, company: user.company, consultant: user.name });
+    const res = await fetch(`${base()}/cra/absences?${p}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const periods = await res.json();
+
+    if (!periods.length) { setStatus(statusEl, 'Aucune absence km trouvée.', ''); return; }
+
+    let count = 0;
+    periods.forEach(period => {
+      for (let ms = new Date(period.from).getTime(); ms <= new Date(period.to).getTime(); ms += DAY_MS) {
+        const dateStr = new Date(ms).toISOString().substring(0, 10);
+        const e = craEntries[dateStr];
+        if (e && (e.type === 'TRAVAIL' || e.type === 'ABSENT')) {
+          craEntries[dateStr] = { value: 0, type: 'ABSENT' };
+          count++;
+        }
+      }
+    });
+
+    renderCraCalendar();
+    setStatus(statusEl, `${count} jour${count > 1 ? 's' : ''} marqué${count > 1 ? 's' : ''} absent.`, 'ok');
+  } catch (e) {
+    setStatus(statusEl, 'Erreur import : ' + e.message, 'err');
+  }
+}
+
+function buildCraPayload() {
+  const entries   = Object.entries(craEntries).map(([date, e]) => ({ date, value: e.value, type: e.type }));
+  const totalDays = entries.filter(e => e.type === 'TRAVAIL').reduce((s, e) => s + e.value, 0);
+  return {
+    id:            craId,
+    consultant:    currentUser.name,
+    company:       currentUser.company,
+    clientCompany: document.getElementById('cra-client').value.trim(),
+    billingMonth:  document.getElementById('cra-month').value,
+    entries,
+    totalDays,
+    status:        craStatus,
+    submittedAt:   craSubmittedAt,
+    validatedAt:   null,
+    validatedBy:   null,
+  };
+}
+
+async function saveCra(endpoint) {
+  const statusEl = document.getElementById('cra-action-status');
+  setStatus(statusEl, 'Sauvegarde…');
+  try {
+    const res = await fetch(`${base()}${endpoint}`, {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify(buildCraPayload()),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    const saved = await res.json();
+    craId = saved.id; craStatus = saved.status;
+    updateCraButtons();
+    setStatus(statusEl, 'CRA sauvegardé.', 'ok');
+  } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
+}
+
+async function submitCra() {
+  const statusEl = document.getElementById('cra-action-status');
+  if (!confirm('Soumettre ce CRA pour validation ? Vous ne pourrez plus le modifier.')) return;
+  setStatus(statusEl, 'Soumission…');
+  try {
+    const res = await fetch(`${base()}/cra/submit`, {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify(buildCraPayload()),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    const saved = await res.json();
+    craId = saved.id; craStatus = saved.status; craSubmittedAt = saved.submittedAt;
+    updateCraButtons();
+    setStatus(statusEl, 'CRA soumis avec succès. En attente de validation.', 'ok');
+  } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
+}
+
+async function recallCra(_user) {
+  const statusEl = document.getElementById('cra-action-status');
+  if (!confirm('Retirer votre soumission ? Le CRA repassera en brouillon et pourra être modifié.')) return;
+  setStatus(statusEl, 'Retrait en cours…');
+  try {
+    const res = await fetch(`${base()}/cra/recall`, {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify(buildCraPayload()),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    const saved = await res.json();
+    craId = saved.id; craStatus = saved.status; craSubmittedAt = null;
+    renderCraCalendar();
+    updateCraButtons();
+    setStatus(statusEl, 'Soumission retirée. Vous pouvez modifier et re-soumettre.', 'ok');
+  } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
+}
+
+async function loadHistory(user) {
+  const start    = document.getElementById('hist-start').value;
+  const end      = document.getElementById('hist-end').value;
+  const statusEl = document.getElementById('hist-status');
+  const resultEl = document.getElementById('hist-result');
+
+  setStatus(statusEl, 'Chargement…');
+  resultEl.style.display = 'none';
+
+  try {
+    const p = new URLSearchParams({ start, end, consultant: user.name, company: user.company });
+    const res = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const items = await res.json();
+
+    if (!items.length) { setStatus(statusEl, 'Aucun CRA trouvé sur cette période.', ''); return; }
+
+    setStatus(statusEl, `${items.length} CRA trouvé${items.length > 1 ? 's' : ''}.`, 'ok');
+    resultEl.innerHTML = renderHistoryList(items);
+    resultEl.style.display = 'block';
+  } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
+}
+
+function renderHistoryList(items) {
+  const STATUS_LABEL = { BROUILLON: 'Brouillon', SOUMIS: 'Soumis', VALIDE: 'Validé', REFUSE: 'Refusé' };
+  let html = '<div class="inv-report-list">';
+  for (const cra of items) {
+    let days = '—';
+    if (cra.totalDays != null) {
+      days = cra.totalDays % 1 === 0 ? String(cra.totalDays) : Number(cra.totalDays).toFixed(1);
+    }
+    const status = cra.status || 'BROUILLON';
+    const refusedBlock = status === 'REFUSE' && cra.refusedReason
+      ? `<p class="refused-reason" style="margin:4px 0 0;font-size:12px;color:#fca5a5;font-style:italic">
+           Motif : ${escapeHtml(cra.refusedReason)}
+         </p>`
+      : '';
+    html += `
+      <div class="inv-report-row">
+        <div class="inv-rep-meta">
+          <span class="inv-rep-name">${escapeHtml(cra.billingMonth || '—')}</span>
+          <span class="inv-rep-detail">${escapeHtml(cra.clientCompany || '—')}</span>
+          ${refusedBlock}
+        </div>
+        <div class="inv-rep-amounts">
+          <span class="inv-rep-kv"><span>Jours</span><strong>${escapeHtml(days)}</strong></span>
+          <span class="inv-rep-kv"><span>Statut</span>
+            <strong class="cra-status-inline ${status.toLowerCase()}">${STATUS_LABEL[status] || status}</strong>
+          </span>
+          ${cra.validatedBy ? `<span class="inv-rep-kv"><span>Validé par</span><strong>${escapeHtml(cra.validatedBy)}</strong></span>` : ''}
+        </div>
+      </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+// ============================================================
+// ABSENCES
+// ============================================================
+function initAbsences(user) {
+  document.getElementById('abs-load').addEventListener('click', () => loadAbsences(user));
+}
+
+async function loadAbsences(user) {
+  const monthStr = document.getElementById('abs-month').value;
+  const statusEl = document.getElementById('abs-status');
+  const calCard  = document.getElementById('abs-cal-card');
+
+  if (!monthStr) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
+  setStatus(statusEl, 'Chargement…');
+  calCard.style.display = 'none';
+
+  try {
+    const absenceMap = await buildAbsenceMap(monthStr, user);
+    renderAbsenceCalendar(monthStr, absenceMap);
+    const count = absenceMap.size;
+    const msg = count
+      ? `${count} jour${count > 1 ? 's' : ''} d'absence ce mois.`
+      : 'Aucune absence ce mois.';
+    setStatus(statusEl, msg, count ? 'ok' : '');
+    calCard.style.display = '';
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+/**
+ * Construit une Map<dateStr, 1|0.5> depuis deux sources :
+ *  1. /cra/absences — périodes km (toujours 1j)
+ *  2. /cra/report   — entrées CRA : ABSENT=1, TRAVAIL 0.5j=0.5 (demi-journée)
+ */
+async function buildAbsenceMap(monthStr, user) {
+  const map = new Map();
+
+  // Source 1 : absences km
+  const pAbs = new URLSearchParams({ month: monthStr, company: user.company, consultant: user.name });
+  const resAbs = await fetch(`${base()}/cra/absences?${pAbs}`, { headers: authHeaders() });
+  if (!resAbs.ok) throw new Error(`HTTP ${resAbs.status}`);
+  const kmPeriods = await resAbs.json();
+  kmPeriods.forEach(p => {
+    for (let ms = new Date(p.from).getTime(); ms <= new Date(p.to).getTime(); ms += DAY_MS) {
+      map.set(new Date(ms).toISOString().substring(0, 10), 1);
+    }
+  });
+
+  // Source 2 : entrées CRA (non bloquant si indisponible)
+  try {
+    const pCra = new URLSearchParams({ start: monthStr, end: monthStr, consultant: user.name, company: user.company });
+    const resCra = await fetch(`${base()}/cra/report?${pCra}`, { headers: authHeaders() });
+    if (resCra.ok) {
+      const items = await resCra.json();
+      const myCra = items.find(item =>
+        item.billingMonth === monthStr &&
+        (item.consultant || '').trim().toLowerCase() === user.name.toLowerCase()
+      );
+      if (myCra?.entriesJson) {
+        JSON.parse(myCra.entriesJson).forEach(e => {
+          if (e.type === 'ABSENT') {
+            map.set(e.date, 1);
+          } else if (e.type === 'TRAVAIL' && e.value === 0.5) {
+            map.set(e.date, 0.5);
+          }
+        });
+      }
+    }
+  } catch {
+    // CRA non disponible — on continue avec les données km uniquement
+  }
+
+  return map;
+}
+
+function renderAbsenceCalendar(monthStr, absenceMap) {
+  const [y, m]      = monthStr.split('-').map(Number);
+  const firstDow    = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const holidays    = craHolidays(y);
+
+  document.getElementById('abs-cal-title').textContent = `${MONTHS_FR[m - 1]} ${y}`;
+
+  let html = '';
+  for (let i = 0; i < firstDow; i++) html += '<div class="cra-day empty"></div>';
+
+  let totalAbsent = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr   = `${y}-${pad(m)}-${pad(d)}`;
+    const dow       = new Date(y, m - 1, d).getDay();
+    const isWeekend = dow === 0 || dow === 6;
+    const isHoliday = holidays.has(dateStr);
+    const abVal     = absenceMap.get(dateStr);
+
+    let cls = 'cra-day';
+    let lbl = '';
+    if (isWeekend)          { cls += ' weekend'; }
+    else if (isHoliday)     { cls += ' holiday'; lbl = 'Férié'; }
+    else if (abVal === 1)   { cls += ' absent';  lbl = 'Abs.';  totalAbsent += 1; }
+    else if (abVal === 0.5) { cls += ' half';    lbl = '½j';    totalAbsent += 0.5; }
+    else                    { cls += ' full';    lbl = '1j'; }
+
+    html += `<div class="${cls}">
+      <span class="cra-day-num">${d}</span>
+      <span class="cra-day-val">${lbl}</span>
+    </div>`;
+  }
+
+  document.getElementById('abs-cal-grid').innerHTML = html;
+  document.getElementById('abs-total-days').textContent =
+    totalAbsent % 1 === 0 ? String(totalAbsent) : totalAbsent.toFixed(1);
+
+  const periodEl = document.getElementById('abs-periods-list');
+  if (!absenceMap.size) {
+    periodEl.innerHTML = '<p class="muted-sm">Aucune absence enregistrée ce mois.</p>';
+    return;
+  }
+
+  // Regrouper les jours consécutifs pour afficher les périodes
+  const sortedDays = [...absenceMap.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const periods = [];
+  let from = sortedDays[0], to = sortedDays[0];
+  for (let i = 1; i < sortedDays.length; i++) {
+    const next = new Date(new Date(to).getTime() + DAY_MS).toISOString().substring(0, 10);
+    if (next === sortedDays[i]) {
+      to = sortedDays[i];
+    } else {
+      periods.push({ from, to });
+      from = sortedDays[i]; to = sortedDays[i];
+    }
+  }
+  periods.push({ from, to });
+
+  let periodHtml = '<div class="abs-periods">';
+  periods.forEach(p => {
+    const fromDate = new Date(p.from);
+    const toDate   = new Date(p.to);
+    const fmtDate  = d => `${d.getDate()} ${MONTHS_FR[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
+    const days     = Math.round((toDate - fromDate) / DAY_MS) + 1;
+    periodHtml += `<div class="abs-period-row">
+      <span class="abs-period-range">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        ${p.from === p.to ? fmtDate(fromDate) : `${fmtDate(fromDate)} → ${fmtDate(toDate)}`}
+      </span>
+      <span class="abs-period-days">${days} jour${days > 1 ? 's' : ''}</span>
+    </div>`;
+  });
+  periodHtml += '</div>';
+  periodEl.innerHTML = periodHtml;
+}
+
+// ============================================================
+// NOTES DE FRAIS
+// ============================================================
+
+let notesAbsences = []; // [{ from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }]
+
+function initNotes(user) {
+  document.getElementById('notes-load-absences').addEventListener('click', () => loadAbsencesForNotes(user));
+  document.getElementById('notes-add-absence').addEventListener('click',   addNotesAbsence);
+  document.getElementById('notes-submit').addEventListener('click',        () => submitNotesSaisie(user));
+  document.getElementById('notes-upload-btn').addEventListener('click',    () => uploadJustificatif(user));
+  document.getElementById('notes-report-load').addEventListener('click',   () => loadNotesReport(user));
+  document.getElementById('notes-report-pdf').addEventListener('click',    () => downloadNotesReport('pdf',   user));
+  document.getElementById('notes-report-excel').addEventListener('click',  () => downloadNotesReport('excel', user));
+
+  // Exemples express — pré-remplissent le textarea
+  document.querySelectorAll('.btn-example').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const textarea = document.getElementById('notes-text');
+      textarea.value = btn.dataset.example;
+      textarea.focus();
+      textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+}
+
+async function loadNotesReport(user) {
+  const monthStr = document.getElementById('notes-report-month').value;
+  const statusEl = document.getElementById('notes-report-status');
+  const listEl   = document.getElementById('notes-report-list');
+
+  if (!monthStr) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
+  setStatus(statusEl, 'Chargement…');
+  listEl.style.display = 'none';
+
+  try {
+    const [y, mo] = monthStr.split('-').map(Number);
+    const start   = `${y}-${pad(mo)}-01`;
+    const end     = `${y}-${pad(mo)}-${new Date(y, mo, 0).getDate()}`;
+    const p = new URLSearchParams({ start, end, consultantEmail: user.email });
+    const res = await fetch(`${base()}/expenses/report?${p}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data     = await res.json();
+    const expenses = Array.isArray(data) ? data : (data.expenses || []);
+
+    if (!expenses.length) {
+      setStatus(statusEl, 'Aucune note de frais ce mois.', '');
+      return;
+    }
+
+    setStatus(statusEl, `${expenses.length} dépense${expenses.length > 1 ? 's' : ''}.`, 'ok');
+    listEl.innerHTML = renderConsultantExpenses(expenses);
+    listEl.style.display = '';
+
+    // PDF/Excel uniquement quand toutes les dépenses ont un statut final (APPROVED ou REFUSED)
+    const allSettled = expenses.every(x => x.approvalStatus === 'APPROVED' || x.approvalStatus === 'REFUSED');
+    document.getElementById('notes-report-pdf').style.display   = allSettled ? '' : 'none';
+    document.getElementById('notes-report-excel').style.display = allSettled ? '' : 'none';
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+function renderConsultantExpenses(expenses) {
+  const APPROVAL = {
+    APPROVED: '<span class="approval-badge approved">Approuvé</span>',
+    REFUSED:  '<span class="approval-badge refused">Refusé</span>',
+    PENDING:  '<span class="approval-badge pending">En attente</span>',
+  };
+
+  let html = '<div class="consultant-expense-list">';
+  for (const exp of expenses) {
+    const badge = exp.approvalStatus
+      ? (APPROVAL[exp.approvalStatus] || '<span class="approval-badge pending">En attente</span>')
+      : '<span class="approval-badge none">—</span>';
+    const refusalNote = exp.approvalStatus === 'REFUSED' && exp.approvalNote
+      ? `<p class="refused-reason">Motif : ${escapeHtml(exp.approvalNote)}</p>`
+      : '';
+    html += `
+      <div class="cons-expense-row">
+        <div class="cons-exp-meta">
+          <span class="cons-exp-date">${escapeHtml(exp.date || '—')}</span>
+          <span class="cons-exp-type">${escapeHtml(exp.type || '—')}</span>
+          <span class="cons-exp-desc">${escapeHtml(exp.description || '')}</span>
+        </div>
+        <div class="cons-exp-right">
+          <span class="cons-exp-amount">${exp.amount != null ? Number(exp.amount).toFixed(2) + ' ' + (exp.currency || 'EUR') : '—'}</span>
+          ${badge}
+          ${refusalNote}
+        </div>
+      </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+async function loadAbsencesForNotes(user) {
+  const monthStr = document.getElementById('notes-km-month').value;
+  const section  = document.getElementById('notes-absences-section');
+  const statusEl = document.getElementById('notes-status');
+
+  if (!monthStr) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
+  setStatus(statusEl, 'Chargement des absences…');
+
+  try {
+    const p = new URLSearchParams({ month: monthStr, company: user.company, consultant: user.name });
+    const res = await fetch(`${base()}/cra/absences?${p}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    notesAbsences = await res.json();
+    renderNotesAbsences();
+    section.style.display = '';
+    const n = notesAbsences.length;
+    setStatus(statusEl, `${n} période${n !== 1 ? 's' : ''} d'absence chargée${n !== 1 ? 's' : ''}.`, n ? 'ok' : '');
+  } catch (e) {
+    notesAbsences = [];
+    setStatus(statusEl, 'Erreur chargement absences : ' + e.message, 'err');
+  }
+}
+
+function renderNotesAbsences() {
+  const list = document.getElementById('notes-absences-list');
+  if (!notesAbsences.length) {
+    list.innerHTML = '<p class="muted-sm">Aucune absence. Ajoutez une période si besoin.</p>';
+    return;
+  }
+  list.innerHTML = notesAbsences.map((p, i) => `
+    <div class="absence-period-row" data-idx="${i}">
+      <input type="date" class="abs-from" value="${p.from}" data-idx="${i}">
+      <span class="abs-arrow">→</span>
+      <input type="date" class="abs-to" value="${p.to}" data-idx="${i}">
+      <button class="btn-remove-abs" data-idx="${i}" type="button">✕</button>
+    </div>`).join('');
+
+  list.querySelectorAll('.abs-from').forEach(inp => {
+    inp.addEventListener('change', () => { notesAbsences[+inp.dataset.idx].from = inp.value; });
+  });
+  list.querySelectorAll('.abs-to').forEach(inp => {
+    inp.addEventListener('change', () => { notesAbsences[+inp.dataset.idx].to = inp.value; });
+  });
+  list.querySelectorAll('.btn-remove-abs').forEach(btn => {
+    btn.addEventListener('click', () => {
+      notesAbsences.splice(+btn.dataset.idx, 1);
+      renderNotesAbsences();
+    });
+  });
+}
+
+function addNotesAbsence() {
+  const today = new Date().toISOString().substring(0, 10);
+  notesAbsences.push({ from: today, to: today });
+  renderNotesAbsences();
+  document.getElementById('notes-absences-section').style.display = '';
+}
+
+function buildAbsenceInjection() {
+  if (!notesAbsences.length) return '';
+  const lines = notesAbsences.map(p =>
+    p.from === p.to ? `absence le ${p.from}` : `absence du ${p.from} au ${p.to}`
+  );
+  return ' [absences: ' + lines.join(', ') + ']';
+}
+
+async function submitNotesSaisie(user) {
+  const textEl   = document.getElementById('notes-text');
+  const statusEl = document.getElementById('notes-status');
+  const resultEl = document.getElementById('notes-result');
+  const text     = textEl.value.trim();
+
+  if (!text) { setStatus(statusEl, 'Saisissez un texte.', 'err'); return; }
+
+  const fullText = text + buildAbsenceInjection();
+  setStatus(statusEl, 'Analyse en cours…');
+  resultEl.style.display = 'none';
+
+  try {
+    const res = await fetch(`${base()}/reasoning/analyze`, {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify({ text: fullText, consultantEmail: user.email }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    await res.json();
+    setStatus(statusEl, 'Note de frais enregistrée avec succès.', 'ok');
+    textEl.value = '';
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+async function uploadJustificatif(user) {
+  const fileInput = document.getElementById('notes-file');
+  const modeEl    = document.getElementById('notes-payment-mode');
+  const statusEl  = document.getElementById('notes-upload-status');
+
+  if (!fileInput.files?.length) { setStatus(statusEl, 'Sélectionnez un fichier.', 'err'); return; }
+
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  fd.append('paymentMode', modeEl.value);
+  fd.append('consultantEmail', user.email);
+
+  setStatus(statusEl, 'Upload en cours…');
+
+  try {
+    const token = _keycloak?.token;
+    const res = await fetch(`${base()}/receipts/upload`, {
+      method:  'POST',
+      headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      body:    fd,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    await res.json();
+    setStatus(statusEl, 'Justificatif traité et note de frais créée.', 'ok');
+    fileInput.value = '';
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+async function downloadNotesReport(format, user) {
+  const monthStr = document.getElementById('notes-report-month').value;
+  const statusEl = document.getElementById('notes-report-status');
+
+  if (!monthStr) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
+  setStatus(statusEl, 'Téléchargement…');
+
+  try {
+    let url;
+    if (format === 'pdf') {
+      const p = new URLSearchParams({ month: monthStr, consultantEmail: user.email });
+      url = `${base()}/expenses/report/pdf/month?${p}`;
+    } else {
+      const [y, mo] = monthStr.split('-').map(Number);
+      const start   = `${y}-${pad(mo)}-01`;
+      const end     = `${y}-${pad(mo)}-${new Date(y, mo, 0).getDate()}`;
+      const p = new URLSearchParams({ start, end, consultantEmail: user.email });
+      url = `${base()}/expenses/report/excel?${p}`;
+    }
+
+    const res = await fetch(url, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href     = URL.createObjectURL(blob);
+    link.download = format === 'pdf' ? `notes-${monthStr}.pdf` : `notes-${monthStr}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    setStatus(statusEl, 'Téléchargement lancé.', 'ok');
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}

@@ -1,0 +1,28 @@
+---
+# StorageClass sans provisionnement dynamique — la liaison PV/PVC est statique
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: weaviate-hostpath
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: Immediate
+reclaimPolicy: Retain
+
+---
+# PersistentVolume pointant vers /Users/younes/data/new-weaviate sur le nœud host
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: weaviate-pv
+  labels:
+    app: weaviate
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: weaviate-hostpath
+  hostPath:
+    path: /Users/younes/data/weaviate
+    type: DirectoryOrCreate

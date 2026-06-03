@@ -1,12 +1,18 @@
 replicaCount: 1
+
+image:
+  pullPolicy: IfNotPresent   # utilise le cache Docker local, pas de re-pull si l'image existe
+
 persistence:
   enabled: true
   size: 20Gi
+  storageClassName: weaviate-hostpath   # référence le StorageClass défini dans pv-weaviate.yaml
+
 resources:
   requests:
     cpu: 500m
     memory: 1Gi
+
 service:
   type: ClusterIP
   port: 8080
-

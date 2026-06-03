@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Espace consultant — IA-INSIGHT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- Configuration externalisée (URLs, realm, clientId) -->
+  <script src="config.js"></script>
+  <!-- Keycloak JS adapter — chargé dynamiquement depuis le serveur Keycloak -->
+  <script>
+    globalThis.KEYCLOAK_URL = (globalThis.APP_CONFIG || {}).keycloakUrl
+      || localStorage.getItem('keycloakUrl');
+  </script>
+  <script id="keycloak-script"></script>
+  <script>
+    (function() {
+      var s = document.getElementById('keycloak-script');
+      s.src = globalThis.KEYCLOAK_URL + '/js/keycloak.js';
+      s.onload = function() {
+        var a = document.createElement('script');
+        a.src = 'app.js';
+        document.body.appendChild(a);
+      };
+      s.onerror = function() {
+        document.body.innerHTML = `
+          <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+                      background:#0d1017;font-family:'Space Grotesk',system-ui">
+            <div style="text-align:center;color:#f0f0f0;max-width:480px;padding:2rem">
+              <div style="font-size:2.5rem;margin-bottom:1rem">⚠️</div>
+              <h2 style="color:#2ce5a7;margin-bottom:.5rem">Service d'authentification indisponible</h2>
+              <p style="color:#8892a4">
+                La connexion au serveur d'authentification a échoué.<br>
+                Veuillez contacter votre administrateur système.
+              </p>
+            </div>
+          </div>`;
+      };
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- ====== ÉCRAN DE CONNEXION ====== -->
+  <div id="login-screen" class="login-screen">
+    <div class="login-card">
+      <p class="eyebrow">IA-INSIGHT</p>
+      <h1>Espace consultant</h1>
+      <p class="login-lede">Connectez-vous avec votre adresse email professionnelle.</p>
+      <form id="login-form" class="login-form" autocomplete="on">
+        <label class="inline">
+          Adresse email
+          <input id="login-email" type="email" autocomplete="email" placeholder="prenom.nom@ia-insight.fr" required>
+        </label>
+        <label class="inline">
+          Mot de passe
+          <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+        </label>
+        <button type="submit" class="btn-primary btn-block">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Se connecter
+        </button>
+        <div id="login-status" class="status"></div>
+      </form>
+      <p class="login-hint">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Authentification de démonstration — intégration Keycloak à venir
+      </p>
+      <div class="login-demo-users">
+        <p class="demo-label">Comptes de démo</p>
+        <div class="demo-list">
+          <button class="demo-user" data-email="alice.martin@ia-insight.fr"    data-pwd="demo123">alice.martin@ia-insight.fr</button>
+          <button class="demo-user" data-email="bob.dupont@ia-insight.fr"      data-pwd="demo123">bob.dupont@ia-insight.fr</button>
+          <button class="demo-user" data-email="charlie.bernard@freelance.com" data-pwd="demo123">charlie.bernard@freelance.com</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== APPLICATION ====== -->
+  <div id="app" class="page" style="display:none">
+
+    <!-- HEADER -->
+    <header>
+      <div class="header-brand">
+        <p class="eyebrow">IA-INSIGHT — Espace consultant</p>
+        <h1>Bonjour, <span id="user-display-name">—</span></h1>
+        <p class="lede">Gérez vos CRA et consultez vos absences.</p>
+      </div>
+      <div class="header-config">
+        <div class="user-meta">
+          <span id="user-email-badge" class="user-email-badge"></span>
+          <span id="user-role-badge" class="user-role-badge"></span>
+        </div>
+        <!-- Notification bell -->
+        <div id="notif-bell-wrap" style="position:relative">
+          <button id="notif-bell" class="btn-icon notif-bell-btn" title="Notifications">
+            🔔
+            <span id="notif-badge" class="badge hidden">0</span>
+          </button>
+          <div id="notif-dropdown" class="notif-dropdown hidden">
+            <div class="notif-header">
+              <span>Notifications</span>
+              <button id="notif-read-all" class="notif-read-all-btn">Tout lire</button>
+            </div>
+            <div id="notif-list" class="notif-list"></div>
+          </div>
+        </div>
+
+        <button id="logout-btn" class="btn-ghost btn-logout">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Déconnexion
+        </button>
+      </div>
+    </header>
+
+    <!-- TABS -->
+    <nav class="tabs"><div role="tablist" style="display:contents">
+      <button class="tab active" data-tab="cra" role="tab">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="12" y2="18"/></svg>
+        Mes CRA
+      </button>
+      <button class="tab" data-tab="notes" role="tab">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Notes de frais
+      </button>
+      <button class="tab" data-tab="absences" role="tab">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="9" y1="16" x2="9.01" y2="16"/><line x1="15" y1="16" x2="15.01" y2="16"/></svg>
+        Mes absences
+      </button>
+    </div></nav>
+
+    <!-- PANELS -->
+    <main>
+
+      <!-- ===== MES CRA ===== -->
+      <section id="tab-cra" class="tab-panel active">
+        <div class="cra-layout">
+
+          <!-- Sélection du mois -->
+          <div class="card" style="grid-column: 1 / -1">
+            <p class="eyebrow">Saisie mensuelle</p>
+            <h2>Compte Rendu d'Activité</h2>
+            <p class="card-desc">Cliquez sur un jour pour alterner : journée complète (1j) → demi-journée (½j) → absent. Soumettez pour validation par votre responsable.</p>
+            <div class="form-stack">
+              <div class="form-row">
+                <label class="inline" style="flex:2">
+                  Société cliente
+                  <input id="cra-client" type="text" placeholder="INFOGENE DIGITAL">
+                </label>
+                <label class="inline">
+                  Mois
+                  <input type="month" id="cra-month">
+                </label>
+              </div>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="cra-load" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Charger / Nouveau
+              </button>
+              <button id="cra-import-absences" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Importer mes absences
+              </button>
+            </div>
+            <div id="cra-load-status" class="status"></div>
+          </div>
+
+          <!-- Calendrier -->
+          <div class="card" id="cra-cal-card" style="grid-column: 1 / -1; display:none">
+            <!-- Refusal notice — shown when CRA status is REFUSE -->
+            <div id="cra-refused-notice" class="refused-reason" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:10px;font-style:normal"></div>
+            <div class="cra-cal-header">
+              <div>
+                <p class="eyebrow">Calendrier mensuel</p>
+                <h2 id="cra-cal-title">Janvier 2026</h2>
+              </div>
+              <div class="cra-summary">
+                <span class="cra-total-label">Total</span>
+                <span id="cra-total-days" class="cra-total-value">0</span>
+                <span class="cra-total-unit">jours</span>
+                <span id="cra-status-badge" class="cra-status-badge brouillon">BROUILLON</span>
+              </div>
+            </div>
+
+            <div class="cra-legend">
+              <span class="cra-leg full">Journée (1j)</span>
+              <span class="cra-leg half">Demi-journée (½j)</span>
+              <span class="cra-leg absent">Absent</span>
+              <span class="cra-leg holiday">Férié</span>
+              <span class="cra-leg weekend">Weekend</span>
+            </div>
+
+            <div class="cra-cal-grid-wrap">
+              <div class="cra-weekdays">
+                <div>Lun</div><div>Mar</div><div>Mer</div>
+                <div>Jeu</div><div>Ven</div>
+                <div class="weekend-label">Sam</div><div class="weekend-label">Dim</div>
+              </div>
+              <div class="cra-cal-grid" id="cra-cal-grid"></div>
+            </div>
+
+            <div class="actions-row" style="margin-top:16px">
+              <button id="cra-save" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                Sauvegarder
+              </button>
+              <button id="cra-submit" class="btn-primary" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                Soumettre pour validation
+              </button>
+              <button id="cra-recall" class="btn-recall" style="display:none">
+                ↩ Retirer ma soumission
+              </button>
+            </div>
+            <div id="cra-action-status" class="status"></div>
+          </div>
+
+          <!-- Historique -->
+          <div class="card" style="grid-column: 1 / -1">
+            <p class="eyebrow">Historique</p>
+            <h2>Mes CRA passés</h2>
+            <p class="card-desc">Retrouvez tous vos CRA soumis et validés.</p>
+            <div class="form-stack">
+              <div class="form-row">
+                <label class="inline">
+                  De (mois)
+                  <input type="month" id="hist-start">
+                </label>
+                <label class="inline">
+                  À (mois)
+                  <input type="month" id="hist-end">
+                </label>
+              </div>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="hist-load" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Charger l'historique
+              </button>
+            </div>
+            <div id="hist-status" class="status"></div>
+            <div id="hist-result" style="display:none; margin-top:16px"></div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===== NOTES DE FRAIS ===== -->
+      <section id="tab-notes" class="tab-panel">
+        <div class="notes-layout">
+
+          <!-- Saisie libre -->
+          <div class="card" style="grid-column: 1 / -1">
+            <p class="eyebrow">Saisie libre</p>
+            <h2>Nouvelle note de frais</h2>
+            <p class="card-desc">Décrivez votre dépense en langage naturel. Pour les frais km mensuels, chargez vos absences pour qu'elles soient exclues automatiquement du calcul.</p>
+            <div class="form-stack">
+              <div class="form-row">
+                <label class="inline" style="flex:2">
+                  Description
+                  <textarea id="notes-text" rows="3" placeholder="Ex : frais km janvier pour IA-INSIGHT sur 44 km…"></textarea>
+                </label>
+                <label class="inline">
+                  Mois (absences km)
+                  <input type="month" id="notes-km-month">
+                </label>
+              </div>
+            </div>
+            <!-- Exemples express -->
+            <div class="examples-row" style="margin-top:10px">
+              <span class="examples-label">Exemples :</span>
+              <button class="btn-example" data-example="Le 5 mai j'ai mangé au restaurant DE LA PORTE et j'ai payé 28 € sur ma carte personnelle">🍽 Restaurant</button>
+              <button class="btn-example" data-example="Nuit à l'hôtel Mercure Paris le 12 mai, 145 € réglés par carte business">🏨 Hôtel</button>
+              <button class="btn-example" data-example="Taxi Uber le 8 mai de Paris Gare de Lyon à La Défense, 32 €, payé en personnel">🚕 Taxi</button>
+              <button class="btn-example" data-example="Achat d'un écran Dell 27 pouces le 15 mai pour le télétravail, 389 € carte business">🖥 Matériel</button>
+              <button class="btn-example" data-example="Train Paris-Lyon le 20 mai aller-retour, 112 €, carte business">🚆 Transport</button>
+              <button class="btn-example" data-example="Frais kilométriques mai pour IA-INSIGHT, 44 km aller-retour quotidien, voiture 7CV">🚗 Km mensuel</button>
+            </div>
+
+            <div class="actions-row" style="margin-top:8px">
+              <button id="notes-load-absences" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Charger mes absences
+              </button>
+            </div>
+            <div id="notes-absences-section" style="display:none; margin-top:12px">
+              <p class="eyebrow">Périodes d'absence (éditables — injectées dans le texte km)</p>
+              <div id="notes-absences-list"></div>
+              <button id="notes-add-absence" class="btn-ghost" style="margin-top:8px; font-size:13px">+ Ajouter une période</button>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="notes-submit" class="btn-primary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                Analyser et créer
+              </button>
+            </div>
+            <div id="notes-status" class="status"></div>
+            <div id="notes-result" style="display:none; margin-top:16px"></div>
+          </div>
+
+          <!-- Upload justificatif -->
+          <div class="card">
+            <p class="eyebrow">Justificatif</p>
+            <h2>Upload photo / PDF</h2>
+            <p class="card-desc">OCR automatique + extraction de la dépense.</p>
+            <div class="form-stack">
+              <label class="inline">
+                Fichier
+                <input type="file" id="notes-file" accept="image/*,application/pdf">
+              </label>
+              <label class="inline">
+                Mode de paiement
+                <select id="notes-payment-mode">
+                  <option value="Personnel">Personnel</option>
+                  <option value="Business">Business</option>
+                </select>
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="notes-upload-btn" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Analyser le justificatif
+              </button>
+            </div>
+            <div id="notes-upload-status" class="status"></div>
+          </div>
+
+          <!-- Rapport -->
+          <div class="card">
+            <p class="eyebrow">Rapport</p>
+            <h2>Mes notes de frais</h2>
+            <p class="card-desc">Consultez vos notes de frais et leur statut d'approbation, ou téléchargez le rapport.</p>
+            <div class="form-stack">
+              <label class="inline">
+                Mois
+                <input type="month" id="notes-report-month">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="notes-report-load" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Charger
+              </button>
+              <button id="notes-report-pdf" class="btn-secondary" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                PDF
+              </button>
+              <button id="notes-report-excel" class="btn-secondary" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                Excel
+              </button>
+            </div>
+            <div id="notes-report-status" class="status"></div>
+            <div id="notes-report-list" style="display:none; margin-top:14px"></div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ===== MES ABSENCES ===== -->
+      <section id="tab-absences" class="tab-panel">
+        <div class="cra-layout">
+
+          <!-- Sélection période -->
+          <div class="card" style="grid-column: 1 / -1">
+            <p class="eyebrow">Suivi des absences</p>
+            <h2>Mes absences par mois</h2>
+            <p class="card-desc">Absences importées depuis vos notes de frais kilométriques et vos CRA soumis.</p>
+            <div class="form-stack">
+              <div class="form-row">
+                <label class="inline">
+                  Mois
+                  <input type="month" id="abs-month">
+                </label>
+              </div>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="abs-load" class="btn-secondary">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                Charger mes absences
+              </button>
+            </div>
+            <div id="abs-status" class="status"></div>
+          </div>
+
+          <!-- Vue calendrier absences -->
+          <div class="card" id="abs-cal-card" style="grid-column: 1 / -1; display:none">
+            <div class="cra-cal-header">
+              <div>
+                <p class="eyebrow">Vue mensuelle</p>
+                <h2 id="abs-cal-title">Janvier 2026</h2>
+              </div>
+              <div class="cra-summary">
+                <span class="cra-total-label">Absences</span>
+                <span id="abs-total-days" class="cra-total-value abs-accent">0</span>
+                <span class="cra-total-unit">jours</span>
+              </div>
+            </div>
+
+            <div class="cra-legend">
+              <span class="cra-leg full">Travaillé</span>
+              <span class="cra-leg absent">Absent</span>
+              <span class="cra-leg holiday">Férié</span>
+              <span class="cra-leg weekend">Weekend</span>
+            </div>
+
+            <div class="cra-cal-grid-wrap">
+              <div class="cra-weekdays">
+                <div>Lun</div><div>Mar</div><div>Mer</div>
+                <div>Jeu</div><div>Ven</div>
+                <div class="weekend-label">Sam</div><div class="weekend-label">Dim</div>
+              </div>
+              <div class="cra-cal-grid" id="abs-cal-grid"></div>
+            </div>
+
+            <!-- Détail des périodes -->
+            <div id="abs-periods-list" style="margin-top:16px"></div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+</body>
+</html>

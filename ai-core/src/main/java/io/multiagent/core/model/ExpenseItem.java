@@ -53,6 +53,34 @@ public class ExpenseItem {
     /** Société/organisation concernée par la note de frais */
     private String company;
 
+    /** Email du consultant auteur de la note de frais */
+    private String consultantEmail;
+
+    /** Statut d'approbation (PENDING | APPROVED | REFUSED) */
+    private String approvalStatus;
+
+    /** Note/motif du refus ou de l'approbation */
+    private String approvalNote;
+
+    /** UUID Weaviate de l'objet (champ _additional.id) — utilisé pour approve/refuse */
+    private String weaviateId;
+
+    /** Vrai si le LLM a détecté un frais km portant sur un mois entier (expansion journalière déclenchée côté Java) */
+    private Boolean monthly;
+
+    /** Périodes d'absence pour frais_km mensuel — renseigné par le LLM, utilisé par expandKmMonthly */
+    private List<AbsencePeriod> absencePeriods;
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AbsencePeriod {
+        /** Date de début ISO (YYYY-MM-DD) */
+        private String from;
+        /** Date de fin ISO (YYYY-MM-DD), bornes incluses */
+        private String to;
+    }
+
     // --------------------------------------------------------------------
     // Helpers pour parser la réponse JSON du LLM
     // --------------------------------------------------------------------

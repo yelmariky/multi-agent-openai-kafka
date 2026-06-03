@@ -1,0 +1,92 @@
+# Deployment Kong 3.6 en mode DB-less (configuration déclarative via ConfigMap).
+# Pas de base de données — la config est chargée depuis le fichier kong.yml monté en volume.
+# Toute modification de kong.yml nécessite un rollout : kubectl rollout restart deployment/kong -n gateway
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: gateway
+  labels:
+    app: kong
+    app.kubernetes.io/part-of: ia-insight-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kong
+  template:
+    metadata:
+      labels:
+        app: kong
+    spec:
+      # Init container pour valider la config avant démarrage
+      initContainers:
+        - name: kong-config-check
+          image: kong:3.6
+          command: ["kong", "config", "parse", "/kong/declarative/kong.yml"]
+          volumeMounts:
+            - name: kong-config
+              mountPath: /kong/declarative
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+      containers:
+        - name: kong
+          image: kong:3.6
+          ports:
+            - name: proxy
+              containerPort: 8000
+            - name: admin
+              containerPort: 8001
+          env:
+            # Mode DB-less — pas de base de données
+            - name: KONG_DATABASE
+              value: "off"
+            # Chemin vers la config déclarative montée en volume
+            - name: KONG_DECLARATIVE_CONFIG
+              value: "/kong/declarative/kong.yml"
+            # Logs d'accès vers stdout (pour kubectl logs)
+            - name: KONG_PROXY_ACCESS_LOG
+              value: "/dev/stdout"
+            - name: KONG_ADMIN_ACCESS_LOG
+              value: "/dev/stdout"
+            # Logs d'erreur vers stderr
+            - name: KONG_PROXY_ERROR_LOG
+              value: "/dev/stderr"
+            - name: KONG_ADMIN_ERROR_LOG
+              value: "/dev/stderr"
+            # Admin API accessible depuis l'intérieur du pod (ne pas exposer en prod sans auth)
+            - name: KONG_ADMIN_LISTEN
+              value: "0.0.0.0:8001"
+            # Désactiver les telemetries Kong en dev
+            - name: KONG_ANONYMOUS_REPORTS
+              value: "off"
+          volumeMounts:
+            - name: kong-config
+              mountPath: /kong/declarative
+              readOnly: true
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: kong-config
+          configMap:
+            name: kong-config

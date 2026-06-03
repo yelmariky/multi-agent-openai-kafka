@@ -11,9 +11,6 @@
 
     <modules>
         <module>ai-core</module>
-        <module>intent-agent</module>
-        <module>reasoning-agent</module>
-        <module>reassign-agent</module>
-        <module>audit-agent</module>
+        <module>invoice-service</module>
     </modules>
 </project>

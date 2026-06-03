@@ -1,0 +1,14 @@
+# PersistentVolumeClaim — lie le pod Keycloak au PV local
+# Données persistées entre les redémarrages : base H2, config runtime, sessions.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-pvc
+  namespace: keycloak
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: keycloak-hostpath
+  resources:
+    requests:
+      storage: 2Gi

@@ -1,0 +1,53 @@
+server:
+  port: ${SERVER_PORT:8083}
+
+spring:
+  application:
+    name: invoice-service
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8090/realms/ia-insight/protocol/openid-connect/certs}
+
+weaviate:
+  scheme: ${WEAVIATE_SCHEME:http}
+  host: ${WEAVIATE_HOST:?WEAVIATE_HOST is required}
+  invoice-class: ${WEAVIATE_INVOICE_CLASS:Invoice}
+  seller-profile-class: ${WEAVIATE_SELLER_PROFILE_CLASS:SellerProfile}
+  schema-init:
+    max-attempts: ${WEAVIATE_SCHEMA_INIT_MAX_ATTEMPTS:6}
+    backoff-ms: ${WEAVIATE_SCHEMA_INIT_BACKOFF_MS:10000}
+
+openai:
+  api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+  embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
+  retry:
+    max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:4}
+    base-backoff-ms: ${OPENAI_RETRY_BASE_BACKOFF_MS:1500}
+    max-backoff-ms: ${OPENAI_RETRY_MAX_BACKOFF_MS:15000}
+
+app:
+  invoices:
+    storage-path: ${AI_CORE_INVOICES_STORAGE_PATH:/tmp/invoices}
+
+ai-core:
+  company-name: ${AI_CORE_COMPANY_NAME:IA-INSIGHT}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ["health", "prometheus"]
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    "[io.multiagent.invoice]": DEBUG

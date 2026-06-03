@@ -1,0 +1,277 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-theme-ia-insight
+  namespace: keycloak
+data:
+  theme.properties: |
+    parent=keycloak
+    import=common/keycloak
+    styles=css/login.css
+
+  login.css: |
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+    /* ── TOKENS ── */
+    :root {
+      --bg:     #0d1017;
+      --card:   #111725;
+      --accent: #2ce5a7;
+      --acc2:   #7ad7ff;
+      --fg:     #f0f0f0;
+      --muted:  #8892a4;
+      --border: rgba(255,255,255,.08);
+      --r:      12px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── PAGE ENTIÈRE ── */
+    html, body, body.login-pf {
+      min-height: 100vh;
+      background: var(--bg) !important;
+      font-family: 'Space Grotesk', system-ui, sans-serif !important;
+      color: var(--fg);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── NEUTRALISER LE LAYOUT DEUX-COLONNES KEYCLOAK ── */
+    /* Keycloak place l'en-tête à gauche et le formulaire à droite via Bootstrap grid */
+    header.login-pf-header,
+    #kc-header {
+      display: none !important;
+    }
+
+    .login-pf-page {
+      min-height: 100vh;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+      padding: 24px !important;
+      background: var(--bg) !important;
+    }
+
+    /* Neutraliser la grille Bootstrap qui décale le formulaire à droite */
+    .login-pf-page > .container,
+    .login-pf-page > .container-fluid {
+      width: 100% !important;
+      max-width: 420px !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      float: none !important;
+    }
+    .login-pf-page .row {
+      margin: 0 !important;
+      display: block !important;
+    }
+    /* Toutes les colonnes Bootstrap — override agressif */
+    .login-pf-page [class*="col-"] {
+      float: none !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      left: 0 !important;
+    }
+
+    /* ── BRANDING AU-DESSUS DE LA CARTE ── */
+    #kc-content {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+    }
+    #kc-content::before {
+      content: "IA-INSIGHT";
+      display: block;
+      text-align: center;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -.5px;
+      margin-bottom: 4px;
+      background: linear-gradient(135deg, var(--accent), var(--acc2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    #kc-content::after {
+      content: "Connectez-vous à votre espace";
+      display: block;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    /* ── CARTE FORMULAIRE ── */
+    #kc-content-wrapper {
+      background: var(--card) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--r) !important;
+      box-shadow: 0 8px 40px rgba(0,0,0,.5) !important;
+      padding: 32px !important;
+    }
+
+    /* ── TITRE "Sign in to your account" ── */
+    #kc-page-title, h1#kc-page-title {
+      font-size: 18px !important;
+      font-weight: 600 !important;
+      color: var(--fg) !important;
+      text-align: center !important;
+      margin-bottom: 24px !important;
+    }
+
+    /* ── LABELS ── */
+    label {
+      font-size: 13px !important;
+      font-weight: 500 !important;
+      color: var(--muted) !important;
+      margin-bottom: 6px !important;
+      display: block !important;
+    }
+
+    /* ── INPUTS ── */
+    input[type="text"],
+    input[type="password"],
+    input[type="email"] {
+      width: 100% !important;
+      background: rgba(255,255,255,.04) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 10px !important;
+      color: var(--fg) !important;
+      font-family: inherit !important;
+      font-size: 14px !important;
+      padding: 10px 14px !important;
+      outline: none !important;
+      transition: border-color .2s, box-shadow .2s !important;
+      -webkit-text-fill-color: var(--fg) !important;
+      box-shadow: none !important;
+    }
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    input[type="email"]:focus {
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 3px rgba(44,229,167,.12) !important;
+    }
+    /* Autofill */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus {
+      -webkit-box-shadow: 0 0 0 40px #1a2235 inset !important;
+      -webkit-text-fill-color: var(--fg) !important;
+      caret-color: var(--fg);
+    }
+
+    /* ── GROUPE AVEC ICÔNE ŒIL (password) ── */
+    .pf-c-input-group,
+    .input-group {
+      display: flex !important;
+      background: rgba(255,255,255,.04) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 10px !important;
+      overflow: hidden !important;
+    }
+    .pf-c-input-group input,
+    .input-group input {
+      border: none !important;
+      border-radius: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      flex: 1 !important;
+    }
+    .pf-c-input-group:focus-within,
+    .input-group:focus-within {
+      border-color: var(--accent) !important;
+      box-shadow: 0 0 0 3px rgba(44,229,167,.12) !important;
+    }
+    /* Bouton œil */
+    .pf-c-button.pf-m-control,
+    .input-group-addon button,
+    button[aria-label*="assword"] {
+      background: transparent !important;
+      border: none !important;
+      border-left: 1px solid var(--border) !important;
+      color: var(--muted) !important;
+      padding: 0 12px !important;
+      cursor: pointer !important;
+    }
+    .pf-c-button.pf-m-control:hover,
+    .input-group-addon button:hover {
+      color: var(--accent) !important;
+    }
+
+    /* ── FORM GROUPS ── */
+    .form-group, .pf-c-form__group { margin-bottom: 18px !important; }
+
+    /* ── BOUTON SIGN IN ── */
+    #kc-login,
+    input[type="submit"],
+    button[type="submit"],
+    .btn-primary, .pf-c-button.pf-m-primary {
+      width: 100% !important;
+      background: var(--accent) !important;
+      border: none !important;
+      border-radius: 10px !important;
+      color: #0d1017 !important;
+      font-family: inherit !important;
+      font-size: 14px !important;
+      font-weight: 600 !important;
+      padding: 11px 20px !important;
+      cursor: pointer !important;
+      transition: opacity .2s !important;
+      margin-top: 8px !important;
+    }
+    #kc-login:hover,
+    input[type="submit"]:hover,
+    button[type="submit"]:hover,
+    .btn-primary:hover { opacity: .88 !important; }
+
+    /* ── LIENS ── */
+    a, a:visited {
+      color: var(--accent) !important;
+      text-decoration: none !important;
+      font-size: 13px !important;
+    }
+    a:hover { opacity: .8 !important; }
+    #kc-form-options { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+
+    /* ── CHECKBOX ── */
+    input[type="checkbox"] { accent-color: var(--accent) !important; }
+    .checkbox label { color: var(--muted) !important; font-size: 13px !important; }
+
+    /* ── ALERTES ── */
+    .alert-error, .pf-c-alert--danger, #input-error {
+      background: rgba(239,68,68,.08) !important;
+      border: 1px solid rgba(239,68,68,.2) !important;
+      border-radius: 10px !important;
+      color: #fca5a5 !important;
+      padding: 10px 14px !important;
+      margin-bottom: 16px !important;
+      font-size: 13px !important;
+      display: block !important;
+    }
+    .alert-success {
+      background: rgba(44,229,167,.08) !important;
+      border: 1px solid rgba(44,229,167,.2) !important;
+      border-radius: 10px !important;
+      color: var(--accent) !important;
+      padding: 10px 14px !important;
+      margin-bottom: 16px !important;
+      font-size: 13px !important;
+    }
+    /* Cacher l'icône d'erreur Patternfly */
+    .alert .pficon, .pf-c-alert__icon { display: none !important; }
+
+    /* ── FOOTER ── */
+    #kc-info, #kc-info-message {
+      text-align: center !important;
+      color: var(--muted) !important;
+      font-size: 13px !important;
+      margin-top: 16px !important;
+    }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 3px; }

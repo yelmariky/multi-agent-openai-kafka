@@ -1,0 +1,137 @@
+# ConfigMap contenant la définition du realm Keycloak ia-insight.
+# Ce fichier est monté dans le pod Keycloak et importé automatiquement au démarrage
+# via la variable KC_IMPORT=/opt/keycloak/data/import/ia-insight-realm.json.
+#
+# ATTENTION : les mots de passe utilisateurs sont en clair ici (champ "value").
+# En production, utiliser un Secret K8s ou un script d'import sécurisé.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm-config
+  namespace: keycloak
+  labels:
+    app: keycloak
+data:
+  ia-insight-realm.json: |
+    {
+      "realm": "ia-insight",
+      "displayName": "IA-INSIGHT Platform",
+      "enabled": true,
+      "sslRequired": "none",
+      "loginTheme": "ia-insight",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "roles": {
+        "realm": [
+          { "name": "admin",      "description": "Administrateur principal / Manager RH" },
+          { "name": "manager",    "description": "Manager RH (accès admin frontend)" },
+          { "name": "consultant", "description": "Consultant (accès frontend consultant)" }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "frontend-admin",
+          "name": "Frontend Admin IA-INSIGHT",
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["http://localhost:3000/*"],
+          "webOrigins": ["http://localhost:3000"],
+          "protocol": "openid-connect"
+        },
+        {
+          "clientId": "frontend-consultant",
+          "name": "Frontend Consultant IA-INSIGHT",
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["http://localhost:3001/*"],
+          "webOrigins": ["http://localhost:3001"],
+          "protocol": "openid-connect"
+        },
+        {
+          "clientId": "ai-core-service",
+          "name": "AI-Core Backend Service",
+          "enabled": true,
+          "publicClient": false,
+          "bearerOnly": true,
+          "protocol": "openid-connect"
+        },
+        {
+          "clientId": "invoice-service",
+          "name": "Invoice Microservice",
+          "enabled": true,
+          "publicClient": false,
+          "bearerOnly": true,
+          "protocol": "openid-connect"
+        }
+      ],
+      "users": [
+        {
+          "username": "admin@ia-insight.fr",
+          "email": "admin@ia-insight.fr",
+          "firstName": "Admin",
+          "lastName": "Principal",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            { "type": "password", "value": "admin123", "temporary": false }
+          ],
+          "realmRoles": ["admin"]
+        },
+        {
+          "username": "manager@ia-insight.fr",
+          "email": "manager@ia-insight.fr",
+          "firstName": "Manager",
+          "lastName": "RH",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            { "type": "password", "value": "admin123", "temporary": false }
+          ],
+          "realmRoles": ["manager"]
+        },
+        {
+          "username": "alice.martin@ia-insight.fr",
+          "email": "alice.martin@ia-insight.fr",
+          "firstName": "Alice",
+          "lastName": "Martin",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            { "type": "password", "value": "demo123", "temporary": false }
+          ],
+          "realmRoles": ["consultant"]
+        },
+        {
+          "username": "bob.dupont@ia-insight.fr",
+          "email": "bob.dupont@ia-insight.fr",
+          "firstName": "Bob",
+          "lastName": "Dupont",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            { "type": "password", "value": "demo123", "temporary": false }
+          ],
+          "realmRoles": ["consultant"]
+        },
+        {
+          "username": "charlie.bernard@freelance.com",
+          "email": "charlie.bernard@freelance.com",
+          "firstName": "Charlie",
+          "lastName": "Bernard",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            { "type": "password", "value": "demo123", "temporary": false }
+          ],
+          "realmRoles": ["consultant"]
+        }
+      ]
+    }

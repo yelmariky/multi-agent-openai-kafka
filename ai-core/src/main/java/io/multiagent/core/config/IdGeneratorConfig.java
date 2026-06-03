@@ -1,6 +1,6 @@
 package io.multiagent.core.config;
 
-import io.multiagent.core.service.ExpenseIdGenerator;
+import io.multiagent.core.expense.service.ExpenseIdGenerator;
 import io.multiagent.core.service.WeaviateService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
