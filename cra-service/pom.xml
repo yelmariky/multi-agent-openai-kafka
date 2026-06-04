@@ -75,11 +75,14 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
-        <!-- Weaviate client (vector DB) -->
+        <!-- PostgreSQL + JdbcTemplate (replaces Weaviate) -->
         <dependency>
-            <groupId>io.weaviate</groupId>
-            <artifactId>client</artifactId>
-            <version>5.5.0</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
         </dependency>
 
         <!-- JSON serialization -->

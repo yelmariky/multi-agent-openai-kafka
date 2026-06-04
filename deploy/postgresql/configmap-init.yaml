@@ -13,26 +13,33 @@ data:
     CREATE EXTENSION IF NOT EXISTS vector;
 
     -- ─── Expenses ─────────────────────────────────────────────────────────────────
+    -- expense_id  : numéro séquentiel métier (ex. 1, 2, 3) dans le mois
+    -- company_id  : société (ex. "IA-INSIGHT"), clé de partitionnement multi-tenant
+    -- embedding   : vecteur OpenAI text-embedding-3-large (1536 dims)
     CREATE TABLE IF NOT EXISTS expenses (
-        id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        company_id           VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
+        id                   UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id           VARCHAR(128) NOT NULL DEFAULT 'IA-INSIGHT',
         consultant_email     VARCHAR(256),
-        expense_type         VARCHAR(64),
+        expense_id           INTEGER,
+        type                 VARCHAR(64),
         description          TEXT,
         amount               NUMERIC(12,2),
-        currency             VARCHAR(8)    NOT NULL DEFAULT 'EUR',
+        currency             VARCHAR(8)   NOT NULL DEFAULT 'EUR',
         expense_date         DATE,
         payment_mode         VARCHAR(32),
-        approval_status      VARCHAR(32)   NOT NULL DEFAULT 'PENDING',
+        approval_status      VARCHAR(32)  NOT NULL DEFAULT 'PENDING',
         approval_note        TEXT,
         km                   NUMERIC(8,2),
         source               VARCHAR(64),
-        receipt_path         VARCHAR(512),
-        raw_ocr_text         TEXT,
+        address              TEXT,
+        original_text        TEXT,
+        hash                 VARCHAR(64),
+        duplicate_flag       BOOLEAN      DEFAULT false,
+        text                 TEXT,
         absence_periods_json TEXT,
         embedding            vector(1536),
-        created_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
-        updated_at           TIMESTAMPTZ   NOT NULL DEFAULT now()
+        created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+        updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now()
     );
 
     CREATE INDEX IF NOT EXISTS idx_expenses_company
@@ -49,19 +56,20 @@ data:
 
     -- ─── CRA ──────────────────────────────────────────────────────────────────────
     CREATE TABLE IF NOT EXISTS cra (
-        id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        company_id        VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
-        consultant        VARCHAR(256)  NOT NULL,
-        billing_month     VARCHAR(7)    NOT NULL,   -- YYYY-MM
-        entries_json      TEXT,                      -- JSON array of CraDayEntry
-        total_days        NUMERIC(5,2),
-        status            VARCHAR(32)   NOT NULL DEFAULT 'BROUILLON',
-        submitted_at      TIMESTAMPTZ,
-        validated_at      TIMESTAMPTZ,
-        validated_by      VARCHAR(256),
-        refused_reason    TEXT,
-        created_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
-        updated_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id     VARCHAR(128) NOT NULL DEFAULT 'IA-INSIGHT',
+        consultant     VARCHAR(256) NOT NULL,
+        client_company VARCHAR(256),
+        billing_month  VARCHAR(7)   NOT NULL,   -- YYYY-MM
+        entries_json   TEXT,                     -- JSON array of CraDayEntry
+        total_days     NUMERIC(5,2),
+        status         VARCHAR(32)  NOT NULL DEFAULT 'BROUILLON',
+        submitted_at   TEXT,
+        validated_at   TEXT,
+        validated_by   TEXT,
+        refused_reason TEXT,
+        created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+        updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
         UNIQUE (company_id, consultant, billing_month)
     );
 
@@ -71,25 +79,41 @@ data:
         ON cra (consultant);
     CREATE INDEX IF NOT EXISTS idx_cra_status
         ON cra (status);
+    CREATE INDEX IF NOT EXISTS idx_cra_billing_month
+        ON cra (billing_month);
 
     -- ─── Invoices ─────────────────────────────────────────────────────────────────
+    -- Tous les champs de SimpleInvoiceRequest + chemins PDF/Excel + embedding
     CREATE TABLE IF NOT EXISTS invoices (
-        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        company_id      VARCHAR(128)   NOT NULL DEFAULT 'IA-INSIGHT',
-        invoice_name    VARCHAR(128)   NOT NULL,   -- F-YYYYMM-01
-        billing_month   VARCHAR(7),                -- YYYY-MM
-        invoice_date    DATE,
-        client_name     VARCHAR(256),
-        consultant_name VARCHAR(256),
-        total_ht        NUMERIC(12,2),
-        tva_rate        NUMERIC(5,2),
-        tva_amount      NUMERIC(12,2),
-        total_ttc       NUMERIC(12,2),
-        pdf_path        VARCHAR(512),
-        excel_path      VARCHAR(512),
-        embedding       vector(1536),
-        created_at      TIMESTAMPTZ    NOT NULL DEFAULT now(),
-        updated_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
+        id                   UUID           PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id           VARCHAR(128)   NOT NULL DEFAULT 'IA-INSIGHT',
+        invoice_name         VARCHAR(128),
+        invoice_date         DATE,
+        billing_month        VARCHAR(7),
+        seller_company_name  VARCHAR(256),
+        seller_address       TEXT,
+        seller_rcs           VARCHAR(64),
+        client_company_name  VARCHAR(256),
+        client_address       TEXT,
+        client_rcs           VARCHAR(64),
+        invoice_title        VARCHAR(256),
+        days_count           NUMERIC(8,4),
+        unit_price_ht        NUMERIC(12,2),
+        total_ht             NUMERIC(12,2),
+        vat_rate             NUMERIC(5,2),
+        total_ttc            NUMERIC(12,2),
+        currency             VARCHAR(8),
+        payment_due_date     DATE,
+        late_payment_clause  TEXT,
+        notes                TEXT,
+        consultant_email     VARCHAR(256),
+        source_text          TEXT,
+        pdf_path             VARCHAR(512),
+        excel_path           VARCHAR(512),
+        text                 TEXT,
+        embedding            vector(1536),
+        created_at           TIMESTAMPTZ    NOT NULL DEFAULT now(),
+        updated_at           TIMESTAMPTZ    NOT NULL DEFAULT now()
     );
 
     CREATE INDEX IF NOT EXISTS idx_invoices_company
@@ -98,20 +122,22 @@ data:
         ON invoices (invoice_name);
     CREATE INDEX IF NOT EXISTS idx_invoices_billing_month
         ON invoices (billing_month);
+    CREATE INDEX IF NOT EXISTS idx_invoices_seller
+        ON invoices (seller_company_name);
     CREATE INDEX IF NOT EXISTS idx_invoices_embedding
         ON invoices USING hnsw (embedding vector_cosine_ops)
         WITH (m = 16, ef_construction = 64);
 
-    -- ─── Document Chunks (RAG) ────────────────────────────────────────────────────
+    -- ─── Document Chunks (RAG — note-frais-service) ───────────────────────────────
     CREATE TABLE IF NOT EXISTS document_chunks (
-        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        company_id    VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
+        id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id    VARCHAR(128) NOT NULL DEFAULT 'IA-INSIGHT',
         source_id     VARCHAR(256),
         source_type   VARCHAR(64),
-        content       TEXT          NOT NULL,
+        content       TEXT         NOT NULL,
         metadata_json TEXT,
         embedding     vector(1536),
-        created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+        created_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
     );
 
     CREATE INDEX IF NOT EXISTS idx_chunks_company
@@ -122,33 +148,39 @@ data:
         ON document_chunks USING hnsw (embedding vector_cosine_ops)
         WITH (m = 16, ef_construction = 64);
 
-    -- ─── Seller Profiles ──────────────────────────────────────────────────────────
+    -- ─── Seller Profiles (partagé note-frais + invoice-service) ──────────────────
+    -- company_id = companyName (clé métier unique par tenant)
     CREATE TABLE IF NOT EXISTS seller_profiles (
-        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        company_id  VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
-        name        VARCHAR(256)  NOT NULL,
-        address     TEXT,
-        siret       VARCHAR(32),
-        tva_number  VARCHAR(32),
-        email       VARCHAR(256),
-        phone       VARCHAR(32),
-        created_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
-        updated_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
-        UNIQUE (company_id)
+        company_id          VARCHAR(128) PRIMARY KEY,
+        address             TEXT,
+        rcs                 VARCHAR(64),
+        iban                VARCHAR(64),
+        bic                 VARCHAR(32),
+        email               VARCHAR(256),
+        capital             VARCHAR(64),
+        late_payment_clause TEXT,
+        created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+        updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
     );
 
-    -- ─── Consultant Profiles ──────────────────────────────────────────────────────
+    -- ─── Consultant Profiles (note-frais-service) ─────────────────────────────────
     CREATE TABLE IF NOT EXISTS consultant_profiles (
-        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        company_id  VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
-        email       VARCHAR(256)  NOT NULL,
-        name        VARCHAR(256),
-        role        VARCHAR(64),
-        daily_rate  NUMERIC(10,2),
-        created_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
-        updated_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id     VARCHAR(128) NOT NULL DEFAULT 'IA-INSIGHT',
+        email          VARCHAR(256) NOT NULL,
+        name           VARCHAR(256),
+        role           VARCHAR(64),
+        client_name    VARCHAR(256),
+        client_address TEXT,
+        client_rcs     VARCHAR(64),
+        tjm            NUMERIC(10,2),
+        active         BOOLEAN      DEFAULT true,
+        created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+        updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
         UNIQUE (company_id, email)
     );
 
     CREATE INDEX IF NOT EXISTS idx_consultant_profiles_company
         ON consultant_profiles (company_id);
+    CREATE INDEX IF NOT EXISTS idx_consultant_profiles_email
+        ON consultant_profiles (email);

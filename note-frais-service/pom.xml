@@ -83,11 +83,15 @@
             <version>4.8.0</version>
         </dependency>
 
-        <!-- Weaviate -->
+        <!-- JDBC (JdbcTemplate) -->
         <dependency>
-            <groupId>io.weaviate</groupId>
-            <artifactId>client</artifactId>
-            <version>5.5.0</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <!-- PostgreSQL driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
         </dependency>
 
         <!-- PDF (OCR + report) -->

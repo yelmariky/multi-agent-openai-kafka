@@ -13,15 +13,11 @@ spring:
       resourceserver:
         jwt:
           jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8090/realms/ia-insight/protocol/openid-connect/certs}
-
-weaviate:
-  scheme: ${WEAVIATE_SCHEME:http}
-  host: ${WEAVIATE_HOST:?WEAVIATE_HOST is required}
-  invoice-class: ${WEAVIATE_INVOICE_CLASS:Invoice}
-  seller-profile-class: ${WEAVIATE_SELLER_PROFILE_CLASS:SellerProfile}
-  schema-init:
-    max-attempts: ${WEAVIATE_SCHEMA_INIT_MAX_ATTEMPTS:6}
-    backoff-ms: ${WEAVIATE_SCHEMA_INIT_BACKOFF_MS:10000}
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/iainsight}
+    username: ${POSTGRES_USER:pgadmin}
+    password: ${POSTGRES_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
 
 openai:
   api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
