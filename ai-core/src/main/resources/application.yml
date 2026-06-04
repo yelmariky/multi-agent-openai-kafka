@@ -81,6 +81,10 @@ invoice:
   service:
     url: ${INVOICE_SERVICE_URL:http://invoice-service:8083}
 
+notefrais:
+  service:
+    url: ${NOTEFRAIS_SERVICE_URL:http://note-frais-service:8082}
+
 caffeine:
   spec: maximumSize=3000,expireAfterWrite=10m
 

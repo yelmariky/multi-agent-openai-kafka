@@ -12,5 +12,8 @@
     <modules>
         <module>ai-core</module>
         <module>invoice-service</module>
+        <module>cra-service</module>
+        <module>notification-service</module>
+        <module>note-frais-service</module>
     </modules>
 </project>

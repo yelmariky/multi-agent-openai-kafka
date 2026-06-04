@@ -4,23 +4,30 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.multiagent.core.model.IntentResult;
 import io.multiagent.core.model.ReasoningResult;
-import io.multiagent.core.expense.service.RAGService;
-import io.multiagent.core.expense.service.DeleteExpenseService;
 import io.multiagent.core.invoice.client.InvoiceClient;
+import io.multiagent.core.notefrais.client.NotefraisClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
 
+/**
+ * Coordinator — classifies intent then delegates to the appropriate sub-agent via HTTP.
+ *
+ * Sub-agents:
+ *   - note-frais-service  → expense creation, reports, deletion
+ *   - invoice-service     → invoice deletion
+ *
+ * No business logic lives here; this service is routing-only.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReasoningService {
 
     private final IntentClassifierService intentClassifierService;
-    private final RAGService ragService;
-    private final DeleteExpenseService deleteExpenseService;
+    private final NotefraisClient notefraisClient;
     private final InvoiceClient invoiceClient;
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -37,29 +44,23 @@ public class ReasoningService {
         } else {
             raw = intent.getOriginalText() != null ? intent.getOriginalText() : userText;
         }
-        log.info("🎯 Intent détecté: {}", intent.getIntent());
+        log.info("🎯 Intent détecté: {} — routing to sub-agent", intent.getIntent());
 
         return switch (intent.getIntent()) {
 
-            // 🔵 Pipeline création d’une note de frais
-            case "create_expense" -> ragService.extractSingleExpense(raw, intent, consultantEmail);
+            // 🔵 Notes de frais — délégué à note-frais-service
+            case "create_expense"           -> notefraisClient.process(raw, intent, consultantEmail);
+            case "generate_expense_report"  -> notefraisClient.process(raw, intent, consultantEmail);
+            case "generate_invoice"         -> notefraisClient.process(raw, intent, consultantEmail);
+            case "delete_expense"           -> notefraisClient.process(raw, intent, consultantEmail);
 
-            // 🟢 Pipeline génération d’un rapport
-            case "generate_expense_report" -> ragService.extractExpenseReport(raw, intent);
+            // 🔴 Suppression facture — délégué à invoice-service
+            case "delete_invoice"           -> buildDeleteInvoiceResult(raw, intent);
 
-            // 🔵 Pipeline génération de facture
-            case "generate_invoice" -> ragService.extractInvoiceData(raw, intent);
+            // 🟡 Hors périmètre métier
+            case "smalltalk"                -> ReasoningResult.smalltalk("Je suis un agent métier, pas un chatbot général.");
 
-            // 🔴 Suppression d’une note de frais par date
-            case "delete_expense" -> deleteExpenseService.deleteByText(raw, intent);
-
-            // 🔴 Suppression d’une facture par mois/numéro — délégué à invoice-service
-            case "delete_invoice" -> buildDeleteInvoiceResult(raw, intent);
-
-            // 🟡 Smalltalk = réponse non métier
-            case "smalltalk" -> ReasoningResult.smalltalk("Je suis un agent métier, pas un chatbot général.");
-
-            // 🔴 Intent inconnu
+            // ⚫ Intent inconnu
             default -> ReasoningResult.builder()
                     .type("unknown")
                     .confidence(intent.getConfidence())
@@ -100,7 +101,6 @@ public class ReasoningService {
                 r.setIntent(node.path("intent").asText("unknown"));
                 r.setConfidence(node.path("confidence").asDouble());
                 r.setExplanation(node.path("explanation").asText());
-                // Priorité à originalText si présent
                 if (node.has("originalText")) {
                     r.setOriginalText(node.get("originalText").asText());
                 } else if (node.has("text")) {
