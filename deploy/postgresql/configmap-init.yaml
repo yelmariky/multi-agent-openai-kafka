@@ -1,0 +1,154 @@
+---
+# ConfigMap — script SQL d'initialisation exécuté au premier démarrage de PostgreSQL.
+# Crée l'extension pgvector, toutes les tables métier avec company_id (multi-tenancy ready),
+# et les index HNSW sur les colonnes d'embedding.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: postgres
+data:
+  init.sql: |
+    -- ─── Extension pgvector ──────────────────────────────────────────────────────
+    CREATE EXTENSION IF NOT EXISTS vector;
+
+    -- ─── Expenses ─────────────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS expenses (
+        id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id           VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
+        consultant_email     VARCHAR(256),
+        expense_type         VARCHAR(64),
+        description          TEXT,
+        amount               NUMERIC(12,2),
+        currency             VARCHAR(8)    NOT NULL DEFAULT 'EUR',
+        expense_date         DATE,
+        payment_mode         VARCHAR(32),
+        approval_status      VARCHAR(32)   NOT NULL DEFAULT 'PENDING',
+        approval_note        TEXT,
+        km                   NUMERIC(8,2),
+        source               VARCHAR(64),
+        receipt_path         VARCHAR(512),
+        raw_ocr_text         TEXT,
+        absence_periods_json TEXT,
+        embedding            vector(1536),
+        created_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        updated_at           TIMESTAMPTZ   NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_expenses_company
+        ON expenses (company_id);
+    CREATE INDEX IF NOT EXISTS idx_expenses_consultant
+        ON expenses (consultant_email);
+    CREATE INDEX IF NOT EXISTS idx_expenses_date
+        ON expenses (expense_date);
+    CREATE INDEX IF NOT EXISTS idx_expenses_status
+        ON expenses (approval_status);
+    CREATE INDEX IF NOT EXISTS idx_expenses_embedding
+        ON expenses USING hnsw (embedding vector_cosine_ops)
+        WITH (m = 16, ef_construction = 64);
+
+    -- ─── CRA ──────────────────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS cra (
+        id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id        VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
+        consultant        VARCHAR(256)  NOT NULL,
+        billing_month     VARCHAR(7)    NOT NULL,   -- YYYY-MM
+        entries_json      TEXT,                      -- JSON array of CraDayEntry
+        total_days        NUMERIC(5,2),
+        status            VARCHAR(32)   NOT NULL DEFAULT 'BROUILLON',
+        submitted_at      TIMESTAMPTZ,
+        validated_at      TIMESTAMPTZ,
+        validated_by      VARCHAR(256),
+        refused_reason    TEXT,
+        created_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        updated_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        UNIQUE (company_id, consultant, billing_month)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cra_company
+        ON cra (company_id);
+    CREATE INDEX IF NOT EXISTS idx_cra_consultant
+        ON cra (consultant);
+    CREATE INDEX IF NOT EXISTS idx_cra_status
+        ON cra (status);
+
+    -- ─── Invoices ─────────────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS invoices (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id      VARCHAR(128)   NOT NULL DEFAULT 'IA-INSIGHT',
+        invoice_name    VARCHAR(128)   NOT NULL,   -- F-YYYYMM-01
+        billing_month   VARCHAR(7),                -- YYYY-MM
+        invoice_date    DATE,
+        client_name     VARCHAR(256),
+        consultant_name VARCHAR(256),
+        total_ht        NUMERIC(12,2),
+        tva_rate        NUMERIC(5,2),
+        tva_amount      NUMERIC(12,2),
+        total_ttc       NUMERIC(12,2),
+        pdf_path        VARCHAR(512),
+        excel_path      VARCHAR(512),
+        embedding       vector(1536),
+        created_at      TIMESTAMPTZ    NOT NULL DEFAULT now(),
+        updated_at      TIMESTAMPTZ    NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_invoices_company
+        ON invoices (company_id);
+    CREATE INDEX IF NOT EXISTS idx_invoices_name
+        ON invoices (invoice_name);
+    CREATE INDEX IF NOT EXISTS idx_invoices_billing_month
+        ON invoices (billing_month);
+    CREATE INDEX IF NOT EXISTS idx_invoices_embedding
+        ON invoices USING hnsw (embedding vector_cosine_ops)
+        WITH (m = 16, ef_construction = 64);
+
+    -- ─── Document Chunks (RAG) ────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS document_chunks (
+        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id    VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
+        source_id     VARCHAR(256),
+        source_type   VARCHAR(64),
+        content       TEXT          NOT NULL,
+        metadata_json TEXT,
+        embedding     vector(1536),
+        created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chunks_company
+        ON document_chunks (company_id);
+    CREATE INDEX IF NOT EXISTS idx_chunks_source
+        ON document_chunks (source_id);
+    CREATE INDEX IF NOT EXISTS idx_chunks_embedding
+        ON document_chunks USING hnsw (embedding vector_cosine_ops)
+        WITH (m = 16, ef_construction = 64);
+
+    -- ─── Seller Profiles ──────────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS seller_profiles (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id  VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
+        name        VARCHAR(256)  NOT NULL,
+        address     TEXT,
+        siret       VARCHAR(32),
+        tva_number  VARCHAR(32),
+        email       VARCHAR(256),
+        phone       VARCHAR(32),
+        created_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        updated_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        UNIQUE (company_id)
+    );
+
+    -- ─── Consultant Profiles ──────────────────────────────────────────────────────
+    CREATE TABLE IF NOT EXISTS consultant_profiles (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        company_id  VARCHAR(128)  NOT NULL DEFAULT 'IA-INSIGHT',
+        email       VARCHAR(256)  NOT NULL,
+        name        VARCHAR(256),
+        role        VARCHAR(64),
+        daily_rate  NUMERIC(10,2),
+        created_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        updated_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+        UNIQUE (company_id, email)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_consultant_profiles_company
+        ON consultant_profiles (company_id);

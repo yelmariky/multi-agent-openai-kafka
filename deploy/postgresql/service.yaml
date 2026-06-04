@@ -1,0 +1,39 @@
+---
+# ClusterIP — accès interne K8s
+# DNS : postgresql.postgres.svc.cluster.local:5432
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: postgres
+  labels:
+    app: postgresql
+spec:
+  type: ClusterIP
+  selector:
+    app: postgresql
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+
+---
+# NodePort — accès dev local (port-forward alternatif)
+# kubectl port-forward svc/postgresql -n postgres 5432:5432
+# Ou accès direct via : localhost:30432
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-nodeport
+  namespace: postgres
+  labels:
+    app: postgresql
+spec:
+  type: NodePort
+  selector:
+    app: postgresql
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      nodePort: 30432

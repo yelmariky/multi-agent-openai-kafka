@@ -1,0 +1,43 @@
+---
+# StorageClass sans provisionnement dynamique — liaison PV/PVC statique
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: postgres-hostpath
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+
+---
+# PersistentVolume — stockage PostgreSQL sur le nœud host
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+  labels:
+    app: postgresql
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: postgres-hostpath
+  hostPath:
+    path: /data/postgresql
+    type: DirectoryOrCreate
+
+---
+# PersistentVolumeClaim — réclamé par le StatefulSet
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: postgres-hostpath
+  resources:
+    requests:
+      storage: 20Gi
