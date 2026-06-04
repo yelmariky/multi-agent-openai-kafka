@@ -3,32 +3,30 @@ package io.multiagent.invoice.repository;
 import io.multiagent.invoice.client.LLMAIClient;
 import io.multiagent.invoice.model.InvoiceLookupRequest;
 import io.multiagent.invoice.model.SimpleInvoiceRequest;
-import io.weaviate.client.WeaviateClient;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.sql.Date;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-
-import static io.multiagent.invoice.util.WeaviateUtils.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Repository
 public class InvoiceWeaviateRepository {
 
-    private final WeaviateClient client;
+    private final JdbcTemplate jdbc;
     private final LLMAIClient llm;
-    private final String invoiceClassName;
 
-    public InvoiceWeaviateRepository(
-            WeaviateClient client,
-            LLMAIClient llm,
-            @Value("${weaviate.invoice-class:Invoice}") String invoiceClassName) {
-        this.client = client;
+    public InvoiceWeaviateRepository(JdbcTemplate jdbc, LLMAIClient llm) {
+        this.jdbc = jdbc;
         this.llm = llm;
-        this.invoiceClassName = invoiceClassName;
     }
 
     public void indexSimpleInvoice(String id, SimpleInvoiceRequest invoice, String sourceText, String pdfPath, String excelPath) {
@@ -42,49 +40,144 @@ public class InvoiceWeaviateRepository {
             }
 
             String text = buildInvoiceText(invoice, sourceText, pdfPath, excelPath);
-            List<Double> vector = llm.embed(llm.getEmbeddingModel(), text);
-            Map<String, Object> props = new java.util.HashMap<>();
-            props.put("invoiceName", invoice.invoiceName());
-            props.put("invoiceDate", formatRfc3339(invoice.invoiceDate()));
-            props.put("billingMonth", invoice.billingMonth());
-            props.put("sellerCompanyName", invoice.sellerCompanyName());
-            props.put("sellerAddress", invoice.sellerAddress());
-            props.put("sellerRcs", invoice.sellerRcs());
-            props.put("clientCompanyName", invoice.clientCompanyName());
-            props.put("clientAddress", invoice.clientAddress());
-            props.put("clientRcs", invoice.clientRcs());
-            props.put("invoiceTitle", invoice.invoiceTitle());
-            props.put("daysCount", invoice.daysCount() != null ? (int) Math.round(invoice.daysCount()) : null);
-            props.put("daysExact", invoice.daysCount());
-            props.put("unitPriceHt", invoice.unitPriceHt());
-            props.put("totalHt", invoice.totalHt());
-            props.put("vatRate", invoice.vatRate());
-            props.put("totalTtc", invoice.totalTtc());
-            props.put("currency", invoice.currency());
-            props.put("paymentDueDate", invoice.paymentDueDate() == null ? null : formatRfc3339(invoice.paymentDueDate()));
-            props.put("latePaymentClause", invoice.latePaymentClause());
-            props.put("notes", invoice.notes());
-            props.put("consultantEmail", invoice.consultantEmail() != null ? invoice.consultantEmail().toLowerCase().trim() : "");
-            props.put("sourceText", sourceText);
-            props.put("pdfPath", pdfPath);
-            props.put("excelPath", excelPath);
-            props.put("text", text);
 
-            var creator = client.data().creator()
-                    .withClassName(invoiceClassName)
-                    .withProperties(props)
-                    .withVector(toFloatArray(vector));
-
+            // Resolve the row id: either use the provided one or let the DB generate one
+            String resolvedId;
             if (id != null && !id.isBlank()) {
-                creator = creator.withID(id);
+                resolvedId = id;
+                jdbc.update("""
+                        INSERT INTO invoices (
+                            id, invoice_name, invoice_date, billing_month,
+                            seller_company_name, seller_address, seller_rcs,
+                            client_company_name, client_address, client_rcs,
+                            invoice_title, days_count, unit_price_ht, total_ht,
+                            vat_rate, total_ttc, currency, payment_due_date,
+                            late_payment_clause, notes, consultant_email,
+                            source_text, pdf_path, excel_path, text
+                        ) VALUES (
+                            ?::uuid, ?, ?, ?,
+                            ?, ?, ?,
+                            ?, ?, ?,
+                            ?, ?, ?, ?,
+                            ?, ?, ?, ?,
+                            ?, ?, ?,
+                            ?, ?, ?, ?
+                        )
+                        ON CONFLICT (id) DO UPDATE SET
+                            invoice_name        = EXCLUDED.invoice_name,
+                            invoice_date        = EXCLUDED.invoice_date,
+                            billing_month       = EXCLUDED.billing_month,
+                            seller_company_name = EXCLUDED.seller_company_name,
+                            seller_address      = EXCLUDED.seller_address,
+                            seller_rcs          = EXCLUDED.seller_rcs,
+                            client_company_name = EXCLUDED.client_company_name,
+                            client_address      = EXCLUDED.client_address,
+                            client_rcs          = EXCLUDED.client_rcs,
+                            invoice_title       = EXCLUDED.invoice_title,
+                            days_count          = EXCLUDED.days_count,
+                            unit_price_ht       = EXCLUDED.unit_price_ht,
+                            total_ht            = EXCLUDED.total_ht,
+                            vat_rate            = EXCLUDED.vat_rate,
+                            total_ttc           = EXCLUDED.total_ttc,
+                            currency            = EXCLUDED.currency,
+                            payment_due_date    = EXCLUDED.payment_due_date,
+                            late_payment_clause = EXCLUDED.late_payment_clause,
+                            notes               = EXCLUDED.notes,
+                            consultant_email    = EXCLUDED.consultant_email,
+                            source_text         = EXCLUDED.source_text,
+                            pdf_path            = EXCLUDED.pdf_path,
+                            excel_path          = EXCLUDED.excel_path,
+                            text                = EXCLUDED.text,
+                            updated_at          = now()
+                        """,
+                        resolvedId,
+                        invoice.invoiceName(),
+                        toSqlDate(invoice.invoiceDate()),
+                        invoice.billingMonth(),
+                        invoice.sellerCompanyName(),
+                        invoice.sellerAddress(),
+                        invoice.sellerRcs(),
+                        invoice.clientCompanyName(),
+                        invoice.clientAddress(),
+                        invoice.clientRcs(),
+                        invoice.invoiceTitle(),
+                        invoice.daysCount(),
+                        invoice.unitPriceHt(),
+                        invoice.totalHt(),
+                        invoice.vatRate(),
+                        invoice.totalTtc(),
+                        invoice.currency(),
+                        toSqlDate(invoice.paymentDueDate()),
+                        invoice.latePaymentClause(),
+                        invoice.notes(),
+                        invoice.consultantEmail() != null ? invoice.consultantEmail().toLowerCase().trim() : "",
+                        sourceText,
+                        pdfPath,
+                        excelPath,
+                        text
+                );
+            } else {
+                // Let the DB generate a UUID; retrieve it to store embedding
+                resolvedId = jdbc.queryForObject("""
+                        INSERT INTO invoices (
+                            invoice_name, invoice_date, billing_month,
+                            seller_company_name, seller_address, seller_rcs,
+                            client_company_name, client_address, client_rcs,
+                            invoice_title, days_count, unit_price_ht, total_ht,
+                            vat_rate, total_ttc, currency, payment_due_date,
+                            late_payment_clause, notes, consultant_email,
+                            source_text, pdf_path, excel_path, text
+                        ) VALUES (
+                            ?, ?, ?,
+                            ?, ?, ?,
+                            ?, ?, ?,
+                            ?, ?, ?, ?,
+                            ?, ?, ?, ?,
+                            ?, ?, ?,
+                            ?, ?, ?, ?
+                        )
+                        RETURNING id::text
+                        """,
+                        String.class,
+                        invoice.invoiceName(),
+                        toSqlDate(invoice.invoiceDate()),
+                        invoice.billingMonth(),
+                        invoice.sellerCompanyName(),
+                        invoice.sellerAddress(),
+                        invoice.sellerRcs(),
+                        invoice.clientCompanyName(),
+                        invoice.clientAddress(),
+                        invoice.clientRcs(),
+                        invoice.invoiceTitle(),
+                        invoice.daysCount(),
+                        invoice.unitPriceHt(),
+                        invoice.totalHt(),
+                        invoice.vatRate(),
+                        invoice.totalTtc(),
+                        invoice.currency(),
+                        toSqlDate(invoice.paymentDueDate()),
+                        invoice.latePaymentClause(),
+                        invoice.notes(),
+                        invoice.consultantEmail() != null ? invoice.consultantEmail().toLowerCase().trim() : "",
+                        sourceText,
+                        pdfPath,
+                        excelPath,
+                        text
+                );
             }
 
-            var result = creator.run();
-            if (result.hasErrors()) {
-                log.error("Weaviate indexSimpleInvoice error: {}", result.getError());
-            } else {
-                log.info("Weaviate: facture indexée (invoiceName={})", invoice.invoiceName());
+            // Update embedding asynchronously-safe: best-effort, same thread
+            try {
+                List<Double> vector = llm.embed(llm.getEmbeddingModel(), text);
+                if (vector != null && !vector.isEmpty()) {
+                    jdbc.update("UPDATE invoices SET embedding = ?::vector WHERE id = ?::uuid",
+                            toVec(vector), resolvedId);
+                }
+            } catch (Exception embEx) {
+                log.warn("indexSimpleInvoice: embedding update skipped for id={}: {}", resolvedId, embEx.getMessage());
             }
+
+            log.info("PostgreSQL: facture indexée (invoiceName={})", invoice.invoiceName());
         } catch (Exception e) {
             log.error("Exception indexSimpleInvoice: {}", e.getMessage(), e);
         }
@@ -97,28 +190,23 @@ public class InvoiceWeaviateRepository {
             return List.of();
         }
         try {
-            var response = client.data().objectsGetter()
-                    .withClassName(invoiceClassName)
-                    .withLimit(1000)
-                    .run();
+            List<Object> params = new ArrayList<>();
+            StringBuilder sql = new StringBuilder("""
+                    SELECT * FROM invoices
+                    WHERE billing_month ILIKE ?
+                      AND seller_company_name ILIKE ?
+                    """);
+            params.add(request.billingMonth().trim());
+            params.add(request.sellerCompanyName().trim());
 
-            if (response.hasErrors() || response.getResult() == null) {
-                log.error("findInvoices fetch error: {}", response.getError());
-                return List.of();
+            if (!isNullOrBlank(request.invoiceName())) {
+                sql.append(" AND invoice_name ILIKE ?");
+                params.add(request.invoiceName().trim());
             }
 
-            return response.getResult().stream()
-                    .filter(object -> object != null && object.getProperties() != null)
-                    .map(object -> toSimpleInvoiceRequest(object.getProperties()))
-                    .filter(invoice -> invoice != null
-                            && request.billingMonth().equalsIgnoreCase(safeString(invoice.billingMonth()))
-                            && request.sellerCompanyName().trim().equalsIgnoreCase(safeString(invoice.sellerCompanyName()).trim())
-                            && matchesInvoiceName(request.invoiceName(), invoice.invoiceName()))
-                    .sorted(Comparator.comparing(
-                            invoice -> safeString(invoice.invoiceName()),
-                            String.CASE_INSENSITIVE_ORDER
-                    ))
-                    .toList();
+            sql.append(" ORDER BY invoice_name");
+
+            return jdbc.query(sql.toString(), (rs, rowNum) -> toSimpleInvoiceRequest(rs), params.toArray());
         } catch (Exception e) {
             log.error("findInvoices exception: {}", e.getMessage(), e);
             return List.of();
@@ -127,33 +215,29 @@ public class InvoiceWeaviateRepository {
 
     public List<SimpleInvoiceRequest> findInvoicesByPeriod(String start, String end, String company, String consultantEmail) {
         try {
-            var response = client.data().objectsGetter()
-                    .withClassName(invoiceClassName)
-                    .withLimit(1000)
-                    .run();
+            List<Object> params = new ArrayList<>();
+            StringBuilder sql = new StringBuilder("SELECT * FROM invoices WHERE 1=1");
 
-            if (response.hasErrors() || response.getResult() == null) {
-                log.error("findInvoicesByPeriod fetch error: {}", response.getError());
-                return List.of();
+            if (!isNullOrBlank(start)) {
+                sql.append(" AND billing_month >= ?");
+                params.add(start.trim());
+            }
+            if (!isNullOrBlank(end)) {
+                sql.append(" AND billing_month <= ?");
+                params.add(end.trim());
+            }
+            if (!isNullOrBlank(company)) {
+                sql.append(" AND seller_company_name ILIKE ?");
+                params.add(company.trim());
+            }
+            if (!isNullOrBlank(consultantEmail)) {
+                sql.append(" AND (consultant_email IS NULL OR consultant_email = '' OR consultant_email ILIKE ?)");
+                params.add(consultantEmail.trim());
             }
 
-            return response.getResult().stream()
-                    .filter(obj -> obj != null && obj.getProperties() != null)
-                    .map(obj -> toSimpleInvoiceRequest(obj.getProperties()))
-                    .filter(inv -> inv != null)
-                    .filter(inv -> {
-                        String bm = safeString(inv.billingMonth());
-                        if (!isNullOrBlank(start) && bm.compareTo(start) < 0) return false;
-                        if (!isNullOrBlank(end)   && bm.compareTo(end)   > 0) return false;
-                        return true;
-                    })
-                    .filter(inv -> isNullOrBlank(company)
-                            || safeString(inv.sellerCompanyName()).trim().equalsIgnoreCase(company.trim()))
-                    .filter(inv -> isNullOrBlank(consultantEmail)
-                            || isNullOrBlank(safeString(inv.consultantEmail()))
-                            || safeString(inv.consultantEmail()).trim().equalsIgnoreCase(consultantEmail.trim()))
-                    .sorted(Comparator.comparing(inv -> safeString(inv.billingMonth()), String.CASE_INSENSITIVE_ORDER))
-                    .toList();
+            sql.append(" ORDER BY billing_month");
+
+            return jdbc.query(sql.toString(), (rs, rowNum) -> toSimpleInvoiceRequest(rs), params.toArray());
         } catch (Exception e) {
             log.error("findInvoicesByPeriod exception: {}", e.getMessage(), e);
             return List.of();
@@ -167,37 +251,22 @@ public class InvoiceWeaviateRepository {
             return 0;
         }
         try {
-            var response = client.data().objectsGetter()
-                    .withClassName(invoiceClassName)
-                    .withLimit(1000)
-                    .run();
+            List<Object> params = new ArrayList<>();
+            StringBuilder sql = new StringBuilder("""
+                    DELETE FROM invoices
+                    WHERE invoice_name ILIKE ?
+                      AND seller_company_name ILIKE ?
+                    """);
+            params.add(request.invoiceName().trim());
+            params.add(request.sellerCompanyName().trim());
 
-            if (response.hasErrors() || response.getResult() == null) {
-                log.error("deleteInvoices fetch error: {}", response.getError());
-                return -1;
+            if (!isNullOrBlank(request.billingMonth())) {
+                sql.append(" AND billing_month ILIKE ?");
+                params.add(request.billingMonth().trim());
             }
 
-            int deleted = 0;
-            for (var object : response.getResult()) {
-                if (object == null || object.getProperties() == null) {
-                    continue;
-                }
-                Map<String, Object> props = object.getProperties();
-                if (!matchesInvoiceDeletion(props, request)) {
-                    continue;
-                }
-
-                var deleteResult = client.data().deleter()
-                        .withClassName(invoiceClassName)
-                        .withID(object.getId())
-                        .run();
-                if (deleteResult.hasErrors() || !Boolean.TRUE.equals(deleteResult.getResult())) {
-                    log.error("Weaviate invoice delete error for id={}: {}", object.getId(), deleteResult.getError());
-                } else {
-                    deleted++;
-                }
-            }
-            log.info("Weaviate invoice delete -> invoiceName={}, sellerCompanyName={}, billingMonth={}, deleted={}",
+            int deleted = jdbc.update(sql.toString(), params.toArray());
+            log.info("PostgreSQL invoice delete -> invoiceName={}, sellerCompanyName={}, billingMonth={}, deleted={}",
                     request.invoiceName(), request.sellerCompanyName(), request.billingMonth(), deleted);
             return deleted;
         } catch (Exception e) {
@@ -233,59 +302,55 @@ public class InvoiceWeaviateRepository {
                 );
     }
 
-    private SimpleInvoiceRequest toSimpleInvoiceRequest(Map<String, Object> props) {
-        if (props == null) {
-            return null;
-        }
+    private SimpleInvoiceRequest toSimpleInvoiceRequest(ResultSet rs) throws SQLException {
         return new SimpleInvoiceRequest(
-                safeString(props.get("invoiceName")),
-                parseLocalDateValue(props.get("invoiceDate")),
-                safeString(props.get("billingMonth")),
-                safeString(props.get("sellerCompanyName")),
-                safeString(props.get("sellerAddress")),
-                safeString(props.get("sellerRcs")),
-                safeString(props.get("clientCompanyName")),
-                safeString(props.get("clientAddress")),
-                safeString(props.get("clientRcs")),
-                safeString(props.get("invoiceTitle")),
-                props.get("daysExact") != null ? parseDouble(props.get("daysExact")) : parseDouble(props.get("daysCount")),
-                parseBigDecimal(props.get("unitPriceHt")),
-                parseBigDecimal(props.get("totalHt")),
-                parseBigDecimal(props.get("vatRate")),
-                parseBigDecimal(props.get("totalTtc")),
-                safeString(props.get("currency")),
-                parseLocalDateValue(props.get("paymentDueDate")),
-                safeString(props.get("latePaymentClause")),
-                safeString(props.get("notes")),
-                null,   // absencePeriods
-                safeString(props.get("consultantEmail"))
+                rs.getString("invoice_name"),
+                toLocalDate(rs.getDate("invoice_date")),
+                rs.getString("billing_month"),
+                rs.getString("seller_company_name"),
+                rs.getString("seller_address"),
+                rs.getString("seller_rcs"),
+                rs.getString("client_company_name"),
+                rs.getString("client_address"),
+                rs.getString("client_rcs"),
+                rs.getString("invoice_title"),
+                toDouble(rs, "days_count"),
+                toBigDecimal(rs, "unit_price_ht"),
+                toBigDecimal(rs, "total_ht"),
+                toBigDecimal(rs, "vat_rate"),
+                toBigDecimal(rs, "total_ttc"),
+                rs.getString("currency"),
+                toLocalDate(rs.getDate("payment_due_date")),
+                rs.getString("late_payment_clause"),
+                rs.getString("notes"),
+                null,   // absencePeriods — not persisted
+                rs.getString("consultant_email")
         );
     }
 
-    private boolean matchesInvoiceName(String requestedInvoiceName, String storedInvoiceName) {
-        if (requestedInvoiceName == null || requestedInvoiceName.isBlank()) {
-            return true;
-        }
-        if (storedInvoiceName == null || storedInvoiceName.isBlank()) {
-            return false;
-        }
-        return requestedInvoiceName.trim().equalsIgnoreCase(storedInvoiceName.trim());
+    private static String toVec(List<Double> v) {
+        return "[" + v.stream().map(Object::toString).collect(Collectors.joining(",")) + "]";
     }
 
-    private boolean matchesInvoiceDeletion(Map<String, Object> props, InvoiceLookupRequest request) {
-        String storedInvoiceName = safeString(props.get("invoiceName"));
-        String storedSeller = safeString(props.get("sellerCompanyName"));
-        String storedBillingMonth = safeString(props.get("billingMonth"));
+    private static Date toSqlDate(LocalDate date) {
+        return date == null ? null : Date.valueOf(date);
+    }
 
-        if (!request.invoiceName().trim().equalsIgnoreCase(storedInvoiceName.trim())) {
-            return false;
-        }
-        if (!request.sellerCompanyName().trim().equalsIgnoreCase(storedSeller.trim())) {
-            return false;
-        }
-        if (request.billingMonth() == null || request.billingMonth().isBlank()) {
-            return true;
-        }
-        return request.billingMonth().trim().equalsIgnoreCase(storedBillingMonth.trim());
+    private static LocalDate toLocalDate(Date date) {
+        return date == null ? null : date.toLocalDate();
+    }
+
+    private static Double toDouble(ResultSet rs, String col) throws SQLException {
+        double val = rs.getDouble(col);
+        return rs.wasNull() ? null : val;
+    }
+
+    private static BigDecimal toBigDecimal(ResultSet rs, String col) throws SQLException {
+        BigDecimal val = rs.getBigDecimal(col);
+        return rs.wasNull() ? null : val;
+    }
+
+    private static boolean isNullOrBlank(String s) {
+        return s == null || s.isBlank();
     }
 }
