@@ -40,6 +40,7 @@ public class LLMAIClient {
     private final OpenAIClient client;
     private final String embeddingModel;
     private final String llmModel;
+    private final long embeddingDimensions;
     private final MeterRegistry metrics;
     private final int maxAttempts;
     private final long baseBackoffMs;
@@ -49,6 +50,7 @@ public class LLMAIClient {
             @Value("${openai.api-key}") String apiKey,
             @Value("${openai.embedding-model:text-embedding-3-large}") String embeddingModel,
             @Value("${openai.model:gpt-4.1-mini}") String llmModel,
+            @Value("${openai.embedding-dimensions:2000}") long embeddingDimensions,
             @Value("${openai.retry.max-attempts:4}") int maxAttempts,
             @Value("${openai.retry.base-backoff-ms:1500}") long baseBackoffMs,
             @Value("${openai.retry.max-backoff-ms:15000}") long maxBackoffMs,
@@ -63,6 +65,7 @@ public class LLMAIClient {
 
         this.embeddingModel = embeddingModel;
         this.llmModel = llmModel;
+        this.embeddingDimensions = embeddingDimensions;
         this.metrics = registry;
         this.maxAttempts = Math.max(1, maxAttempts);
         this.baseBackoffMs = Math.max(100, baseBackoffMs);
@@ -169,6 +172,7 @@ public class LLMAIClient {
         EmbeddingCreateParams params = EmbeddingCreateParams.builder()
                 .model(targetModel)
                 .input(text)
+                .dimensions(embeddingDimensions)
                 .build();
 
         CreateEmbeddingResponse response = safeCall("embeddings.single(model=" + targetModel + ")", () -> client.embeddings().create(params));
@@ -185,6 +189,7 @@ public class LLMAIClient {
         EmbeddingCreateParams params = EmbeddingCreateParams.builder()
                 .model(targetModel)
                 .inputOfArrayOfStrings(documents)
+                .dimensions(embeddingDimensions)
                 .build();
 
         CreateEmbeddingResponse response = safeCall("embeddings.batch(model=" + targetModel + ")", () -> client.embeddings().create(params));

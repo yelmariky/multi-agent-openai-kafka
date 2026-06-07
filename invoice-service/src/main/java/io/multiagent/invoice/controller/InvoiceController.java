@@ -2,7 +2,6 @@ package io.multiagent.invoice.controller;
 
 import io.multiagent.invoice.model.InvoiceLookupRequest;
 import io.multiagent.invoice.model.SimpleInvoiceRequest;
-import io.multiagent.invoice.repository.InvoiceWeaviateRepository;
 import io.multiagent.invoice.service.DeleteInvoiceService;
 import io.multiagent.invoice.service.InvoiceService;
 import org.springframework.http.HttpHeaders;
@@ -27,15 +26,12 @@ public class InvoiceController {
     private static final String ATTACHMENT_PREFIX = "attachment; filename=\"";
 
     private final InvoiceService invoiceService;
-    private final InvoiceWeaviateRepository invoiceRepo;
     private final DeleteInvoiceService deleteInvoiceService;
 
     public InvoiceController(
             InvoiceService invoiceService,
-            InvoiceWeaviateRepository invoiceRepo,
             DeleteInvoiceService deleteInvoiceService) {
         this.invoiceService = invoiceService;
-        this.invoiceRepo = invoiceRepo;
         this.deleteInvoiceService = deleteInvoiceService;
     }
 
@@ -46,7 +42,7 @@ public class InvoiceController {
             @RequestParam(required = false) String company,
             @RequestParam(required = false) String consultantEmail
     ) {
-        List<SimpleInvoiceRequest> invoices = invoiceRepo.findInvoicesByPeriod(start, end, company, consultantEmail);
+        List<SimpleInvoiceRequest> invoices = invoiceService.findInvoicesByPeriod(start, end, company, consultantEmail);
         List<Map<String, Object>> result = invoices.stream()
                 .map(inv -> buildInvoiceResponse("", inv, "", ""))
                 .toList();
@@ -66,7 +62,7 @@ public class InvoiceController {
 
     @PostMapping(value = "/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> generatePdf(@RequestBody InvoiceLookupRequest request) throws IOException {
-        var generated = invoiceService.generateFromWeaviate(request);
+        var generated = invoiceService.generateFromDb(request);
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.CONTENT_DISPOSITION, ATTACHMENT_PREFIX + generated.pdfPath().getFileName() + "\"");
         return ResponseEntity.ok().headers(headers).body(generated.pdfBytes());
@@ -77,7 +73,7 @@ public class InvoiceController {
             produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
     public ResponseEntity<byte[]> generateExcel(@RequestBody InvoiceLookupRequest request) throws IOException {
-        var generated = invoiceService.generateFromWeaviate(request);
+        var generated = invoiceService.generateFromDb(request);
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.CONTENT_DISPOSITION, ATTACHMENT_PREFIX + generated.excelPath().getFileName() + "\"");
         return ResponseEntity.ok().headers(headers).body(generated.excelBytes());
@@ -86,7 +82,7 @@ public class InvoiceController {
     @PostMapping("/delete")
     public ResponseEntity<Object> deleteInvoice(@RequestBody InvoiceLookupRequest request) {
         try {
-            int deleted = invoiceService.deleteFromWeaviate(request);
+            int deleted = invoiceService.deleteFromDb(request);
             return ResponseEntity.ok(Map.of(
                     "deleted", deleted,
                     "message", deleted > 0 ? "Invoice deleted successfully" : "No invoice found matching criteria",
@@ -97,11 +93,6 @@ public class InvoiceController {
         }
     }
 
-    /**
-     * Nouveau endpoint appelé par ai-core (ReasoningService) pour supprimer une facture
-     * depuis du texte libre (intent delete_invoice).
-     * Body : {"text": "..."}
-     */
     @PostMapping("/delete-by-text")
     public ResponseEntity<Map<String, Object>> deleteByText(@RequestBody Map<String, String> body) {
         String text = body.getOrDefault("text", "");

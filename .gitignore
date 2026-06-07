@@ -5,7 +5,7 @@
 .claude/
 
 # Credentials locaux — ne jamais committer
-deploy/keycloak/.env
+deploy/**/.env*
 
 target/
 **/target/

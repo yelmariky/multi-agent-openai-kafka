@@ -2,9 +2,13 @@
 // KEYCLOAK CONFIG — lue depuis window.APP_CONFIG (config.js)
 // ============================================================
 const _cfg = globalThis.APP_CONFIG || {};
+const TENANT_SLUG = _cfg.slug || 'ia-insight';
 const DEFAULT_KEYCLOAK_URL = _cfg.keycloakUrl || 'http://localhost:30080';
 
 let _keycloak = null;
+let _tenantInfo = { name: TENANT_SLUG.toUpperCase() };
+
+function tenantName() { return _tenantInfo.name || TENANT_SLUG.toUpperCase(); }
 
 async function initKeycloak() {
   _keycloak = new Keycloak({
@@ -39,12 +43,12 @@ function getSession() {
     email:   p.email || p.preferred_username,
     name:    p.name  || p.preferred_username,
     role:    'Consultant',
-    company: p.company || 'IA-INSIGHT',
+    company: p.company || tenantName(),
   };
 }
 
 function clearSession() {
-  _keycloak?.logout({ redirectUri: window.location.origin });
+  _keycloak?.logout({ redirectUri: `${window.location.origin}/${TENANT_SLUG}/` });
 }
 
 function authHeaders(extra = {}) {
@@ -71,6 +75,44 @@ function base() {
 const loginScreen = document.getElementById('login-screen');
 const appEl       = document.getElementById('app');
 
+async function loadTenantInfo() {
+  try {
+    const res = await fetch(`${base()}/organization/me`, { headers: authHeaders() });
+    if (!res.ok) return;
+    const info = await res.json();
+    _tenantInfo = info;
+    const name = tenantName();
+    document.title = `Espace consultant — ${name}`;
+    const loginEl  = document.getElementById('login-tenant-name');
+    const headerEl = document.getElementById('header-tenant-name');
+    if (loginEl)  loginEl.textContent  = name;
+    if (headerEl) headerEl.textContent = `${name} — Espace consultant`;
+  } catch { /* tenant info unavailable — use slug fallback */ }
+}
+
+async function syncProfile(user) {
+  try {
+    const res = await fetch(`${base()}/consultants/profiles`, { headers: authHeaders() });
+    if (res.ok) {
+      const profiles = await res.json();
+      if (profiles.some(p => p.email && p.email.toLowerCase() === user.email.toLowerCase())) {
+        return; // profile already exists with correct email — don't overwrite admin data
+      }
+    }
+    await fetch(`${base()}/consultants/profiles`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        email: user.email,
+        name: user.name,
+        role: user.role || 'Consultant',
+        company: user.company || tenantName(),
+        active: true
+      })
+    });
+  } catch { /* best effort */ }
+}
+
 function showApp(user) {
   loginScreen.style.display = 'none';
   appEl.style.display = '';
@@ -79,6 +121,8 @@ function showApp(user) {
   document.getElementById('user-role-badge').textContent   = user.role;
   document.getElementById('user-role-badge').className     =
     `user-role-badge ${user.role.toLowerCase()}`;
+  loadTenantInfo();
+  syncProfile(user);
   initNotifications(user);
   initApp(user);
 }
@@ -317,6 +361,53 @@ function initCra(user) {
   document.getElementById('cra-submit').addEventListener('click',           submitCra);
   document.getElementById('cra-recall').addEventListener('click',           () => recallCra(user));
   document.getElementById('hist-load').addEventListener('click',            () => loadHistory(user));
+  document.getElementById('cra-download-pdf').addEventListener('click',     downloadCraPdf);
+
+  // Auto-fill client company when mission is selected
+  document.getElementById('cra-mission').addEventListener('change', (e) => {
+    const opt = e.target.selectedOptions[0];
+    if (opt && opt.dataset.client) {
+      document.getElementById('cra-client').value = opt.dataset.client;
+    }
+  });
+
+  loadMissions(user);
+}
+
+async function loadMissions(user) {
+  const sel = document.getElementById('cra-mission');
+  try {
+    const p = new URLSearchParams({ email: user.email });
+    const res = await fetch(`${base()}/missions/by-email?${p}`, { headers: authHeaders() });
+    if (!res.ok) return;
+    const missions = await res.json();
+    sel.innerHTML = '<option value="">-- Aucune mission --</option>';
+    missions.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      const clientName = m.client && m.client.name ? m.client.name : '';
+      opt.dataset.client = clientName;
+      opt.textContent = m.title + (clientName ? ' (' + clientName + ')' : '');
+      sel.appendChild(opt);
+    });
+  } catch { /* missions unavailable */ }
+}
+
+async function downloadCraPdf() {
+  if (!craId) return;
+  try {
+    const res = await fetch(`${base()}/cra/pdf/${craId}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'CRA-' + (document.getElementById('cra-month').value || 'export') + '.pdf';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    setStatus(document.getElementById('cra-action-status'), 'Erreur PDF : ' + e.message, 'err');
+  }
 }
 
 function initCraMonth(monthStr, savedEntries) {
@@ -412,6 +503,9 @@ function updateCraButtons() {
   // "Retirer ma soumission" uniquement quand SOUMIS (avant action admin)
   const recallBtn = document.getElementById('cra-recall');
   if (recallBtn) recallBtn.style.display = craStatus === 'SOUMIS' ? '' : 'none';
+  // PDF download available whenever CRA is saved (has an id)
+  const pdfBtn = document.getElementById('cra-download-pdf');
+  if (pdfBtn) pdfBtn.style.display = craId ? '' : 'none';
 }
 
 async function loadCra(user) {
@@ -442,6 +536,7 @@ async function loadCra(user) {
       craStatus      = existing.status      || 'BROUILLON';
       craSubmittedAt = existing.submittedAt || null;
       if (existing.clientCompany) document.getElementById('cra-client').value = existing.clientCompany;
+      if (existing.missionId) document.getElementById('cra-mission').value = existing.missionId;
       let saved = [];
       try { saved = JSON.parse(existing.entriesJson || '[]'); } catch { saved = []; }
       initCraMonth(monthStr, saved);
@@ -520,6 +615,7 @@ function buildCraPayload() {
     submittedAt:   craSubmittedAt,
     validatedAt:   null,
     validatedBy:   null,
+    missionId:     document.getElementById('cra-mission').value || null,
   };
 }
 
@@ -805,7 +901,10 @@ function initNotes(user) {
   document.querySelectorAll('.btn-example').forEach(btn => {
     btn.addEventListener('click', () => {
       const textarea = document.getElementById('notes-text');
-      textarea.value = btn.dataset.example;
+      const tpl = btn.dataset.exampleTpl;
+      textarea.value = tpl
+        ? tpl.replace('{company}', tenantName())
+        : btn.dataset.example;
       textarea.focus();
       textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });

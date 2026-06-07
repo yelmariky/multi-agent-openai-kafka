@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Espace consultant — IA-INSIGHT</title>
+  <title>Espace consultant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -47,7 +47,7 @@
   <!-- ====== ÉCRAN DE CONNEXION ====== -->
   <div id="login-screen" class="login-screen">
     <div class="login-card">
-      <p class="eyebrow">IA-INSIGHT</p>
+      <p class="eyebrow" id="login-tenant-name">—</p>
       <h1>Espace consultant</h1>
       <p class="login-lede">Connectez-vous avec votre adresse email professionnelle.</p>
       <form id="login-form" class="login-form" autocomplete="on">
@@ -86,7 +86,7 @@
     <!-- HEADER -->
     <header>
       <div class="header-brand">
-        <p class="eyebrow">IA-INSIGHT — Espace consultant</p>
+        <p class="eyebrow" id="header-tenant-name">—</p>
         <h1>Bonjour, <span id="user-display-name">—</span></h1>
         <p class="lede">Gérez vos CRA et consultez vos absences.</p>
       </div>
@@ -148,7 +148,13 @@
             <div class="form-stack">
               <div class="form-row">
                 <label class="inline" style="flex:2">
-                  Société cliente
+                  Mission / Projet
+                  <select id="cra-mission" style="width:100%">
+                    <option value="">-- Aucune mission --</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:2">
+                  Societe cliente
                   <input id="cra-client" type="text" placeholder="INFOGENE DIGITAL">
                 </label>
                 <label class="inline">
@@ -216,6 +222,10 @@
               <button id="cra-recall" class="btn-recall" style="display:none">
                 ↩ Retirer ma soumission
               </button>
+              <button id="cra-download-pdf" class="btn-secondary" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Telecharger PDF
+              </button>
             </div>
             <div id="cra-action-status" class="status"></div>
           </div>
@@ -263,7 +273,7 @@
               <div class="form-row">
                 <label class="inline" style="flex:2">
                   Description
-                  <textarea id="notes-text" rows="3" placeholder="Ex : frais km janvier pour IA-INSIGHT sur 44 km…"></textarea>
+                  <textarea id="notes-text" rows="3" placeholder="Ex : frais km janvier sur 44 km…"></textarea>
                 </label>
                 <label class="inline">
                   Mois (absences km)
@@ -279,7 +289,7 @@
               <button class="btn-example" data-example="Taxi Uber le 8 mai de Paris Gare de Lyon à La Défense, 32 €, payé en personnel">🚕 Taxi</button>
               <button class="btn-example" data-example="Achat d'un écran Dell 27 pouces le 15 mai pour le télétravail, 389 € carte business">🖥 Matériel</button>
               <button class="btn-example" data-example="Train Paris-Lyon le 20 mai aller-retour, 112 €, carte business">🚆 Transport</button>
-              <button class="btn-example" data-example="Frais kilométriques mai pour IA-INSIGHT, 44 km aller-retour quotidien, voiture 7CV">🚗 Km mensuel</button>
+              <button class="btn-example" id="example-km" data-example-tpl="Frais kilométriques mai pour {company}, 44 km aller-retour quotidien, voiture 7CV">🚗 Km mensuel</button>
             </div>
 
             <div class="actions-row" style="margin-top:8px">

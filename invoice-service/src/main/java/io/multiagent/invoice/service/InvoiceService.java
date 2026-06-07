@@ -1,11 +1,14 @@
 package io.multiagent.invoice.service;
 
+import io.multiagent.invoice.entity.InvoiceEntity;
+import io.multiagent.invoice.entity.SellerProfileEntity;
+import io.multiagent.invoice.infrastructure.tenant.TenantContext;
 import io.multiagent.invoice.model.AbsencePeriod;
 import io.multiagent.invoice.model.InvoiceLookupRequest;
 import io.multiagent.invoice.model.SellerProfile;
 import io.multiagent.invoice.model.SimpleInvoiceRequest;
-import io.multiagent.invoice.repository.InvoiceWeaviateRepository;
-import io.multiagent.invoice.repository.SellerProfileRepository;
+import io.multiagent.invoice.repository.InvoiceJpaRepository;
+import io.multiagent.invoice.repository.SellerProfileJpaRepository;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -20,10 +23,12 @@ import java.time.MonthDay;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -43,6 +48,7 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class InvoiceService {
@@ -55,12 +61,12 @@ public class InvoiceService {
     private static final Locale FRENCH = Locale.FRANCE;
 
     private final Path storagePath;
-    private final InvoiceWeaviateRepository invoiceRepo;
-    private final SellerProfileRepository sellerProfileRepo;
+    private final InvoiceJpaRepository invoiceRepo;
+    private final SellerProfileJpaRepository sellerProfileRepo;
 
     public InvoiceService(
-            InvoiceWeaviateRepository invoiceRepo,
-            SellerProfileRepository sellerProfileRepo,
+            InvoiceJpaRepository invoiceRepo,
+            SellerProfileJpaRepository sellerProfileRepo,
             @Value("${app.invoices.storage-path:${AI_CORE_INVOICES_STORAGE_PATH:/data/invoices}}") String storagePathStr
     ) throws IOException {
         this.invoiceRepo = invoiceRepo;
@@ -73,6 +79,7 @@ public class InvoiceService {
         return generate(request, null);
     }
 
+    @Transactional
     public GeneratedInvoiceFiles generate(SimpleInvoiceRequest request, String sourceText) throws IOException {
         SimpleInvoiceRequest normalized = normalize(request);
         String baseFilename = fileSafeName(normalized);
@@ -85,31 +92,31 @@ public class InvoiceService {
         Files.write(pdfPath, pdfBytes);
         Files.write(excelPath, excelBytes);
 
+        UUID tenantId = TenantContext.getTenantId();
+
         // Upsert: delete any existing invoice with the same name before re-indexing
         if (!isBlank(normalized.invoiceName()) && !isBlank(normalized.sellerCompanyName())) {
-            invoiceRepo.deleteInvoices(new InvoiceLookupRequest(
-                    normalized.billingMonth(), normalized.sellerCompanyName(), normalized.invoiceName()
-            ));
+            List<InvoiceEntity> existing = invoiceRepo
+                    .findByTenantIdAndInvoiceNameIgnoreCaseAndSellerCompanyNameIgnoreCase(
+                            tenantId, normalized.invoiceName(), normalized.sellerCompanyName());
+            invoiceRepo.deleteAll(existing);
         }
 
-        invoiceRepo.indexSimpleInvoice(
-                null,
-                normalized,
-                sourceText,
-                pdfPath.toString(),
-                excelPath.toString()
-        );
+        InvoiceEntity entity = toEntity(normalized, tenantId, sourceText, pdfPath.toString(), excelPath.toString());
+        invoiceRepo.save(entity);
 
         return new GeneratedInvoiceFiles(normalized, pdfPath, excelPath, pdfBytes, excelBytes);
     }
 
-    public GeneratedInvoiceFiles generateFromWeaviate(InvoiceLookupRequest request) throws IOException {
-        List<SimpleInvoiceRequest> invoices = invoiceRepo.findInvoices(request);
-        if (invoices.isEmpty()) {
-            throw new IllegalStateException("Aucune facture trouvée pour billingMonth=%s, sellerCompanyName=%s, invoiceName=%s"
+    public GeneratedInvoiceFiles generateFromDb(InvoiceLookupRequest request) throws IOException {
+        UUID tenantId = TenantContext.getTenantId();
+        List<InvoiceEntity> entities = findInvoiceEntities(tenantId, request);
+        if (entities.isEmpty()) {
+            throw new IllegalStateException("Aucune facture trouvee pour billingMonth=%s, sellerCompanyName=%s, invoiceName=%s"
                     .formatted(request.billingMonth(), request.sellerCompanyName(), request.invoiceName()));
         }
 
+        List<SimpleInvoiceRequest> invoices = entities.stream().map(this::toSimpleInvoiceRequest).toList();
         String baseFilename = lookupFileSafeName(request, invoices);
         byte[] pdfBytes = buildCombinedPdf(invoices);
         byte[] excelBytes = buildSummaryExcel(invoices);
@@ -122,18 +129,123 @@ public class InvoiceService {
         return new GeneratedInvoiceFiles(invoices.get(0), pdfPath, excelPath, pdfBytes, excelBytes);
     }
 
-    public int deleteFromWeaviate(InvoiceLookupRequest request) throws IOException {
-        int deleted = invoiceRepo.deleteInvoices(request);
-        if (deleted <= 0) {
-            return deleted;
+    @Transactional
+    public int deleteFromDb(InvoiceLookupRequest request) throws IOException {
+        UUID tenantId = TenantContext.getTenantId();
+        List<InvoiceEntity> toDelete = findInvoiceEntities(tenantId, request);
+        if (toDelete.isEmpty()) {
+            return 0;
         }
+        invoiceRepo.deleteAll(toDelete);
         if (request.invoiceName() != null && !request.invoiceName().isBlank()) {
             String baseFilename = request.invoiceName().replaceAll("[^A-Za-z0-9_-]", "_");
             Files.deleteIfExists(storagePath.resolve(baseFilename + ".pdf"));
             Files.deleteIfExists(storagePath.resolve(baseFilename + ".xlsx"));
         }
-        return deleted;
+        return toDelete.size();
     }
+
+    public List<SimpleInvoiceRequest> findInvoicesByPeriod(String start, String end, String company, String consultantEmail) {
+        UUID tenantId = TenantContext.getTenantId();
+        List<InvoiceEntity> entities;
+
+        if (!isBlank(company)) {
+            entities = invoiceRepo.findByTenantIdAndBillingMonthBetweenAndSellerCompanyNameIgnoreCase(
+                    tenantId, start != null ? start : "0000-00", end != null ? end : "9999-99", company);
+        } else {
+            entities = invoiceRepo.findByTenantIdAndBillingMonthBetween(
+                    tenantId, start != null ? start : "0000-00", end != null ? end : "9999-99");
+        }
+
+        return entities.stream()
+                .map(this::toSimpleInvoiceRequest)
+                .filter(inv -> isBlank(consultantEmail)
+                        || isBlank(inv.consultantEmail())
+                        || inv.consultantEmail().trim().equalsIgnoreCase(consultantEmail.trim()))
+                .sorted(Comparator.comparing(inv -> inv.billingMonth() != null ? inv.billingMonth() : "", String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    // -----------------------------------------------------------------------
+    // Entity / DTO conversion
+    // -----------------------------------------------------------------------
+
+    private InvoiceEntity toEntity(SimpleInvoiceRequest inv, UUID tenantId, String sourceText, String pdfPath, String excelPath) {
+        InvoiceEntity e = new InvoiceEntity();
+        e.setTenantId(tenantId);
+        e.setInvoiceName(inv.invoiceName());
+        e.setInvoiceDate(inv.invoiceDate());
+        e.setBillingMonth(inv.billingMonth());
+        e.setSellerCompanyName(inv.sellerCompanyName());
+        e.setSellerAddress(inv.sellerAddress());
+        e.setSellerRcs(inv.sellerRcs());
+        e.setClientCompanyName(inv.clientCompanyName());
+        e.setClientAddress(inv.clientAddress());
+        e.setClientRcs(inv.clientRcs());
+        e.setInvoiceTitle(inv.invoiceTitle());
+        e.setDaysCount(inv.daysCount() != null ? (int) Math.round(inv.daysCount()) : null);
+        e.setDaysExact(inv.daysCount() != null ? BigDecimal.valueOf(inv.daysCount()) : null);
+        e.setUnitPriceHt(inv.unitPriceHt());
+        e.setTotalHt(inv.totalHt());
+        e.setVatRate(inv.vatRate());
+        e.setTotalTtc(inv.totalTtc());
+        e.setCurrency(inv.currency());
+        e.setPaymentDueDate(inv.paymentDueDate());
+        e.setLatePaymentClause(inv.latePaymentClause());
+        e.setNotes(inv.notes());
+        e.setConsultantEmail(inv.consultantEmail() != null ? inv.consultantEmail().toLowerCase().trim() : null);
+        e.setSourceText(sourceText);
+        e.setPdfPath(pdfPath);
+        e.setExcelPath(excelPath);
+        return e;
+    }
+
+    private SimpleInvoiceRequest toSimpleInvoiceRequest(InvoiceEntity e) {
+        Double days = e.getDaysExact() != null ? e.getDaysExact().doubleValue()
+                : (e.getDaysCount() != null ? (double) e.getDaysCount() : null);
+        return new SimpleInvoiceRequest(
+                e.getInvoiceName(),
+                e.getInvoiceDate(),
+                e.getBillingMonth(),
+                e.getSellerCompanyName(),
+                e.getSellerAddress(),
+                e.getSellerRcs(),
+                e.getClientCompanyName(),
+                e.getClientAddress(),
+                e.getClientRcs(),
+                e.getInvoiceTitle(),
+                days,
+                e.getUnitPriceHt(),
+                e.getTotalHt(),
+                e.getVatRate(),
+                e.getTotalTtc(),
+                e.getCurrency(),
+                e.getPaymentDueDate(),
+                e.getLatePaymentClause(),
+                e.getNotes(),
+                null,
+                e.getConsultantEmail()
+        );
+    }
+
+    private List<InvoiceEntity> findInvoiceEntities(UUID tenantId, InvoiceLookupRequest request) {
+        if (request == null || isBlank(request.sellerCompanyName())) {
+            return List.of();
+        }
+        if (!isBlank(request.invoiceName())) {
+            return invoiceRepo.findByTenantIdAndInvoiceNameIgnoreCaseAndSellerCompanyNameIgnoreCase(
+                    tenantId, request.invoiceName(), request.sellerCompanyName());
+        }
+        if (!isBlank(request.billingMonth())) {
+            return invoiceRepo.findByTenantIdAndBillingMonthAndSellerCompanyNameIgnoreCase(
+                    tenantId, request.billingMonth(), request.sellerCompanyName());
+        }
+        return List.of();
+    }
+
+    // -----------------------------------------------------------------------
+    // Normalize
+    // -----------------------------------------------------------------------
 
     private SimpleInvoiceRequest normalize(SimpleInvoiceRequest request) {
         String billingMonth = resolveBillingMonth(request, request.invoiceDate());
@@ -165,7 +277,7 @@ public class InvoiceService {
 
         String latePaymentClause = request.latePaymentClause();
         if (isBlank(latePaymentClause)) {
-            SellerProfile profile = sellerProfileRepo.findByCompanyName(request.sellerCompanyName());
+            SellerProfile profile = findSellerProfile(request.sellerCompanyName());
             latePaymentClause = (profile != null && !isBlank(profile.latePaymentClause()))
                     ? profile.latePaymentClause()
                     : DEFAULT_LATE_PAYMENT_CLAUSE;
@@ -191,9 +303,18 @@ public class InvoiceService {
                 dueDate,
                 latePaymentClause,
                 request.notes(),
-                null,  // absencePeriods consumed — no need to persist after computation
+                null,
                 request.consultantEmail()
         );
+    }
+
+    private SellerProfile findSellerProfile(String companyName) {
+        if (isBlank(companyName)) return null;
+        UUID tenantId = TenantContext.getTenantId();
+        return sellerProfileRepo.findByTenantIdAndCompanyNameIgnoreCase(tenantId, companyName)
+                .map(e -> new SellerProfile(e.getCompanyName(), e.getAddress(), e.getRcs(),
+                        e.getIban(), e.getBic(), e.getEmail(), e.getCapital(), e.getLatePaymentClause()))
+                .orElse(null);
     }
 
     private Double resolveDaysCount(SimpleInvoiceRequest request, String billingMonth) {
@@ -229,7 +350,7 @@ public class InvoiceService {
                 LocalDate d = from;
                 while (!d.isAfter(to)) { absent.add(d); d = d.plusDays(1); }
             } catch (Exception e) {
-                // date invalide — ignorée silencieusement
+                // date invalide — ignoree silencieusement
             }
         }
         return absent;
@@ -274,11 +395,11 @@ public class InvoiceService {
             return null;
         }
 
-        List<SimpleInvoiceRequest> existingInvoices = invoiceRepo.findInvoices(
-                new InvoiceLookupRequest(billingMonth, request.sellerCompanyName(), null)
-        );
+        UUID tenantId = TenantContext.getTenantId();
+        List<InvoiceEntity> existingInvoices = invoiceRepo.findByTenantIdAndBillingMonthAndSellerCompanyNameIgnoreCase(
+                tenantId, billingMonth, request.sellerCompanyName());
         int nextSequence = existingInvoices.stream()
-                .map(SimpleInvoiceRequest::invoiceName)
+                .map(InvoiceEntity::getInvoiceName)
                 .mapToInt(this::extractSequenceNumber)
                 .max()
                 .orElse(0) + 1;
@@ -336,7 +457,7 @@ public class InvoiceService {
             CellStyle text = cellStyle(workbook, HorizontalAlignment.LEFT, false);
             CellStyle amount = cellStyle(workbook, HorizontalAlignment.RIGHT, false);
             CellStyle total = cellStyle(workbook, HorizontalAlignment.RIGHT, true);
-            SellerProfile sellerProfile = sellerProfileRepo.findByCompanyName(invoice.sellerCompanyName());
+            SellerProfile sellerProfile = findSellerProfile(invoice.sellerCompanyName());
             String sellerAddr = isBlank(invoice.sellerAddress()) && sellerProfile != null
                     ? safe(sellerProfile.address()) : safe(invoice.sellerAddress());
             String sellerRcs  = isBlank(invoice.sellerRcs()) && sellerProfile != null
@@ -349,7 +470,7 @@ public class InvoiceService {
             rowIdx = writeGridRow(sheet, rowIdx, sellerAddr, safe(invoice.clientAddress()), text);
             rowIdx = writeGridRow(sheet, rowIdx, sellerRcs,  safe(invoice.clientRcs()), text);
             rowIdx++;
-            rowIdx = writeKeyValueRow(sheet, rowIdx, "Facture N°", safe(invoice.invoiceName()), text);
+            rowIdx = writeKeyValueRow(sheet, rowIdx, "Facture N\u00b0", safe(invoice.invoiceName()), text);
             rowIdx = writeKeyValueRow(sheet, rowIdx, "Date", safeDate(invoice.invoiceDate()), text);
             rowIdx = writeKeyValueRow(sheet, rowIdx, "Echeance", safeDate(invoice.paymentDueDate()), text);
             rowIdx = writeKeyValueRow(sheet, rowIdx, "Mois", safe(invoice.billingMonth()), text);
@@ -439,7 +560,7 @@ public class InvoiceService {
         float right = pageWidth - 55;
         float middle = pageWidth / 2;
 
-        SellerProfile sellerProfile = sellerProfileRepo.findByCompanyName(invoice.sellerCompanyName());
+        SellerProfile sellerProfile = findSellerProfile(invoice.sellerCompanyName());
         String sellerAddr = isBlank(invoice.sellerAddress()) && sellerProfile != null
                 ? safe(sellerProfile.address()) : safe(invoice.sellerAddress());
         String sellerRcs  = isBlank(invoice.sellerRcs()) && sellerProfile != null
@@ -729,7 +850,7 @@ public class InvoiceService {
             return "";
         }
         String formatted = amount.setScale(2, RoundingMode.HALF_UP).toString().replace(".", ",");
-        return formatted + " €";
+        return formatted + " \u20ac";
     }
 
     private boolean isBlank(String value) {

@@ -135,3 +135,47 @@ data:
         }
       ]
     }
+  platform-realm.json: |
+    {
+      "realm": "platform",
+      "displayName": "IA-INSIGHT Platform Console",
+      "enabled": true,
+      "sslRequired": "none",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": false,
+      "bruteForceProtected": true,
+      "roles": {
+        "realm": [
+          { "name": "platform_admin", "description": "Super-administrateur plateforme multi-tenant" }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "frontend-platform",
+          "name": "Frontend Platform Console",
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": true,
+          "redirectUris": ["http://localhost:3002/*"],
+          "webOrigins": ["http://localhost:3002"],
+          "protocol": "openid-connect"
+        }
+      ],
+      "users": [
+        {
+          "username": "platform@ia-insight.fr",
+          "email": "platform@ia-insight.fr",
+          "firstName": "Platform",
+          "lastName": "Admin",
+          "enabled": true,
+          "emailVerified": true,
+          "credentials": [
+            { "type": "password", "value": "admin123", "temporary": false }
+          ],
+          "realmRoles": ["platform_admin"]
+        }
+      ]
+    }

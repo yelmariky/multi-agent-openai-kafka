@@ -4,11 +4,20 @@ server:
 spring:
   application:
     name: ai-core
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8090/realms/ia-insight/protocol/openid-connect/certs}
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ia_insight}
+    username: ${POSTGRES_USER:ia_insight}
+    password: ${POSTGRES_PASSWORD:changeme}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
   servlet:
     multipart:
       max-file-size: 20MB
@@ -37,6 +46,7 @@ openai:
   api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
   model: ${OPENAI_MODEL:gpt-4.1-mini}
   embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
+  embedding-dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:2000}
   retry:
     max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:4}
     base-backoff-ms: ${OPENAI_RETRY_BASE_BACKOFF_MS:1500}
@@ -47,7 +57,7 @@ ai-core:
     intent-model: ${AI_CORE_INTENT_MODEL:gpt-4o-mini}
     rewrite-model: ${AI_CORE_REWRITE_MODEL:gpt-4o-mini}
     rag-model: ${AI_CORE_RAG_MODEL:gpt-4o}
-    embedding-model: ${AI_CORE_EMBED_MODEL:text-embedding-3-small}
+    embedding-model: ${AI_CORE_EMBED_MODEL:text-embedding-3-large}
   rag:
     top-k-search: ${AI_CORE_RAG_TOP_K_SEARCH:20}
     top-k-context: ${AI_CORE_RAG_TOP_K_CONTEXT:5}
@@ -68,14 +78,9 @@ ai-core:
     lang: ${AI_CORE_OCR_LANG:eng+fra}
     dpi: ${AI_CORE_OCR_DPI:300}
 
-weaviate:
-  scheme: ${WEAVIATE_SCHEME:http}
-  host: ${WEAVIATE_HOST:?WEAVIATE_HOST is required}
-  class-name: ${WEAVIATE_CLASS:DocumentChunk}
-  expense-class: ${WEAVIATE_EXPENSE_CLASS:Expense}
-  schema-init:
-    max-attempts: ${WEAVIATE_SCHEMA_INIT_MAX_ATTEMPTS:6}
-    backoff: ${WEAVIATE_SCHEMA_INIT_BACKOFF:10s}
+keycloak:
+  base-url: ${KEYCLOAK_BASE_URL:http://localhost:8090}
+  internal-url: ${KEYCLOAK_INTERNAL_URL:${KEYCLOAK_BASE_URL:http://localhost:8090}}
 
 invoice:
   service:

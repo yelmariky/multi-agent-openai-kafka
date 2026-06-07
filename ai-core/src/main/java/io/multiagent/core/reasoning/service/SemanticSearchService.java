@@ -27,7 +27,7 @@ public class SemanticSearchService {
     private final WeaviateService weaviateService;
     private final DateProvider dateProvider;
 
-    @Value("${ai-core.openai.embedding-model:text-embedding-3-small}")
+    @Value("${ai-core.openai.embedding-model:text-embedding-3-large}")
     private String embeddingModel;
 
     /**

@@ -1,5 +1,6 @@
 #!/bin/sh
 source "../../.openai/.env.local"
+kubectl get secret postgres-secret --namespace=db -o yaml | grep -v 'namespace:\|uid:\|resourceVersion:\|creationTimestamp:' | kubectl apply --namespace=multi-agent -f -
 
 kubectl create secret generic openai-secret \
   --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \

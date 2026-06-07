@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+  labels:
+    app: postgres
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: db-hostpath
+  hostPath:
+    path: /Users/younes/data/postgres  # Créé automatiquement par install.sh
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: db
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: db-hostpath
+  resources:
+    requests:
+      storage: 5Gi

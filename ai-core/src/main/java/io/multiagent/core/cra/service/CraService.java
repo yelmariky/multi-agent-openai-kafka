@@ -61,7 +61,8 @@ public class CraService {
                 cra.submittedAt(),
                 cra.validatedAt(),
                 cra.validatedBy(),
-                cra.refusedReason()
+                cra.refusedReason(),
+                cra.missionId()
         );
         String uuid = weaviateService.indexCra(toSave);
         return new CraRequest(
@@ -76,7 +77,8 @@ public class CraService {
                 toSave.submittedAt(),
                 toSave.validatedAt(),
                 toSave.validatedBy(),
-                toSave.refusedReason()
+                toSave.refusedReason(),
+                toSave.missionId()
         );
     }
 
@@ -98,7 +100,8 @@ public class CraService {
                 submittedAt,
                 cra.validatedAt(),
                 cra.validatedBy(),
-                null  // clear refusedReason on resubmit
+                null,  // clear refusedReason on resubmit
+                cra.missionId()
         );
         CraRequest submitted = save(toSubmit);
         notificationService.push(
@@ -136,7 +139,8 @@ public class CraService {
                 cra.submittedAt(),
                 validatedAt,
                 validatedBy,
-                null
+                null,
+                cra.missionId()
         );
         CraRequest validated = save(toValidate);
         consultantNotificationService.push(
@@ -171,7 +175,8 @@ public class CraService {
                 null,           // clear submittedAt
                 cra.validatedAt(),
                 cra.validatedBy(),
-                reason
+                reason,
+                cra.missionId()
         );
         CraRequest refused = save(toRefuse);
         consultantNotificationService.push(
@@ -208,7 +213,8 @@ public class CraService {
                 null,   // clear submittedAt
                 cra.validatedAt(),
                 cra.validatedBy(),
-                null    // clear refusedReason
+                null,   // clear refusedReason
+                cra.missionId()
         );
         return save(toRecall);
     }
@@ -230,7 +236,8 @@ public class CraService {
                 cra.submittedAt(),
                 null,   // clear validatedAt
                 null,   // clear validatedBy
-                null    // clear refusedReason
+                null,   // clear refusedReason
+                cra.missionId()
         );
         return save(toReopen);
     }

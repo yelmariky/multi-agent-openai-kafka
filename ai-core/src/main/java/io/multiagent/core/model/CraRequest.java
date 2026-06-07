@@ -3,7 +3,7 @@ package io.multiagent.core.model;
 import java.util.List;
 
 public record CraRequest(
-    String id,            // Weaviate UUID (null for new)
+    String id,            // UUID (null for new)
     String consultant,    // Nom du consultant
     String company,       // Société émettrice (IA-INSIGHT)
     String clientCompany, // Société cliente
@@ -14,5 +14,6 @@ public record CraRequest(
     String submittedAt,   // ISO datetime string
     String validatedAt,   // ISO datetime string
     String validatedBy,   // Nom du validateur
-    String refusedReason  // Motif de refus (retour en BROUILLON)
+    String refusedReason, // Motif de refus (retour en BROUILLON)
+    String missionId      // UUID de la mission liée (nullable)
 ) {}

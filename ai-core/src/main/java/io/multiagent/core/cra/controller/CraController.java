@@ -2,26 +2,40 @@ package io.multiagent.core.cra.controller;
 
 import io.multiagent.core.model.CraRequest;
 import io.multiagent.core.model.ExpenseItem;
+import io.multiagent.core.cra.service.CraPdfService;
 import io.multiagent.core.cra.service.CraService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/cra")
 public class CraController {
 
     private final CraService craService;
+    private final CraPdfService craPdfService;
 
-    public CraController(CraService craService) {
+    public CraController(CraService craService, CraPdfService craPdfService) {
         this.craService = craService;
+        this.craPdfService = craPdfService;
+    }
+
+    @GetMapping(value = "/pdf/{id}", produces = "application/pdf")
+    public ResponseEntity<byte[]> downloadPdf(@PathVariable UUID id) {
+        try {
+            byte[] pdf = craPdfService.generatePdf(id);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"cra-" + id + ".pdf\"");
+            return ResponseEntity.ok().headers(headers).body(pdf);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @PostMapping("/save")

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IA-INSIGHT Admin</title>
+  <title>Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -52,7 +52,7 @@
       <header class="admin-header">
         <div class="header-brand">
           <p class="eyebrow">Admin</p>
-          <h1 style="font-size:26px;margin-bottom:0">IA-INSIGHT</h1>
+          <h1 id="tenant-name" style="font-size:26px;margin-bottom:0">—</h1>
         </div>
 
         <div class="header-right">
@@ -102,36 +102,95 @@
           </button>
         </div>
 
-        <!-- Add form (hidden) -->
+        <!-- Add form (hidden) — two modes: existing Keycloak user OR invite new -->
         <div id="cons-add-form" class="cons-add-form" style="display:none">
           <div class="card" style="padding:20px">
             <p class="eyebrow">Nouveau consultant</p>
-            <div class="form-row" style="margin-top:12px">
-              <label class="inline" style="flex:2">
-                Nom complet
-                <input id="cons-new-name" type="text" placeholder="Alice Martin">
-              </label>
-              <label class="inline" style="flex:2">
-                Email
-                <input id="cons-new-email" type="email" placeholder="alice@ia-insight.fr">
-              </label>
-              <label class="inline" style="flex:1">
-                Rôle
-                <select id="cons-new-role">
-                  <option value="Salarié">Salarié</option>
-                  <option value="Freelance">Freelance</option>
-                  <option value="Sous-traitant">Sous-traitant</option>
-                </select>
-              </label>
-              <label class="inline" style="flex:1">
-                Société (émetteur)
-                <input id="cons-new-company" type="text" value="IA-INSIGHT">
-              </label>
-              <label class="inline" style="flex:1">
-                Société cliente
-                <input id="cons-new-clientname" type="text" placeholder="INFOGENE DIGITAL">
-              </label>
+            <p id="cons-add-kc-status" style="font-size:12px;color:var(--muted);margin:4px 0 0"></p>
+
+            <!-- Mode toggle -->
+            <div style="display:flex;gap:8px;margin:12px 0 4px">
+              <button id="cons-mode-existing" class="btn-secondary cons-mode-active" style="font-size:12px;padding:5px 12px">Utilisateur existant</button>
+              <button id="cons-mode-invite" class="btn-ghost" style="font-size:12px;padding:5px 12px">Inviter un nouveau</button>
             </div>
+
+            <!-- Mode 1: existing Keycloak user -->
+            <div id="cons-existing-block">
+              <div class="form-row" style="margin-top:12px">
+                <label class="inline" style="flex:3">
+                  Utilisateur Keycloak
+                  <select id="cons-new-kc-user" style="width:100%">
+                    <option value="">-- Chargement --</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:1">
+                  Role
+                  <select id="cons-new-role">
+                    <option value="Salarie">Salarie</option>
+                    <option value="Freelance">Freelance</option>
+                    <option value="Sous-traitant">Sous-traitant</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:1">
+                  Societe (emetteur)
+                  <input id="cons-new-company" type="text">
+                </label>
+                <label class="inline" style="flex:1">
+                  Societe cliente
+                  <input id="cons-new-clientname" type="text" placeholder="INFOGENE DIGITAL">
+                </label>
+              </div>
+            </div>
+
+            <!-- Mode 2: invite new user (Keycloak + profile) -->
+            <div id="cons-invite-block" style="display:none">
+              <div class="form-row" style="margin-top:12px">
+                <label class="inline" style="flex:1">
+                  Email
+                  <input id="cons-invite-email" type="email" placeholder="consultant@exemple.com">
+                </label>
+                <label class="inline" style="flex:1">
+                  Prenom
+                  <input id="cons-invite-firstname" type="text" placeholder="Alice">
+                </label>
+                <label class="inline" style="flex:1">
+                  Nom
+                  <input id="cons-invite-lastname" type="text" placeholder="Dupont">
+                </label>
+              </div>
+              <div class="form-row" style="margin-top:8px">
+                <label class="inline" style="flex:1">
+                  Type d'authentification
+                  <select id="cons-invite-authtype">
+                    <option value="internal">Interne (mot de passe temporaire)</option>
+                    <option value="external">Externe (Google, PayPal, etc.)</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:1" id="cons-invite-password-label">
+                  Mot de passe temporaire
+                  <input id="cons-invite-password" type="text" placeholder="Changeme123!">
+                </label>
+              </div>
+              <div class="form-row" style="margin-top:8px">
+                <label class="inline" style="flex:1">
+                  Role
+                  <select id="cons-invite-role">
+                    <option value="Salarie">Salarie</option>
+                    <option value="Freelance">Freelance</option>
+                    <option value="Sous-traitant">Sous-traitant</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:1">
+                  Societe (emetteur)
+                  <input id="cons-invite-company" type="text">
+                </label>
+                <label class="inline" style="flex:1">
+                  Societe cliente
+                  <input id="cons-invite-clientname" type="text" placeholder="INFOGENE DIGITAL">
+                </label>
+              </div>
+            </div>
+
             <div class="actions-row" style="margin-top:12px">
               <button id="cons-add-save" class="btn-primary">Enregistrer</button>
               <button id="cons-add-cancel" class="btn-ghost">Annuler</button>
@@ -198,6 +257,10 @@
             <button id="cons-disable-btn" class="cons-remove-btn">
               <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
               Désactiver
+            </button>
+            <button id="cons-delete-btn" class="cons-remove-btn" style="color:var(--danger,#ef4444)">
+              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              Supprimer
             </button>
           </div>
         </div>
@@ -297,7 +360,7 @@
               </label>
               <label class="inline">
                 Société
-                <input id="cons-inv-company" type="text" value="IA-INSIGHT">
+                <input id="cons-inv-company" type="text">
               </label>
             </div>
             <div class="actions-row" style="margin-top:10px">
@@ -330,6 +393,12 @@
       </button>
     </div>
     <p id="cons-edit-name-display" style="font-weight:600;margin:0 0 16px;color:var(--text);font-size:15px"></p>
+    <div class="form-row" style="margin-bottom:12px">
+      <label class="inline" style="flex:1">
+        Email consultant
+        <input id="cons-edit-email" type="email" placeholder="alice@ia-insight.fr">
+      </label>
+    </div>
     <div class="form-row">
       <label class="inline" style="flex:2">
         Société cliente
@@ -373,12 +442,12 @@
       <div class="settings-section">
         <p class="settings-section-title">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8L2 7h20z"/></svg>
-          Société émettrice (IA-INSIGHT)
+          Société émettrice
         </p>
         <div class="form-stack" style="gap:10px">
           <label class="inline">
             Raison sociale
-            <input id="set-company" type="text" placeholder="IA-INSIGHT" readonly style="opacity:.6;cursor:default">
+            <input id="set-company" type="text" readonly style="opacity:.6;cursor:default">
           </label>
           <label class="inline">
             Adresse
