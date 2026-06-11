@@ -9,8 +9,12 @@ import io.multiagent.core.model.SellerProfile;
 import io.multiagent.core.organization.entity.Client;
 import io.multiagent.core.organization.entity.Mission;
 import io.multiagent.core.organization.entity.Resource;
+import io.multiagent.core.organization.entity.ProjectEntity;
 import io.multiagent.core.organization.repository.MissionRepository;
+import io.multiagent.core.organization.repository.ProjectRepository;
 import io.multiagent.core.service.WeaviateService;
+import io.multiagent.core.settings.entity.ConsultantProfileEntity;
+import io.multiagent.core.settings.repository.ConsultantProfileJpaRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -25,8 +29,11 @@ import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.time.YearMonth;
 import java.time.format.TextStyle;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -36,8 +43,10 @@ public class CraPdfService {
 
     private final CraJpaRepository craRepo;
     private final MissionRepository missionRepo;
+    private final ProjectRepository projectRepo;
     private final WeaviateService weaviateService;
     private final ObjectMapper objectMapper;
+    private final ConsultantProfileJpaRepository consultantProfileRepo;
 
     private static final float MARGIN = 30;
     private static final float LEADING = 14f;
@@ -72,6 +81,56 @@ public class CraPdfService {
             }
         }
 
+        // Resolve project data
+        ProjectEntity project = null;
+        if (cra.getProjectId() != null) {
+            project = projectRepo.findById(cra.getProjectId()).orElse(null);
+        }
+
+        // Consultant profile — cra.getConsultant() stores the email (since frontend sends user.email)
+        ConsultantProfileEntity consultantProfile = null;
+        if (cra.getConsultant() != null) {
+            consultantProfile = consultantProfileRepo
+                    .findByTenantIdAndEmailIgnoreCase(tenantId, cra.getConsultant())
+                    .orElse(null);
+        }
+
+        // Display name for PDF header: full name from profile, fallback to raw consultant field
+        String consultantDisplayName = (consultantProfile != null && consultantProfile.getName() != null)
+                ? consultantProfile.getName() : cra.getConsultant();
+
+        // Fallback row label (for mono-projet / rétro-compat)
+        String fallbackLabel = resolveRowLabel(project, mission, consultantProfile);
+
+        // Prestataire contact: validatedBy (admin who validated) > resource name > consultant name
+        String prestaContact;
+        if (cra.getValidatedBy() != null && !cra.getValidatedBy().isBlank()) {
+            prestaContact = safe(cra.getValidatedBy());
+        } else if (resource != null && resource.getName() != null) {
+            prestaContact = safe(resource.getName());
+        } else {
+            prestaContact = consultantDisplayName;
+        }
+
+        // Client block: from mission client > consultant profile > CRA fields
+        String clientSociete;
+        String clientAddr;
+        String clientContact;
+        if (client != null) {
+            clientSociete = safe(client.getName());
+            clientAddr = safe(client.getAddress());
+            clientContact = safe(client.getContactName());
+        } else {
+            String craClientCompany = cra.getClientCompany();
+            clientSociete = (craClientCompany != null && !craClientCompany.isBlank()) ? craClientCompany
+                    : (consultantProfile != null ? safe(consultantProfile.getClientName()) : "");
+            clientAddr = consultantProfile != null ? safe(consultantProfile.getClientAddress()) : "";
+            // Contact: CRA field first, fallback to admin-set profile field
+            String craEmail = cra.getClientContactEmail();
+            clientContact = (craEmail != null && !craEmail.isBlank()) ? craEmail
+                    : (consultantProfile != null ? safe(consultantProfile.getClientContactEmail()) : "");
+        }
+
         // Seller profile (prestataire company info)
         SellerProfile seller = weaviateService.findSellerProfile(cra.getCompany());
 
@@ -96,23 +155,39 @@ public class CraPdfService {
                 float y = pageH - MARGIN;
 
                 // === HEADER ===
-                y = drawHeader(cs, y, pageW, cra.getConsultant(), monthLabel, cra.getStatus(),
+                y = drawHeader(cs, y, pageW, consultantDisplayName, monthLabel, cra.getStatus(),
                         cra.getValidatedBy(), cra.getValidatedAt());
 
                 // === INFO BLOCKS (Prestataire | Client) ===
-                y = drawInfoBlocks(cs, y, pageW, seller, resource, cra, client);
+                y = drawInfoBlocks(cs, y, pageW, seller, prestaContact, clientSociete, clientAddr, clientContact);
 
-                // === MISSION TITLE ===
-                if (mission != null && mission.getTitle() != null) {
-                    y -= 6;
-                    cs.setFont(PDType1Font.HELVETICA_BOLD, 10);
-                    writeLine(cs, MARGIN, y, "Mission : " + safeText(mission.getTitle()));
-                    y -= LEADING;
+                // === ACTIVITY GRID (multi-projets) ===
+                // Grouper les entrées par projectId
+                Map<String, List<CraDayEntry>> byProject = new LinkedHashMap<>();
+                for (CraDayEntry e : entries) {
+                    String pid = (e.projectId() != null && !e.projectId().isBlank())
+                            ? e.projectId() : "__fallback__";
+                    byProject.computeIfAbsent(pid, k -> new ArrayList<>()).add(e);
                 }
-
-                // === ACTIVITY GRID ===
+                if (byProject.isEmpty()) {
+                    byProject.put("__fallback__", entries.isEmpty() ? new ArrayList<>() : new ArrayList<>(entries));
+                }
+                // Résoudre le label de chaque groupe
+                List<ProjectRow> rows = new ArrayList<>();
+                for (Map.Entry<String, List<CraDayEntry>> grp : byProject.entrySet()) {
+                    String pid = grp.getKey();
+                    String label = fallbackLabel;
+                    if (!"__fallback__".equals(pid)) {
+                        try {
+                            label = projectRepo.findById(UUID.fromString(pid))
+                                    .map(p -> safeText(p.getName()))
+                                    .orElse(fallbackLabel);
+                        } catch (Exception ignored) {}
+                    }
+                    rows.add(new ProjectRow(label, grp.getValue()));
+                }
                 y -= 8;
-                y = drawActivityGrid(cs, y, pageW, entries, daysInMonth);
+                y = drawActivityGrid(cs, y, pageW, rows, daysInMonth);
 
                 // === TOTAL ===
                 y -= 10;
@@ -158,7 +233,7 @@ public class CraPdfService {
         writeLine(cs, MARGIN + 10, y - 22, "RAPPORT D'ACTIVITE");
 
         // Month + name right-aligned
-        String rightText = safeText(consultant) + " — " + capitalize(monthLabel);
+        String rightText = safeText(consultant) + " - " + capitalize(monthLabel);
         float rightW = PDType1Font.HELVETICA_BOLD.getStringWidth(safeText(rightText)) / 1000 * 14;
         writeLine(cs, pageW - MARGIN - rightW - 10, y - 22, safeText(rightText));
 
@@ -183,8 +258,8 @@ public class CraPdfService {
     }
 
     private float drawInfoBlocks(PDPageContentStream cs, float y, float pageW,
-                                  SellerProfile seller, Resource resource,
-                                  CraEntity cra, Client client) throws Exception {
+                                  SellerProfile seller, String prestaContact,
+                                  String clientSociete, String clientAddr, String clientContact) throws Exception {
         float midX = pageW / 2;
         float blockH = 72;
         float startY = y - 4;
@@ -204,7 +279,7 @@ public class CraPdfService {
         infoY -= LEADING;
         cs.setFont(PDType1Font.HELVETICA, 9);
 
-        String prestaSociete = seller != null && seller.companyName() != null ? seller.companyName() : safe(cra.getCompany());
+        String prestaSociete = seller != null && seller.companyName() != null ? seller.companyName() : "";
         writeLine(cs, MARGIN + 6, infoY, "Societe : " + safeText(prestaSociete));
         infoY -= LEADING - 2;
 
@@ -212,7 +287,6 @@ public class CraPdfService {
         writeLine(cs, MARGIN + 6, infoY, "Adresse : " + safeText(truncate(prestaAddr, 50)));
         infoY -= LEADING - 2;
 
-        String prestaContact = resource != null ? safe(resource.getName()) : safe(cra.getConsultant());
         writeLine(cs, MARGIN + 6, infoY, "Contact : " + safeText(prestaContact));
 
         // Client block
@@ -222,40 +296,36 @@ public class CraPdfService {
         infoY -= LEADING;
         cs.setFont(PDType1Font.HELVETICA, 9);
 
-        String clientName = client != null ? safe(client.getName()) : safe(cra.getClientCompany());
-        writeLine(cs, midX + 11, infoY, "Societe : " + safeText(clientName));
+        writeLine(cs, midX + 11, infoY, "Societe : " + safeText(clientSociete));
         infoY -= LEADING - 2;
 
-        String clientAddr = client != null ? safe(client.getAddress()) : "";
         writeLine(cs, midX + 11, infoY, "Adresse : " + safeText(truncate(clientAddr, 50)));
         infoY -= LEADING - 2;
 
-        String clientContact = client != null ? safe(client.getContactName()) : "";
         writeLine(cs, midX + 11, infoY, "Contact : " + safeText(clientContact));
 
         return startY - blockH - 4;
     }
 
-    private float drawActivityGrid(PDPageContentStream cs, float y, float pageW,
-                                    List<CraDayEntry> entries, int daysInMonth) throws Exception {
-        float gridLeft = MARGIN;
-        float labelW = 120; // "Projet/Type" column width
-        float availW = pageW - 2 * MARGIN - labelW;
-        float cellW = Math.min(availW / daysInMonth, 22);
-        float cellH = 20;
+    record ProjectRow(String label, List<CraDayEntry> entries) {}
 
-        // Header row (day numbers)
-        cs.setFont(PDType1Font.HELVETICA_BOLD, 7);
+    private float drawActivityGrid(PDPageContentStream cs, float y, float pageW,
+                                    List<ProjectRow> rows, int daysInMonth) throws Exception {
+        float gridLeft = MARGIN;
+        float labelW   = 160;
+        float availW   = pageW - 2 * MARGIN - labelW;
+        float cellW    = Math.min(availW / daysInMonth, 22);
+        float cellH    = 20;
+        int   rowCount = rows.size();
+
+        // === Header row (day numbers) ===
         cs.setNonStrokingColor(COLOR_HEADER_BG);
         cs.addRect(gridLeft, y - cellH, labelW, cellH);
         cs.fill();
         for (int d = 1; d <= daysInMonth; d++) {
-            cs.setNonStrokingColor(COLOR_HEADER_BG);
             cs.addRect(gridLeft + labelW + (d - 1) * cellW, y - cellH, cellW, cellH);
             cs.fill();
         }
-
-        // Header text
         cs.setNonStrokingColor(COLOR_HEADER_TEXT);
         cs.setFont(PDType1Font.HELVETICA_BOLD, 7);
         writeLine(cs, gridLeft + 4, y - 13, "Projet / Type");
@@ -263,63 +333,54 @@ public class CraPdfService {
             float cx = gridLeft + labelW + (d - 1) * cellW + (cellW / 2) - 3;
             writeLine(cs, cx, y - 13, String.valueOf(d));
         }
-
         y -= cellH;
 
-        // Data row
-        cs.setFont(PDType1Font.HELVETICA, 7);
-        // Label cell
-        cs.setNonStrokingColor(new Color(245, 245, 245));
-        cs.addRect(gridLeft, y - cellH, labelW, cellH);
-        cs.fill();
-        cs.setNonStrokingColor(Color.BLACK);
-        writeLine(cs, gridLeft + 4, y - 13, "Activite normale");
+        // === Data rows (one per project) ===
+        for (ProjectRow row : rows) {
+            cs.setFont(PDType1Font.HELVETICA, 7);
+            cs.setNonStrokingColor(new Color(245, 245, 245));
+            cs.addRect(gridLeft, y - cellH, labelW, cellH);
+            cs.fill();
+            cs.setNonStrokingColor(Color.BLACK);
+            writeLine(cs, gridLeft + 4, y - 13, safeText(row.label()));
 
-        // Day cells
-        for (int d = 1; d <= daysInMonth; d++) {
-            CraDayEntry entry = findEntry(entries, d);
-            float cellX = gridLeft + labelW + (d - 1) * cellW;
-
-            // Cell background color
-            Color bg = Color.WHITE;
-            String label = "";
-            if (entry != null) {
-                switch (entry.type()) {
-                    case "WEEKEND" -> bg = COLOR_WEEKEND;
-                    case "FERIE" -> { bg = COLOR_FERIE; label = "F"; }
-                    case "ABSENT" -> { bg = COLOR_ABSENT; label = "A"; }
-                    default -> {
-                        if (entry.value() >= 1.0) { bg = COLOR_TRAVAIL; label = "1"; }
-                        else if (entry.value() > 0) { bg = COLOR_TRAVAIL; label = "0.5"; }
+            for (int d = 1; d <= daysInMonth; d++) {
+                CraDayEntry entry = findEntry(row.entries(), d);
+                float cellX = gridLeft + labelW + (d - 1) * cellW;
+                Color bg    = Color.WHITE;
+                String lbl  = "";
+                if (entry != null) {
+                    switch (entry.type()) {
+                        case "WEEKEND" -> bg = COLOR_WEEKEND;
+                        case "FERIE"   -> { bg = COLOR_FERIE;  lbl = "F"; }
+                        case "ABSENT"  -> { bg = COLOR_ABSENT; lbl = "A"; }
+                        default -> {
+                            if (entry.value() >= 1.0)  { bg = COLOR_TRAVAIL; lbl = "1"; }
+                            else if (entry.value() > 0) { bg = COLOR_TRAVAIL; lbl = "0.5"; }
+                        }
                     }
                 }
+                cs.setNonStrokingColor(bg);
+                cs.addRect(cellX, y - cellH, cellW, cellH);
+                cs.fill();
+                cs.setStrokingColor(new Color(180, 180, 180));
+                cs.setLineWidth(0.3f);
+                cs.addRect(cellX, y - cellH, cellW, cellH);
+                cs.stroke();
+                if (!lbl.isEmpty()) {
+                    cs.setNonStrokingColor(Color.BLACK);
+                    float tw = PDType1Font.HELVETICA.getStringWidth(lbl) / 1000 * 7;
+                    writeLine(cs, cellX + (cellW - tw) / 2, y - 13, lbl);
+                }
             }
-
-            cs.setNonStrokingColor(bg);
-            cs.addRect(cellX, y - cellH, cellW, cellH);
-            cs.fill();
-
-            // Cell border
-            cs.setStrokingColor(new Color(180, 180, 180));
-            cs.setLineWidth(0.3f);
-            cs.addRect(cellX, y - cellH, cellW, cellH);
-            cs.stroke();
-
-            // Cell text
-            if (!label.isEmpty()) {
-                cs.setNonStrokingColor(Color.BLACK);
-                float tw = PDType1Font.HELVETICA.getStringWidth(label) / 1000 * 7;
-                writeLine(cs, cellX + (cellW - tw) / 2, y - 13, label);
-            }
+            y -= cellH;
         }
 
-        y -= cellH;
-
-        // Grid outer border
+        // === Outer border (encadre header + toutes les lignes) ===
         float gridW = labelW + daysInMonth * cellW;
         cs.setStrokingColor(new Color(100, 100, 100));
         cs.setLineWidth(0.8f);
-        cs.addRect(gridLeft, y, gridW, cellH * 2);
+        cs.addRect(gridLeft, y, gridW, cellH * (1 + rowCount));
         cs.stroke();
 
         return y;
@@ -379,6 +440,21 @@ public class CraPdfService {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    /** Row label priority: project name > mission title > first assigned project > default */
+    private String resolveRowLabel(ProjectEntity project, Mission mission,
+                                    ConsultantProfileEntity consultantProfile) {
+        if (project != null && project.getName() != null) {
+            return safeText(project.getName());
+        }
+        if (mission != null && mission.getTitle() != null) {
+            return safeText(mission.getTitle());
+        }
+        if (consultantProfile != null && !consultantProfile.getProjects().isEmpty()) {
+            return safeText(consultantProfile.getProjects().get(0).getName());
+        }
+        return "Activite normale";
+    }
 
     private CraDayEntry findEntry(List<CraDayEntry> entries, int dayOfMonth) {
         if (entries == null) return null;

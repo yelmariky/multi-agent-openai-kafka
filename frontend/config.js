@@ -15,8 +15,10 @@
 // ============================================================
 
 // Derive tenant slug from URL path: /{slug}/...
-// Falls back to 'ia-insight' if no slug in URL.
-const _slug = window.location.pathname.split('/').filter(Boolean)[0] || 'ia-insight';
+// Redirects to tenant-select.html if no slug in URL.
+const _rawSlug = window.location.pathname.split('/').filter(Boolean)[0];
+if (!_rawSlug) { window.location.replace('/tenant-select.html'); }
+const _slug = _rawSlug || 'ia-insight';
 
 globalThis.APP_CONFIG = {
   // Tenant slug — drives Keycloak realm + backend tenant resolution

@@ -2,11 +2,15 @@ package io.multiagent.core.expense.service;
 
 import io.multiagent.core.model.ExpenseItem;
 import io.multiagent.core.model.ExpenseReportResponse;
+import io.multiagent.core.settings.repository.ConsultantProfileJpaRepository;
 import io.multiagent.core.util.DateProvider;
-import io.multiagent.core.service.WeaviateService;import lombok.RequiredArgsConstructor;
+import io.multiagent.core.service.WeaviateService;
+import io.multiagent.core.infrastructure.tenant.TenantContext;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -16,11 +20,13 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+@Transactional(readOnly = true)
 public class ExpenseReportService {
 
     private final WeaviateService weaviate;
     private final DateProvider dateProvider;
     private final ExpenseExcelService excelService;
+    private final ConsultantProfileJpaRepository consultantProfileRepo;
     @Value("${ai-core.company-name:}")
     private String defaultCompanyName;
 
@@ -72,11 +78,21 @@ public class ExpenseReportService {
                         Collectors.summingDouble(ExpenseItem::getAmount)
                 ));
     
+        String projectName = null;
+        if (consultantEmail != null && !consultantEmail.isBlank()) {
+            projectName = consultantProfileRepo
+                    .findByTenantIdAndEmailIgnoreCase(TenantContext.getTenantId(), consultantEmail)
+                    .flatMap(c -> c.getProjects().isEmpty() ? java.util.Optional.empty()
+                            : java.util.Optional.of(c.getProjects().get(0).getName()))
+                    .orElse(null);
+        }
+
         return ExpenseReportResponse.builder()
                 .start(range[0])
                 .end(range[1])
                 .company(resolvedCompany)
                 .consultantEmail(consultantEmail)
+                .projectName(projectName)
                 .expenses(expenses)
                 .totalsByCurrency(totalsByCurrency)
                 .totalsByType(totalsByType)

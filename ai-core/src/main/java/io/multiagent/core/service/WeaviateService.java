@@ -46,6 +46,7 @@ public class WeaviateService {
     private final ConsultantProfileJpaRepository consultantProfileRepo;
     private final DocumentChunkJpaRepository documentChunkRepo;
     private final MissionRepository missionRepo;
+    private final io.multiagent.core.organization.repository.ProjectRepository projectRepo;
 
     public WeaviateService(
             LLMAIClient llm,
@@ -55,7 +56,8 @@ public class WeaviateService {
             SellerProfileJpaRepository sellerProfileRepo,
             ConsultantProfileJpaRepository consultantProfileRepo,
             DocumentChunkJpaRepository documentChunkRepo,
-            MissionRepository missionRepo) {
+            MissionRepository missionRepo,
+            io.multiagent.core.organization.repository.ProjectRepository projectRepo) {
         this.llm = llm;
         this.objectMapper = objectMapper;
         this.expenseRepo = expenseRepo;
@@ -64,6 +66,7 @@ public class WeaviateService {
         this.consultantProfileRepo = consultantProfileRepo;
         this.documentChunkRepo = documentChunkRepo;
         this.missionRepo = missionRepo;
+        this.projectRepo = projectRepo;
     }
 
     // -----------------------------------------------------------------------
@@ -345,13 +348,17 @@ public class WeaviateService {
                 entity = craRepo.findById(existingId).orElse(new CraEntity());
                 entity.setId(existingId);
             } else {
-                entity = new CraEntity();
+                // Upsert par tuple — évite les doublons si l'id est perdu côté client
+                entity = craRepo.findByTenantIdAndConsultantIgnoreCaseAndBillingMonth(
+                                tenantId, cra.consultant(), cra.billingMonth())
+                        .orElse(new CraEntity());
             }
 
             entity.setTenantId(tenantId);
             entity.setConsultant(cra.consultant() != null ? cra.consultant() : "");
             entity.setCompany(cra.company() != null ? cra.company() : "");
             entity.setClientCompany(cra.clientCompany() != null ? cra.clientCompany() : "");
+            entity.setClientContactEmail(cra.clientContactEmail() != null ? cra.clientContactEmail() : "");
             entity.setBillingMonth(cra.billingMonth() != null ? cra.billingMonth() : "");
             entity.setTotalDays(BigDecimal.valueOf(cra.totalDays()));
             entity.setStatus(cra.status() != null ? cra.status() : "BROUILLON");
@@ -362,6 +369,12 @@ public class WeaviateService {
 
             if (cra.missionId() != null && !cra.missionId().isBlank()) {
                 entity.setMissionId(UUID.fromString(cra.missionId()));
+            }
+
+            if (cra.projectId() != null && !cra.projectId().isBlank()) {
+                entity.setProjectId(UUID.fromString(cra.projectId()));
+            } else {
+                entity.setProjectId(null);
             }
 
             if (cra.entries() != null) {
@@ -508,6 +521,7 @@ public class WeaviateService {
             entity.setClientName(profile.clientName());
             entity.setClientAddress(profile.clientAddress());
             entity.setClientRcs(profile.clientRcs());
+            entity.setClientContactEmail(profile.clientContactEmail());
             entity.setTjm(profile.tjm() != null ? BigDecimal.valueOf(profile.tjm()) : null);
             entity.setActive(profile.active() != null ? profile.active() : true);
             consultantProfileRepo.save(entity);
@@ -598,6 +612,7 @@ public class WeaviateService {
         row.put("consultant", e.getConsultant() != null ? e.getConsultant() : "");
         row.put("company", e.getCompany() != null ? e.getCompany() : "");
         row.put("clientCompany", e.getClientCompany() != null ? e.getClientCompany() : "");
+        row.put("clientContactEmail", e.getClientContactEmail() != null ? e.getClientContactEmail() : "");
         row.put("billingMonth", e.getBillingMonth() != null ? e.getBillingMonth() : "");
         row.put("totalDays", e.getTotalDays() != null ? e.getTotalDays().doubleValue() : 0.0);
         row.put("status", e.getStatus() != null ? e.getStatus() : "");
@@ -611,6 +626,16 @@ public class WeaviateService {
                     row.put("missionTitle", m.getTitle()));
         }
         if (!row.containsKey("missionTitle")) row.put("missionTitle", "");
+
+        row.put("projectId", e.getProjectId() != null ? e.getProjectId().toString() : "");
+        if (e.getProjectId() != null) {
+            projectRepo.findById(e.getProjectId()).ifPresent(p -> {
+                row.put("projectName", p.getName());
+                row.put("projectDescription", p.getDescription() != null ? p.getDescription() : "");
+            });
+        }
+        if (!row.containsKey("projectName")) row.put("projectName", "");
+        if (!row.containsKey("projectDescription")) row.put("projectDescription", "");
 
         String entriesJson = e.getEntriesJson() != null ? e.getEntriesJson() : "[]";
         row.put("entriesJson", entriesJson);
@@ -647,8 +672,10 @@ public class WeaviateService {
 
     private ConsultantProfile toConsultantProfile(ConsultantProfileEntity e) {
         return new ConsultantProfile(
+                e.getId() != null ? e.getId().toString() : null,
                 e.getEmail(), e.getName(), e.getRole(), e.getCompany(),
                 e.getClientName(), e.getClientAddress(), e.getClientRcs(),
+                e.getClientContactEmail(),
                 e.getTjm() != null ? e.getTjm().doubleValue() : null,
                 e.getActive()
         );

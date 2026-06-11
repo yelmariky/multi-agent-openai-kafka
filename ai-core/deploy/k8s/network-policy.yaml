@@ -48,6 +48,14 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # PostgreSQL (namespace db)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: db
+      ports:
+        - protocol: TCP
+          port: 5432
     # DNS K8s (obligatoire pour toute résolution de nom de service)
     - to:
         - namespaceSelector:

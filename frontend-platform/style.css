@@ -308,6 +308,33 @@ input:disabled {
 
 .btn-edit:hover { background: rgba(var(--accent-rgb), .16); }
 
+.btn-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font);
+  background: rgba(122, 215, 255, .08);
+  color: var(--accent-2);
+  border: 1px solid rgba(122, 215, 255, .2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s;
+}
+
+.btn-open:hover { background: rgba(122, 215, 255, .16); }
+
+.btn-open-consultant {
+  background: rgba(var(--accent-rgb), .06);
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), .18);
+}
+
+.btn-open-consultant:hover { background: rgba(var(--accent-rgb), .14); }
+
 /* ============================================================
    STATUS
    ============================================================ */

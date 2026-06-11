@@ -4,6 +4,7 @@ import io.multiagent.core.cra.entity.CraEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface CraJpaRepository extends JpaRepository<CraEntity, UUID> {
@@ -18,4 +19,7 @@ public interface CraJpaRepository extends JpaRepository<CraEntity, UUID> {
 
     List<CraEntity> findByTenantIdAndBillingMonthAndConsultantContainingIgnoreCase(
             UUID tenantId, String billingMonth, String consultant);
+
+    Optional<CraEntity> findByTenantIdAndConsultantIgnoreCaseAndBillingMonth(
+            UUID tenantId, String consultant, String billingMonth);
 }

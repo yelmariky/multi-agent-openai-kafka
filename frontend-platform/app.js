@@ -157,6 +157,15 @@ function renderTenantList(tenants) {
         </div>
         <span class="plan-badge ${planCls}">${escapeHtml(t.plan || 'STARTER')}</span>
         <div class="tenant-actions">
+          ${active ? `
+          <a class="btn-open" href="http://localhost:3000/${escapeHtml(t.slug)}/" target="_blank" rel="noopener" title="Ouvrir la console admin de ce tenant">
+            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Admin
+          </a>
+          <a class="btn-open btn-open-consultant" href="http://localhost:3001/${escapeHtml(t.slug)}/" target="_blank" rel="noopener" title="Ouvrir l'espace consultant de ce tenant">
+            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Consultant
+          </a>` : ''}
           <button class="btn-edit" data-action="edit" data-tenant='${escapeHtml(JSON.stringify(t))}'>Modifier</button>
           ${active
             ? `<button class="btn-danger" data-action="deactivate" data-id="${t.id}" data-name="${escapeHtml(t.name)}">Désactiver</button>`

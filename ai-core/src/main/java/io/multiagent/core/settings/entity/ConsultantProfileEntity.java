@@ -1,11 +1,14 @@
 package io.multiagent.core.settings.entity;
 
+import io.multiagent.core.organization.entity.ProjectEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -41,7 +44,18 @@ public class ConsultantProfileEntity {
     @Column(name = "client_rcs", length = 100)
     private String clientRcs;
 
+    @Column(name = "client_contact_email")
+    private String clientContactEmail;
+
     private BigDecimal tjm;
 
     private Boolean active = true;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "consultant_project",
+        joinColumns = @JoinColumn(name = "consultant_profile_id"),
+        inverseJoinColumns = @JoinColumn(name = "project_id")
+    )
+    private List<ProjectEntity> projects = new ArrayList<>();
 }

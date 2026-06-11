@@ -73,6 +73,13 @@ public class ExpenseExcelService {
                 detail.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(nextRow, nextRow, 0, 3));
                 nextRow++;
             }
+            if (report.getProjectName() != null && !report.getProjectName().isBlank()) {
+                Row projectRow = detail.createRow(nextRow);
+                projectRow.createCell(0).setCellValue("Projet : " + report.getProjectName());
+                projectRow.getCell(0).setCellStyle(header);
+                detail.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(nextRow, nextRow, 0, 3));
+                nextRow++;
+            }
 
             String monthLabel = formatMonthLabel(report);
             Row monthRow = detail.createRow(nextRow);

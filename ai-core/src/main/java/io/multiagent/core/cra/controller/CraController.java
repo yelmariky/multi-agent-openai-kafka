@@ -4,6 +4,7 @@ import io.multiagent.core.model.CraRequest;
 import io.multiagent.core.model.ExpenseItem;
 import io.multiagent.core.cra.service.CraPdfService;
 import io.multiagent.core.cra.service.CraService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @RestController
 @RequestMapping("/cra")
 public class CraController {
@@ -66,6 +68,7 @@ public class CraController {
             CraRequest validated = craService.validate(cra, validatedBy);
             return ResponseEntity.ok(validated);
         } catch (Exception e) {
+            log.error("CRA validate failed for id={} validatedBy={}: {}", cra.id(), validatedBy, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(e.getMessage());
         }
     }

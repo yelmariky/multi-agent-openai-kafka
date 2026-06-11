@@ -25,7 +25,7 @@ public class ConsultantController {
 
     @GetMapping("/profiles")
     public ResponseEntity<List<ConsultantProfile>> getProfiles(
-            @RequestParam(required = false, defaultValue = "IA-INSIGHT") String company) {
+            @RequestParam(required = false) String company) {
         return ResponseEntity.ok(weaviateService.findAllConsultantProfiles(company));
     }
 
@@ -83,9 +83,9 @@ public class ConsultantController {
             String fullName = (firstName + " " + lastName).trim();
             if (fullName.isBlank()) fullName = email;
             ConsultantProfile profile = new ConsultantProfile(
-                    email, fullName, role,
+                    null, email, fullName, role,
                     company.isBlank() ? realm.toUpperCase() : company,
-                    clientName, "", "", 0.0, true);
+                    clientName, "", "", null, 0.0, true);
             weaviateService.upsertConsultantProfile(profile);
 
             log.info("Invited consultant '{}' in realm '{}' (keycloakId={})", email, realm, keycloakUserId);

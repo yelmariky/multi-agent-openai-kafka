@@ -46,4 +46,12 @@ public class ClientController {
         if (updates.getContactEmail() != null) existing.setContactEmail(updates.getContactEmail());
         return ResponseEntity.ok(clientRepository.save(existing));
     }
+
+    @DeleteMapping("/{id}")
+    @Transactional
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        if (!clientRepository.existsById(id)) return ResponseEntity.notFound().build();
+        clientRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
 }

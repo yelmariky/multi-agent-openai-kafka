@@ -54,6 +54,7 @@ public class CraService {
                 cra.consultant(),
                 cra.company(),
                 cra.clientCompany(),
+                cra.clientContactEmail(),
                 cra.billingMonth(),
                 cra.entries(),
                 totalDays,
@@ -62,7 +63,8 @@ public class CraService {
                 cra.validatedAt(),
                 cra.validatedBy(),
                 cra.refusedReason(),
-                cra.missionId()
+                cra.missionId(),
+                cra.projectId()
         );
         String uuid = weaviateService.indexCra(toSave);
         return new CraRequest(
@@ -70,6 +72,7 @@ public class CraService {
                 toSave.consultant(),
                 toSave.company(),
                 toSave.clientCompany(),
+                toSave.clientContactEmail(),
                 toSave.billingMonth(),
                 toSave.entries(),
                 toSave.totalDays(),
@@ -78,7 +81,8 @@ public class CraService {
                 toSave.validatedAt(),
                 toSave.validatedBy(),
                 toSave.refusedReason(),
-                toSave.missionId()
+                toSave.missionId(),
+                toSave.projectId()
         );
     }
 
@@ -93,6 +97,7 @@ public class CraService {
                 cra.consultant(),
                 cra.company(),
                 cra.clientCompany(),
+                cra.clientContactEmail(),
                 cra.billingMonth(),
                 cra.entries(),
                 cra.totalDays(),
@@ -101,7 +106,8 @@ public class CraService {
                 cra.validatedAt(),
                 cra.validatedBy(),
                 null,  // clear refusedReason on resubmit
-                cra.missionId()
+                cra.missionId(),
+                cra.projectId()
         );
         CraRequest submitted = save(toSubmit);
         notificationService.push(
@@ -132,6 +138,7 @@ public class CraService {
                 cra.consultant(),
                 cra.company(),
                 cra.clientCompany(),
+                cra.clientContactEmail(),
                 cra.billingMonth(),
                 cra.entries(),
                 cra.totalDays(),
@@ -140,7 +147,8 @@ public class CraService {
                 validatedAt,
                 validatedBy,
                 null,
-                cra.missionId()
+                cra.missionId(),
+                cra.projectId()
         );
         CraRequest validated = save(toValidate);
         consultantNotificationService.push(
@@ -168,6 +176,7 @@ public class CraService {
                 cra.consultant(),
                 cra.company(),
                 cra.clientCompany(),
+                cra.clientContactEmail(),
                 cra.billingMonth(),
                 cra.entries(),
                 cra.totalDays(),
@@ -176,7 +185,8 @@ public class CraService {
                 cra.validatedAt(),
                 cra.validatedBy(),
                 reason,
-                cra.missionId()
+                cra.missionId(),
+                cra.projectId()
         );
         CraRequest refused = save(toRefuse);
         consultantNotificationService.push(
@@ -206,6 +216,7 @@ public class CraService {
                 cra.consultant(),
                 cra.company(),
                 cra.clientCompany(),
+                cra.clientContactEmail(),
                 cra.billingMonth(),
                 cra.entries(),
                 cra.totalDays(),
@@ -214,7 +225,8 @@ public class CraService {
                 cra.validatedAt(),
                 cra.validatedBy(),
                 null,   // clear refusedReason
-                cra.missionId()
+                cra.missionId(),
+                cra.projectId()
         );
         return save(toRecall);
     }
@@ -229,6 +241,7 @@ public class CraService {
                 cra.consultant(),
                 cra.company(),
                 cra.clientCompany(),
+                cra.clientContactEmail(),
                 cra.billingMonth(),
                 cra.entries(),
                 cra.totalDays(),
@@ -237,7 +250,8 @@ public class CraService {
                 null,   // clear validatedAt
                 null,   // clear validatedBy
                 null,   // clear refusedReason
-                cra.missionId()
+                cra.missionId(),
+                cra.projectId()
         );
         return save(toReopen);
     }

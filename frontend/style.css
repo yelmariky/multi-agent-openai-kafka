@@ -2143,6 +2143,99 @@ dialog.modal-backdrop::backdrop {
 }
 
 /* ============================================================
+   MAIN NAV TABS (Consultants | Projets)
+   ============================================================ */
+.main-nav-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.main-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px 10px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  margin-bottom: -1px;
+}
+
+.main-tab:hover { color: var(--text); }
+
+.main-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ============================================================
+   PROJECTS TABLE
+   ============================================================ */
+.proj-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.proj-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.proj-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.proj-table tr:last-child td { border-bottom: none; }
+
+.proj-table tr:hover td { background: rgba(255,255,255,.02); }
+
+.proj-table .proj-desc { color: var(--muted); font-size: 12px; }
+
+.proj-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(44,229,167,.08);
+  border: 1px solid rgba(44,229,167,.18);
+  color: var(--accent);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.proj-remove-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 12px;
+  transition: color .15s;
+}
+.proj-remove-btn:hover { color: #ef4444; }
+
+/* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 600px) {

@@ -31,6 +31,9 @@ public class CraEntity {
     @Column(name = "client_company")
     private String clientCompany;
 
+    @Column(name = "client_contact_email")
+    private String clientContactEmail;
+
     @Column(name = "billing_month", nullable = false, length = 7)
     private String billingMonth;
 
@@ -57,6 +60,9 @@ public class CraEntity {
 
     @Column(name = "mission_id")
     private UUID missionId;
+
+    @Column(name = "project_id")
+    private UUID projectId;
 
     @Column(name = "created_at")
     private Instant createdAt;

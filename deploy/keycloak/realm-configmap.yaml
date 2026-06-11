@@ -81,7 +81,7 @@ data:
           "enabled": true,
           "emailVerified": true,
           "credentials": [
-            { "type": "password", "value": "admin123", "temporary": false }
+            { "type": "password", "value": "Admin123", "temporary": false }
           ],
           "realmRoles": ["admin"]
         },
@@ -93,7 +93,7 @@ data:
           "enabled": true,
           "emailVerified": true,
           "credentials": [
-            { "type": "password", "value": "admin123", "temporary": false }
+            { "type": "password", "value": "Admin123", "temporary": false }
           ],
           "realmRoles": ["manager"]
         },

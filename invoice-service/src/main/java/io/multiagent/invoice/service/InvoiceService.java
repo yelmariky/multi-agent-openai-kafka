@@ -47,6 +47,7 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,14 +64,17 @@ public class InvoiceService {
     private final Path storagePath;
     private final InvoiceJpaRepository invoiceRepo;
     private final SellerProfileJpaRepository sellerProfileRepo;
+    private final JdbcTemplate jdbcTemplate;
 
     public InvoiceService(
             InvoiceJpaRepository invoiceRepo,
             SellerProfileJpaRepository sellerProfileRepo,
+            JdbcTemplate jdbcTemplate,
             @Value("${app.invoices.storage-path:${AI_CORE_INVOICES_STORAGE_PATH:/data/invoices}}") String storagePathStr
     ) throws IOException {
         this.invoiceRepo = invoiceRepo;
         this.sellerProfileRepo = sellerProfileRepo;
+        this.jdbcTemplate = jdbcTemplate;
         this.storagePath = Paths.get(storagePathStr);
         Files.createDirectories(this.storagePath);
     }
@@ -224,7 +228,8 @@ public class InvoiceService {
                 e.getLatePaymentClause(),
                 e.getNotes(),
                 null,
-                e.getConsultantEmail()
+                e.getConsultantEmail(),
+                null  // projectName — résolu dans normalize()
         );
     }
 
@@ -283,6 +288,9 @@ public class InvoiceService {
                     : DEFAULT_LATE_PAYMENT_CLAUSE;
         }
 
+        String projectName = !isBlank(request.projectName()) ? request.projectName()
+                : findProjectName(request.consultantEmail(), TenantContext.getTenantId());
+
         return new SimpleInvoiceRequest(
                 invoiceName,
                 invoiceDate,
@@ -304,8 +312,29 @@ public class InvoiceService {
                 latePaymentClause,
                 request.notes(),
                 null,
-                request.consultantEmail()
+                request.consultantEmail(),
+                projectName
         );
+    }
+
+    private String findProjectName(String consultantEmail, UUID tenantId) {
+        if (isBlank(consultantEmail) || tenantId == null) return null;
+        try {
+            List<?> rows = jdbcTemplate.queryForList(
+                    "SELECT p.name FROM project p " +
+                    "JOIN consultant_project cp ON cp.project_id = p.id " +
+                    "JOIN consultant_profile c ON c.id = cp.consultant_profile_id " +
+                    "WHERE LOWER(c.email) = LOWER(?) AND c.tenant_id = ? LIMIT 1",
+                    consultantEmail.trim(), tenantId);
+            if (!rows.isEmpty()) {
+                Object row = rows.get(0);
+                if (row instanceof java.util.Map<?,?> m) {
+                    Object val = m.values().iterator().next();
+                    return val != null ? val.toString() : null;
+                }
+            }
+        } catch (Exception ignored) { /* non bloquant */ }
+        return null;
     }
 
     private SellerProfile findSellerProfile(String companyName) {
@@ -481,7 +510,9 @@ public class InvoiceService {
             writeCell(tableHeader, 2, "Prix unitaire HT", header);
             writeCell(tableHeader, 3, "Montant total HT", header);
             Row line = sheet.createRow(rowIdx++);
-            writeCell(line, 0, safe(invoice.invoiceTitle()), text);
+            String excelTitle = safe(invoice.invoiceTitle()) +
+                    (!isBlank(invoice.projectName()) ? " - " + safe(invoice.projectName()) : "");
+            writeCell(line, 0, excelTitle, text);
             writeCell(line, 1, safeNumber(invoice.daysCount()), amount);
             writeCell(line, 2, money(invoice.unitPriceHt(), invoice.currency()), amount);
             writeCell(line, 3, money(invoice.totalHt(), invoice.currency()), amount);
@@ -589,7 +620,9 @@ public class InvoiceService {
         writeCentered(content, cols[2], cols[3], 544, "Prix HT");
         writeCentered(content, cols[3], cols[4], 544, "Montant total HT");
         drawTable(content, 536, 28, cols);
-        writeText(content, cols[0] + 8, 518, PDType1Font.HELVETICA, 10, safe(invoice.invoiceTitle()));
+        String pdfTitle = safe(invoice.invoiceTitle()) +
+                (!isBlank(invoice.projectName()) ? " - " + safe(invoice.projectName()) : "");
+        writeText(content, cols[0] + 8, 518, PDType1Font.HELVETICA, 10, pdfTitle);
         drawRightAlignedText(content, PDType1Font.HELVETICA, 10, cols[2] - 8, 518, safeNumber(invoice.daysCount()));
         drawRightAlignedText(content, PDType1Font.HELVETICA, 10, cols[3] - 8, 518, money(invoice.unitPriceHt(), invoice.currency()));
         drawRightAlignedText(content, PDType1Font.HELVETICA, 10, cols[4] - 12, 518, money(invoice.totalHt(), invoice.currency()));

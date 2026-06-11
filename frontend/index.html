@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin</title>
+  <base href="/">
+  <title>Console Administrateur</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -51,8 +52,24 @@
       <!-- HEADER -->
       <header class="admin-header">
         <div class="header-brand">
-          <p class="eyebrow">Admin</p>
-          <h1 id="tenant-name" style="font-size:26px;margin-bottom:0">—</h1>
+          <p class="eyebrow">Console Administrateur</p>
+          <div style="display:flex;align-items:center;gap:10px">
+            <h1 id="tenant-name" style="font-size:26px;margin-bottom:0">—</h1>
+            <a href="/tenant-select.html" title="Changer d'organisation" aria-label="Changer d'organisation"
+               style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+                      color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:6px;
+                      border:1px solid var(--border);transition:color .15s,border-color .15s;white-space:nowrap"
+               onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
+               onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
+               onfocus="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
+               onblur="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+              </svg>
+              Changer
+            </a>
+          </div>
         </div>
 
         <div class="header-right">
@@ -86,6 +103,22 @@
           <button id="logout-btn" class="btn-ghost" style="white-space:nowrap">Déconnexion</button>
         </div>
       </header>
+
+      <!-- MAIN NAV TABS -->
+      <nav class="main-nav-tabs">
+        <button class="main-tab active" data-view="consultants">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Consultants
+        </button>
+        <button class="main-tab" data-view="projects">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+          Projets
+        </button>
+        <button class="main-tab" data-view="clients">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Clients
+        </button>
+      </nav>
 
       <!-- CONSULTANTS GRID VIEW -->
       <div id="cons-grid-view">
@@ -289,6 +322,7 @@
           <button class="cons-stab active" data-cons-tab="cra">CRA</button>
           <button class="cons-stab" data-cons-tab="notes">Notes de frais</button>
           <button class="cons-stab" data-cons-tab="factures">Factures</button>
+          <button class="cons-stab" data-cons-tab="projets">Projets</button>
         </div>
 
         <!-- Panel CRA -->
@@ -345,6 +379,24 @@
           </div>
         </div>
 
+        <!-- Panel Projets (assignations consultant) -->
+        <div id="cons-panel-projets" class="cons-tab-panel" style="display:none">
+          <div class="card">
+            <p class="eyebrow">Projets assignés</p>
+            <div class="form-row" style="margin-top:12px;align-items:flex-end">
+              <label class="inline" style="flex:3">
+                Assigner un projet
+                <select id="cons-proj-select">
+                  <option value="">-- Sélectionner un projet --</option>
+                </select>
+              </label>
+              <button id="cons-proj-assign-btn" class="btn-primary" style="height:36px">Assigner</button>
+            </div>
+            <div id="cons-proj-status" class="status" style="margin-top:8px"></div>
+            <div id="cons-proj-list" style="margin-top:14px"></div>
+          </div>
+        </div>
+
         <!-- Panel Factures -->
         <div id="cons-panel-factures" class="cons-tab-panel" style="display:none">
           <div class="card">
@@ -380,6 +432,104 @@
 
       </div>
 
+      <!-- PROJECTS VIEW -->
+      <div id="projects-view" style="display:none">
+        <div class="cons-toolbar">
+          <div class="cons-search-wrap">
+            <span class="cons-search-icon-box">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </span>
+            <input id="proj-search" type="text" class="cons-search" placeholder="Nom, description…" autocomplete="off">
+          </div>
+          <button id="proj-add-btn" class="btn-primary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nouveau projet
+          </button>
+        </div>
+
+        <!-- Add / edit form (hidden by default) -->
+        <div id="proj-form-wrap" style="display:none">
+          <div class="card" style="padding:20px;margin-bottom:16px">
+            <p class="eyebrow" id="proj-form-title">Nouveau projet</p>
+            <input type="hidden" id="proj-form-id">
+            <div class="form-row" style="margin-top:12px">
+              <label class="inline" style="flex:2">
+                Nom du projet
+                <input id="proj-form-name" type="text" placeholder="Ex : Transformation digitale ACME">
+              </label>
+              <label class="inline" style="flex:4">
+                Description
+                <input id="proj-form-desc" type="text" placeholder="Courte description du projet…">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="proj-form-save" class="btn-primary">Enregistrer</button>
+              <button id="proj-form-cancel" class="btn-ghost">Annuler</button>
+            </div>
+            <div id="proj-form-status" class="status" style="margin-top:8px"></div>
+          </div>
+        </div>
+
+        <div id="proj-list-status" class="status" style="margin:10px 0"></div>
+        <div id="proj-table-wrap"></div>
+      </div>
+
+      <!-- CLIENTS VIEW -->
+      <div id="clients-view" style="display:none">
+        <div class="cons-toolbar">
+          <div class="cons-search-wrap">
+            <span class="cons-search-icon-box">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </span>
+            <input id="client-search" type="text" class="cons-search" placeholder="Nom, contact…" autocomplete="off">
+          </div>
+          <button id="client-add-btn" class="btn-primary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nouveau client
+          </button>
+        </div>
+
+        <!-- Add / edit form (hidden by default) -->
+        <div id="client-form-wrap" style="display:none">
+          <div class="card" style="padding:20px;margin-bottom:16px">
+            <p class="eyebrow" id="client-form-title">Nouveau client</p>
+            <input type="hidden" id="client-form-id">
+            <div class="form-row" style="margin-top:12px">
+              <label class="inline" style="flex:2">
+                Nom *
+                <input id="client-form-name" type="text" placeholder="Ex : INFOGENE DIGITAL">
+              </label>
+              <label class="inline" style="flex:4">
+                Adresse
+                <input id="client-form-address" type="text" placeholder="12 rue de la Paix, 75002 Paris">
+              </label>
+            </div>
+            <div class="form-row" style="margin-top:8px">
+              <label class="inline" style="flex:2">
+                RCS / SIRET
+                <input id="client-form-rcs" type="text" placeholder="RCS Paris 123 456 789">
+              </label>
+              <label class="inline" style="flex:2">
+                Nom du contact
+                <input id="client-form-contact-name" type="text" placeholder="Jean Dupont">
+              </label>
+              <label class="inline" style="flex:3">
+                Email du contact
+                <input id="client-form-contact-email" type="email" placeholder="j.dupont@client.fr">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="client-form-save" class="btn-primary">Enregistrer</button>
+              <button id="client-form-cancel" class="btn-ghost">Annuler</button>
+            </div>
+            <div id="client-form-status" class="status" style="margin-top:8px"></div>
+          </div>
+        </div>
+
+        <div id="client-list-status" class="status" style="margin:10px 0"></div>
+        <div id="client-table-wrap"></div>
+      </div>
+
     </div>
   </div>
 
@@ -393,25 +543,27 @@
       </button>
     </div>
     <p id="cons-edit-name-display" style="font-weight:600;margin:0 0 16px;color:var(--text);font-size:15px"></p>
-    <div class="form-row" style="margin-bottom:12px">
-      <label class="inline" style="flex:1">
-        Email consultant
-        <input id="cons-edit-email" type="email" placeholder="alice@ia-insight.fr">
-      </label>
-    </div>
     <div class="form-row">
       <label class="inline" style="flex:2">
         Société cliente
-        <input id="cons-edit-clientname" type="text" placeholder="INFOGENE DIGITAL">
+        <select id="cons-edit-client-select">
+          <option value="">-- Sélectionner un client --</option>
+        </select>
       </label>
       <label class="inline" style="flex:3">
         Adresse client
-        <input id="cons-edit-clientaddress" type="text" placeholder="12 rue de la Paix, 75002 Paris">
+        <input id="cons-edit-clientaddress" type="text" placeholder="Auto-rempli" readonly style="background:var(--card-bg,#151b27);color:var(--muted,#8892a4)">
       </label>
       <label class="inline" style="flex:2">
         RCS client
-        <input id="cons-edit-clientrcs" type="text" placeholder="RCS Paris 123 456 789">
+        <input id="cons-edit-clientrcs" type="text" placeholder="Auto-rempli" readonly style="background:var(--card-bg,#151b27);color:var(--muted,#8892a4)">
       </label>
+      <label class="inline" style="flex:2">
+        Contact client (email)
+        <input id="cons-edit-clientcontactemail" type="email" placeholder="Auto-rempli" readonly style="background:var(--card-bg,#151b27);color:var(--muted,#8892a4)">
+      </label>
+      <!-- champ caché pour compatibilité save -->
+      <input type="hidden" id="cons-edit-clientname">
       <label class="inline" style="flex:1">
         TJM (€/j)
         <input id="cons-edit-tjm" type="number" min="0" step="50" placeholder="570">

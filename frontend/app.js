@@ -152,7 +152,19 @@ async function loadTenantInfo() {
     if (companyInput && !companyInput.value) companyInput.value = tenantName();
     const invCompanyInput = document.getElementById('cons-inv-company');
     if (invCompanyInput && !invCompanyInput.value) invCompanyInput.value = tenantName();
+    // Persist in recent tenants for the selector page
+    saveRecentTenant(TENANT_SLUG, tenantName());
   } catch { /* backend may not be reachable */ }
+}
+
+/** Saves the current tenant in localStorage for the tenant-select landing page. */
+function saveRecentTenant(slug, name) {
+  try {
+    const KEY = 'recent_tenants';
+    const existing = JSON.parse(localStorage.getItem(KEY) || '[]');
+    const filtered = existing.filter(t => t.slug !== slug);
+    localStorage.setItem(KEY, JSON.stringify([{ slug, name }, ...filtered].slice(0, 5)));
+  } catch { /* localStorage unavailable */ }
 }
 
 // ============================================================
@@ -161,6 +173,26 @@ async function loadTenantInfo() {
 function startApp() {
   const user = getSession();
   if (!user) return; // ne devrait pas arriver : Keycloak force le login
+
+  if (user.role !== 'admin' && user.role !== 'manager') {
+    document.body.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;
+                  background:#0d1017;font-family:'Space Grotesk',system-ui">
+        <div style="text-align:center;color:#f0f0f0;max-width:480px;padding:2rem">
+          <div style="font-size:2.5rem;margin-bottom:1rem">🚫</div>
+          <h2 style="color:#f87171;margin-bottom:.5rem">Accès refusé</h2>
+          <p style="color:#8892a4;margin-bottom:1.5rem">
+            Cette console est réservée aux administrateurs.<br>
+            Votre compte <strong>${user.email}</strong> n'a pas les droits requis.
+          </p>
+          <button onclick="clearSession()" style="background:#2ce5a7;color:#0d1017;border:none;
+            padding:.6rem 1.5rem;border-radius:6px;cursor:pointer;font-weight:600">
+            Se déconnecter
+          </button>
+        </div>
+      </div>`;
+    return;
+  }
 
   document.getElementById('admin-name').textContent  = user.name;
   document.getElementById('admin-email').textContent = user.email;
@@ -176,6 +208,9 @@ function startApp() {
   initNotifications();
   initConsultants(user);
   initSettingsDrawer();
+  initMainNavTabs();
+  initProjects();
+  initClients();
   loadSellerSettings();
   loadTenantInfo();
 }
@@ -395,8 +430,8 @@ function formatTs(ts) {
 // ============================================================
 // CONSULTANTS — donnees backend JPA
 // ============================================================
-const CONS_KEY = 'adminConsultants';
-const CONS_CACHE_TS_KEY = 'adminConsultants_ts';
+const CONS_KEY = `adminConsultants_${TENANT_SLUG}`;
+const CONS_CACHE_TS_KEY = `adminConsultants_ts_${TENANT_SLUG}`;
 const CONS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 
 function isCacheValid() {
@@ -435,9 +470,10 @@ function loadConsultants() {
     // Normalize: company defaults to tenant name if missing or blank
     list.forEach(c => {
       if (!c.company?.trim()) c.company = tenantName();
-      if (c.clientName    === undefined) c.clientName    = '';
-      if (c.clientAddress === undefined) c.clientAddress = '';
-      if (c.clientRcs     === undefined) c.clientRcs     = '';
+      if (c.clientName         === undefined) c.clientName         = '';
+      if (c.clientAddress      === undefined) c.clientAddress      = '';
+      if (c.clientRcs          === undefined) c.clientRcs          = '';
+      if (c.clientContactEmail === undefined) c.clientContactEmail = '';
       if (c.active        === undefined) c.active        = true;
       if (c.tjm           === undefined || c.tjm === null) c.tjm = 0;
     });
@@ -567,8 +603,8 @@ function initConsultants(user) {
       const res = await fetch(`${base()}/consultants/keycloak-users`, { headers: authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const users = await res.json();
-      const existingEmails = new Set(allConsultants.map(c => c.email.toLowerCase()));
-      const available = users.filter(u => !existingEmails.has(u.email.toLowerCase()));
+      const existingEmails = new Set(allConsultants.filter(c => c.email).map(c => c.email.toLowerCase()));
+      const available = users.filter(u => u.email && !existingEmails.has(u.email.toLowerCase()));
       if (!available.length) {
         sel.innerHTML = '<option value="">Tous les utilisateurs sont deja ajoutes</option>';
         statusEl.textContent = `${users.length} utilisateur(s) Keycloak, tous deja enregistres.`;
@@ -591,34 +627,29 @@ function initConsultants(user) {
   // Edit form
   document.getElementById('cons-edit-save').addEventListener('click', () => {
     if (!editingConsEmail) return;
-    const newEmail      = document.getElementById('cons-edit-email').value.trim();
-    const clientName    = document.getElementById('cons-edit-clientname').value.trim();
-    const clientAddress = document.getElementById('cons-edit-clientaddress').value.trim();
-    const clientRcs     = document.getElementById('cons-edit-clientrcs').value.trim();
-    const tjmVal        = parseFloat(document.getElementById('cons-edit-tjm').value);
+    const clientName         = document.getElementById('cons-edit-clientname').value.trim();
+    const clientAddress      = document.getElementById('cons-edit-clientaddress').value.trim();
+    const clientRcs          = document.getElementById('cons-edit-clientrcs').value.trim();
+    const clientContactEmail = document.getElementById('cons-edit-clientcontactemail').value.trim();
+    const tjmVal             = parseFloat(document.getElementById('cons-edit-tjm').value);
     const idx = allConsultants.findIndex(c => c.email === editingConsEmail);
     if (idx >= 0) {
-      const emailChanged = newEmail && newEmail !== editingConsEmail;
-      if (emailChanged) allConsultants[idx].email = newEmail;
-      allConsultants[idx].clientName    = clientName;
-      allConsultants[idx].clientAddress = clientAddress;
-      allConsultants[idx].clientRcs     = clientRcs;
-      allConsultants[idx].tjm           = isNaN(tjmVal) ? (allConsultants[idx].tjm || 0) : tjmVal;
+      allConsultants[idx].clientName         = clientName;
+      allConsultants[idx].clientAddress      = clientAddress;
+      allConsultants[idx].clientRcs          = clientRcs;
+      allConsultants[idx].clientContactEmail = clientContactEmail;
+      allConsultants[idx].tjm                = isNaN(tjmVal) ? (allConsultants[idx].tjm || 0) : tjmVal;
       saveConsultants(allConsultants);
       saveConsultantToBackend(allConsultants[idx]);
-      if (currentConsultant?.email === editingConsEmail || currentConsultant?.email === newEmail) {
+      if (currentConsultant?.email === editingConsEmail) {
         currentConsultant = allConsultants[idx];
-        document.getElementById('cons-detail-email').textContent   = allConsultants[idx].email;
         document.getElementById('cons-detail-clientname').textContent = clientName || '—';
         document.getElementById('cons-clientname-input').value = clientName;
-        // Refresh read-only display spans in detail view
-        document.getElementById('cons-tjm-display').textContent             = allConsultants[idx].tjm || '—';
-        document.getElementById('cons-clientaddress-display').textContent   = clientAddress || '—';
-        document.getElementById('cons-clientrcs-display').textContent       = clientRcs     || '—';
+        document.getElementById('cons-tjm-display').textContent           = allConsultants[idx].tjm || '—';
+        document.getElementById('cons-clientaddress-display').textContent = clientAddress || '—';
+        document.getElementById('cons-clientrcs-display').textContent     = clientRcs     || '—';
       }
-      showToast(emailChanged
-        ? `Email mis a jour : ${newEmail}`
-        : `Client mis a jour : ${clientName || '—'}`, 'ok');
+      showToast(`Client mis a jour : ${clientName || '—'}`, 'ok');
     }
     closeEditModal();
     renderConsultantsGrid(document.getElementById('cons-search').value);
@@ -750,6 +781,7 @@ function initConsultants(user) {
       if (!currentConsultant) return;
       if (btn.dataset.consTab === 'notes')    loadConsNotes(currentConsultant);
       if (btn.dataset.consTab === 'factures') loadConsInvoices(currentConsultant);
+      if (btn.dataset.consTab === 'projets')  loadConsultantProjects(currentConsultant);
     });
   });
 
@@ -864,14 +896,55 @@ function renderConsultantsGrid(filter = '') {
 function openEditConsultant(cons) {
   editingConsEmail = cons.email;
   document.getElementById('cons-edit-name-display').textContent = `${cons.name} — ${cons.company}`;
-  document.getElementById('cons-edit-email').value         = cons.email         || '';
-  document.getElementById('cons-edit-clientname').value    = cons.clientName    || '';
-  document.getElementById('cons-edit-clientaddress').value = cons.clientAddress || '';
-  document.getElementById('cons-edit-clientrcs').value     = cons.clientRcs     || '';
-  document.getElementById('cons-edit-tjm').value           = (cons.tjm != null && cons.tjm !== '') ? cons.tjm : '';
+  document.getElementById('cons-edit-clientname').value         = cons.clientName         || '';
+  document.getElementById('cons-edit-clientaddress').value      = cons.clientAddress      || '';
+  document.getElementById('cons-edit-clientrcs').value          = cons.clientRcs          || '';
+  document.getElementById('cons-edit-clientcontactemail').value = cons.clientContactEmail || '';
+  document.getElementById('cons-edit-tjm').value                = (cons.tjm != null && cons.tjm !== '') ? cons.tjm : '';
+
+  // Populate client dropdown from the managed clients list
+  populateClientSelect(cons.clientName || '');
 
   document.getElementById('cons-edit-overlay').classList.remove('hidden');
   document.getElementById('cons-edit-modal').classList.remove('hidden');
+}
+
+function populateClientSelect(currentClientName) {
+  const sel = document.getElementById('cons-edit-client-select');
+  if (!sel) return;
+
+  const buildOptions = (clients) => {
+    sel.innerHTML = '<option value="">-- Sélectionner un client --</option>'
+      + clients.map(c => `<option value="${escapeHtml(c.id)}"
+          data-address="${escapeHtml(c.address || '')}"
+          data-rcs="${escapeHtml(c.rcs || '')}"
+          data-contact-name="${escapeHtml(c.contactName || '')}"
+          data-contact-email="${escapeHtml(c.contactEmail || '')}">
+          ${escapeHtml(c.name)}</option>`).join('');
+    // Pre-select if clientName matches
+    if (currentClientName) {
+      const match = clients.find(c => c.name.toLowerCase() === currentClientName.toLowerCase());
+      if (match) sel.value = match.id;
+    }
+  };
+
+  if (allClients.length > 0) {
+    buildOptions(allClients);
+  } else {
+    fetch(`${base()}/clients`, { headers: adminHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(clients => { allClients = clients; buildOptions(clients); })
+      .catch(() => {});
+  }
+
+  // One-time change listener (replaced on each open)
+  sel.onchange = () => {
+    const opt = sel.selectedOptions[0];
+    document.getElementById('cons-edit-clientname').value         = opt?.textContent?.trim() || '';
+    document.getElementById('cons-edit-clientaddress').value      = opt?.dataset.address     || '';
+    document.getElementById('cons-edit-clientrcs').value          = opt?.dataset.rcs         || '';
+    document.getElementById('cons-edit-clientcontactemail').value = opt?.dataset.contactEmail || '';
+  };
 }
 
 function closeEditModal() {
@@ -916,7 +989,7 @@ async function loadCardKpis(cons) {
   let expenseCount = 0;
 
   try {
-    const p = new URLSearchParams({ start: month, end: month, consultant: cons.name, company: cons.company });
+    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email, company: cons.company });
     const r = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
     if (r.ok) {
       const items = await r.json();
@@ -1024,7 +1097,7 @@ async function loadDetailKpis(cons) {
   const month = toMonthStr(now.getFullYear(), now.getMonth());
 
   try {
-    const p = new URLSearchParams({ start: month, end: month, consultant: cons.name, company: cons.company });
+    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email, company: cons.company });
     const r = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
     if (r.ok) {
       const items = await r.json();
@@ -1060,7 +1133,7 @@ async function loadConsCra(cons) {
   resultEl.style.display = 'none';
 
   try {
-    const p = new URLSearchParams({ start: month, end: month, consultant: cons.name, company: cons.company });
+    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email, company: cons.company });
     const res = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const items = await res.json();
@@ -1251,7 +1324,7 @@ function wireCraActions(container, cons) {
       btn.disabled = true;
       btn.textContent = '…';
       try {
-        const p = new URLSearchParams({ validatedBy: adminUser?.name || 'Admin' });
+        const p = new URLSearchParams({ validatedBy: adminUser?.email || adminUser?.name || 'Admin' });
         const res = await fetch(`${base()}/cra/validate?${p}`, {
           method: 'POST',
           headers: adminHeaders(),
@@ -1650,6 +1723,250 @@ async function deleteInvoice(inv, cons) {
   }
 }
 
+// ============================================================
+// MAIN NAV TABS — Consultants | Projets
+// ============================================================
+function initMainNavTabs() {
+  document.querySelectorAll('.main-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.main-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const view = btn.dataset.view;
+      document.getElementById('cons-grid-view').style.display   = view === 'consultants' ? '' : 'none';
+      document.getElementById('cons-detail-view').style.display = 'none';
+      document.getElementById('projects-view').style.display    = view === 'projects'    ? '' : 'none';
+      document.getElementById('clients-view').style.display     = view === 'clients'     ? '' : 'none';
+      if (view === 'projects') loadProjects();
+      if (view === 'clients')  loadClients();
+    });
+  });
+}
+
+// ============================================================
+// PROJECTS — CRUD
+// ============================================================
+let allProjects = [];
+
+async function loadProjects() {
+  const statusEl = document.getElementById('proj-list-status');
+  setStatus(statusEl, 'Chargement…');
+  try {
+    const res = await fetch(`${base()}/projects`, { headers: authHeaders() });
+    if (!res.ok) { setStatus(statusEl, 'Erreur lors du chargement.', 'error'); return; }
+    allProjects = await res.json();
+    setStatus(statusEl, '');
+    renderProjectsTable();
+  } catch {
+    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+  }
+}
+
+function renderProjectsTable(filter = '') {
+  const wrap = document.getElementById('proj-table-wrap');
+  const search = document.getElementById('proj-search')?.value.toLowerCase() || filter;
+  const filtered = allProjects.filter(p =>
+    p.name?.toLowerCase().includes(search) ||
+    p.description?.toLowerCase().includes(search)
+  );
+
+  if (!filtered.length) {
+    wrap.innerHTML = `<p style="color:var(--muted);font-size:13px;margin:16px 0">Aucun projet trouvé.</p>`;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden">
+      <table class="proj-table">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Description</th>
+            <th style="width:100px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.map(p => `
+            <tr data-proj-id="${escapeHtml(p.id)}">
+              <td style="font-weight:500">${escapeHtml(p.name)}</td>
+              <td class="proj-desc">${escapeHtml(p.description || '—')}</td>
+              <td>
+                <button class="btn-ghost" style="font-size:12px;padding:4px 10px"
+                  onclick="openEditProject('${escapeHtml(p.id)}','${escapeHtml(p.name)}','${escapeHtml(p.description || '')}')">
+                  Modifier
+                </button>
+                <button class="proj-remove-btn" title="Supprimer"
+                  onclick="deleteProject('${escapeHtml(p.id)}')">
+                  <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                </button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function initProjects() {
+  document.getElementById('proj-search').addEventListener('input', () => renderProjectsTable());
+
+  document.getElementById('proj-add-btn').addEventListener('click', () => {
+    document.getElementById('proj-form-id').value    = '';
+    document.getElementById('proj-form-name').value  = '';
+    document.getElementById('proj-form-desc').value  = '';
+    document.getElementById('proj-form-title').textContent = 'Nouveau projet';
+    setStatus(document.getElementById('proj-form-status'), '');
+    document.getElementById('proj-form-wrap').style.display = '';
+    document.getElementById('proj-form-name').focus();
+  });
+
+  document.getElementById('proj-form-cancel').addEventListener('click', () => {
+    document.getElementById('proj-form-wrap').style.display = 'none';
+  });
+
+  document.getElementById('proj-form-save').addEventListener('click', saveProject);
+}
+
+function openEditProject(id, name, description) {
+  document.getElementById('proj-form-id').value    = id;
+  document.getElementById('proj-form-name').value  = name;
+  document.getElementById('proj-form-desc').value  = description;
+  document.getElementById('proj-form-title').textContent = 'Modifier le projet';
+  setStatus(document.getElementById('proj-form-status'), '');
+  document.getElementById('proj-form-wrap').style.display = '';
+  document.getElementById('proj-form-name').focus();
+}
+
+async function saveProject() {
+  const id   = document.getElementById('proj-form-id').value.trim();
+  const name = document.getElementById('proj-form-name').value.trim();
+  const desc = document.getElementById('proj-form-desc').value.trim();
+  const statusEl = document.getElementById('proj-form-status');
+
+  if (!name) { setStatus(statusEl, 'Le nom est obligatoire.', 'error'); return; }
+
+  const isEdit = !!id;
+  const url    = isEdit ? `${base()}/projects/${id}` : `${base()}/projects`;
+  const method = isEdit ? 'PUT' : 'POST';
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: adminHeaders(),
+      body: JSON.stringify({ name, description: desc }),
+    });
+    if (!res.ok) { setStatus(statusEl, 'Erreur lors de la sauvegarde.', 'error'); return; }
+    document.getElementById('proj-form-wrap').style.display = 'none';
+    showToast(isEdit ? 'Projet modifié.' : 'Projet créé.', 'ok');
+    loadProjects();
+  } catch {
+    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+  }
+}
+
+async function deleteProject(id) {
+  if (!confirm('Supprimer ce projet ?')) return;
+  try {
+    const res = await fetch(`${base()}/projects/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!res.ok) { showToast('Erreur lors de la suppression.', 'error'); return; }
+    showToast('Projet supprimé.', 'ok');
+    loadProjects();
+  } catch {
+    showToast('Impossible de joindre le serveur.', 'error');
+  }
+}
+
+// ============================================================
+// CONSULTANT ↔ PROJETS — onglet "Projets" dans le détail
+// ============================================================
+async function loadConsultantProjects(cons) {
+  if (!cons?.id) return;
+  const listEl   = document.getElementById('cons-proj-list');
+  const statusEl = document.getElementById('cons-proj-status');
+  const selectEl = document.getElementById('cons-proj-select');
+  setStatus(statusEl, 'Chargement…');
+
+  try {
+    // Charger les projets du consultant et tous les projets du tenant en parallèle
+    const [consRes, allRes] = await Promise.all([
+      fetch(`${base()}/projects/by-consultant/${cons.id}`, { headers: authHeaders() }),
+      fetch(`${base()}/projects`, { headers: authHeaders() }),
+    ]);
+
+    const consProjects = consRes.ok ? await consRes.json() : [];
+    allProjects        = allRes.ok  ? await allRes.json()  : [];
+
+    setStatus(statusEl, '');
+
+    // Remplir le select avec les projets non encore assignés
+    const assignedIds = new Set(consProjects.map(p => p.id));
+    selectEl.innerHTML = '<option value="">-- Sélectionner un projet --</option>' +
+      allProjects
+        .filter(p => !assignedIds.has(p.id))
+        .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
+        .join('');
+
+    // Rendre la liste des projets assignés
+    if (!consProjects.length) {
+      listEl.innerHTML = `<p style="color:var(--muted);font-size:13px">Aucun projet assigné.</p>`;
+      return;
+    }
+
+    listEl.innerHTML = consProjects.map(p => `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span class="proj-tag">
+          <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/></svg>
+          ${escapeHtml(p.name)}
+        </span>
+        ${p.description ? `<span style="font-size:12px;color:var(--muted)">${escapeHtml(p.description)}</span>` : ''}
+        <button class="proj-remove-btn" title="Retirer" onclick="removeProjectFromConsultant('${escapeHtml(cons.id)}','${escapeHtml(p.id)}')">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>`).join('');
+
+  } catch {
+    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+  }
+
+  // Bouton "Assigner"
+  const assignBtn = document.getElementById('cons-proj-assign-btn');
+  assignBtn.onclick = () => assignProjectToConsultant(cons);
+}
+
+async function assignProjectToConsultant(cons) {
+  const selectEl = document.getElementById('cons-proj-select');
+  const projectId = selectEl.value;
+  if (!projectId) return;
+  const statusEl = document.getElementById('cons-proj-status');
+  try {
+    const res = await fetch(`${base()}/projects/${projectId}/consultants/${cons.id}`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (!res.ok) { setStatus(statusEl, 'Erreur lors de l\'assignation.', 'error'); return; }
+    showToast('Projet assigné.', 'ok');
+    loadConsultantProjects(cons);
+  } catch {
+    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+  }
+}
+
+async function removeProjectFromConsultant(consultantId, projectId) {
+  if (!confirm('Retirer ce projet du consultant ?')) return;
+  try {
+    const res = await fetch(`${base()}/projects/${projectId}/consultants/${consultantId}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!res.ok) { showToast('Erreur lors du retrait.', 'error'); return; }
+    showToast('Projet retiré.', 'ok');
+    if (currentConsultant?.id === consultantId) loadConsultantProjects(currentConsultant);
+  } catch {
+    showToast('Impossible de joindre le serveur.', 'error');
+  }
+}
+
 async function deleteAllInvoices(cons) {
   if (!loadedInvoices.length) return;
   if (!confirm(`Supprimer les ${loadedInvoices.length} facture${loadedInvoices.length > 1 ? 's' : ''} de ${cons.name} ?`)) return;
@@ -1671,4 +1988,157 @@ async function deleteAllInvoices(cons) {
   }
   showToast(`${ok} supprimee${ok > 1 ? 's' : ''}${err ? `, ${err} erreur(s)` : ''}.`, err ? '' : 'ok');
   loadConsInvoices(cons);
+}
+
+// ============================================================
+// CLIENTS — CRUD
+// ============================================================
+let allClients = [];
+
+async function loadClients() {
+  const statusEl = document.getElementById('client-list-status');
+  setStatus(statusEl, 'Chargement…');
+  try {
+    const res = await fetch(`${base()}/clients`, { headers: adminHeaders() });
+    if (!res.ok) { setStatus(statusEl, 'Erreur lors du chargement.', 'error'); return; }
+    allClients = await res.json();
+    setStatus(statusEl, '');
+    renderClientsTable();
+  } catch {
+    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+  }
+}
+
+function renderClientsTable() {
+  const wrap   = document.getElementById('client-table-wrap');
+  const search = document.getElementById('client-search')?.value.toLowerCase() || '';
+  const filtered = allClients.filter(c =>
+    (c.name || '').toLowerCase().includes(search) ||
+    (c.contactName || '').toLowerCase().includes(search) ||
+    (c.contactEmail || '').toLowerCase().includes(search)
+  );
+
+  if (!filtered.length) {
+    wrap.innerHTML = `<p style="color:var(--muted);font-size:13px;margin:16px 0">Aucun client trouvé.</p>`;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden">
+      <table class="proj-table">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Adresse</th>
+            <th>RCS</th>
+            <th>Contact</th>
+            <th>Email contact</th>
+            <th style="width:100px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.map(c => `
+            <tr>
+              <td style="font-weight:500">${escapeHtml(c.name)}</td>
+              <td class="proj-desc">${escapeHtml(c.address || '—')}</td>
+              <td>${escapeHtml(c.rcs || '—')}</td>
+              <td>${escapeHtml(c.contactName || '—')}</td>
+              <td>${escapeHtml(c.contactEmail || '—')}</td>
+              <td>
+                <button class="btn-ghost" style="font-size:12px;padding:4px 10px"
+                  onclick="openEditClient('${escapeHtml(c.id)}','${escapeHtml(c.name)}','${escapeHtml(c.address||'')}','${escapeHtml(c.rcs||'')}','${escapeHtml(c.contactName||'')}','${escapeHtml(c.contactEmail||'')}')">
+                  Modifier
+                </button>
+                <button class="proj-remove-btn" title="Supprimer"
+                  onclick="deleteClient('${escapeHtml(c.id)}')">
+                  <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                </button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function initClients() {
+  document.getElementById('client-search').addEventListener('input', () => renderClientsTable());
+
+  document.getElementById('client-add-btn').addEventListener('click', () => {
+    document.getElementById('client-form-id').value           = '';
+    document.getElementById('client-form-name').value         = '';
+    document.getElementById('client-form-address').value      = '';
+    document.getElementById('client-form-rcs').value          = '';
+    document.getElementById('client-form-contact-name').value = '';
+    document.getElementById('client-form-contact-email').value = '';
+    document.getElementById('client-form-title').textContent  = 'Nouveau client';
+    setStatus(document.getElementById('client-form-status'), '');
+    document.getElementById('client-form-wrap').style.display = '';
+    document.getElementById('client-form-name').focus();
+  });
+
+  document.getElementById('client-form-cancel').addEventListener('click', () => {
+    document.getElementById('client-form-wrap').style.display = 'none';
+  });
+
+  document.getElementById('client-form-save').addEventListener('click', saveClient);
+}
+
+function openEditClient(id, name, address, rcs, contactName, contactEmail) {
+  document.getElementById('client-form-id').value            = id;
+  document.getElementById('client-form-name').value          = name;
+  document.getElementById('client-form-address').value       = address;
+  document.getElementById('client-form-rcs').value           = rcs;
+  document.getElementById('client-form-contact-name').value  = contactName;
+  document.getElementById('client-form-contact-email').value = contactEmail;
+  document.getElementById('client-form-title').textContent   = 'Modifier le client';
+  setStatus(document.getElementById('client-form-status'), '');
+  document.getElementById('client-form-wrap').style.display  = '';
+  document.getElementById('client-form-name').focus();
+}
+
+async function saveClient() {
+  const id           = document.getElementById('client-form-id').value.trim();
+  const name         = document.getElementById('client-form-name').value.trim();
+  const address      = document.getElementById('client-form-address').value.trim();
+  const rcs          = document.getElementById('client-form-rcs').value.trim();
+  const contactName  = document.getElementById('client-form-contact-name').value.trim();
+  const contactEmail = document.getElementById('client-form-contact-email').value.trim();
+  const statusEl     = document.getElementById('client-form-status');
+
+  if (!name) { setStatus(statusEl, 'Le nom est obligatoire.', 'error'); return; }
+
+  const isEdit = !!id;
+  const url    = isEdit ? `${base()}/clients/${id}` : `${base()}/clients`;
+  const method = isEdit ? 'PUT' : 'POST';
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: adminHeaders(),
+      body: JSON.stringify({ name, address, rcs, contactName, contactEmail }),
+    });
+    if (!res.ok) { setStatus(statusEl, 'Erreur lors de la sauvegarde.', 'error'); return; }
+    document.getElementById('client-form-wrap').style.display = 'none';
+    allClients = [];  // force reload
+    showToast(isEdit ? 'Client modifié.' : 'Client créé.', 'ok');
+    loadClients();
+  } catch {
+    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+  }
+}
+
+async function deleteClient(id) {
+  if (!confirm('Supprimer ce client ?')) return;
+  try {
+    const res = await fetch(`${base()}/clients/${id}`, {
+      method: 'DELETE',
+      headers: adminHeaders(),
+    });
+    if (!res.ok) { showToast('Erreur lors de la suppression.', 'error'); return; }
+    allClients = allClients.filter(c => c.id !== id);
+    showToast('Client supprimé.', 'ok');
+    renderClientsTable();
+  } catch {
+    showToast('Impossible de joindre le serveur.', 'error');
+  }
 }

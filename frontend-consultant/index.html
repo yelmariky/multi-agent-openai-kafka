@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
   <title>Espace consultant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -87,7 +88,7 @@
     <header>
       <div class="header-brand">
         <p class="eyebrow" id="header-tenant-name">—</p>
-        <h1>Bonjour, <span id="user-display-name">—</span></h1>
+        <h1>Espace Consultant — Bonjour, <span id="user-display-name">—</span></h1>
         <p class="lede">Gérez vos CRA et consultez vos absences.</p>
       </div>
       <div class="header-config">
@@ -144,25 +145,30 @@
           <div class="card" style="grid-column: 1 / -1">
             <p class="eyebrow">Saisie mensuelle</p>
             <h2>Compte Rendu d'Activité</h2>
-            <p class="card-desc">Cliquez sur un jour pour alterner : journée complète (1j) → demi-journée (½j) → absent. Soumettez pour validation par votre responsable.</p>
+            <p class="card-desc">Cliquez sur une cellule pour alterner : journée complète (1j) → demi-journée (½j) → absent (A). Soumettez pour validation par votre responsable.</p>
             <div class="form-stack">
-              <div class="form-row">
-                <label class="inline" style="flex:2">
-                  Mission / Projet
-                  <select id="cra-mission" style="width:100%">
-                    <option value="">-- Aucune mission --</option>
-                  </select>
-                </label>
-                <label class="inline" style="flex:2">
-                  Societe cliente
-                  <input id="cra-client" type="text" placeholder="INFOGENE DIGITAL">
-                </label>
+              <div class="form-row" style="align-items:flex-end;gap:12px">
                 <label class="inline">
                   Mois
                   <input type="month" id="cra-month">
                 </label>
               </div>
+              <!-- Table projets (peuplée par JS après chargement des missions) -->
+              <table id="cra-projects-table" class="cra-projects-table" style="display:none">
+                <thead>
+                  <tr>
+                    <th>Projet</th>
+                    <th>Société client</th>
+                    <th>Contact</th>
+                  </tr>
+                </thead>
+                <tbody id="cra-projects-table-body"></tbody>
+              </table>
             </div>
+            <!-- Champs cachés conservés pour le payload -->
+            <select id="cra-mission" style="display:none"><option value="">-- Aucune mission --</option></select>
+            <input id="cra-client" type="hidden">
+            <input id="cra-client-email" type="hidden">
             <div class="actions-row" style="margin-top:12px">
               <button id="cra-load" class="btn-secondary">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -201,7 +207,11 @@
               <span class="cra-leg weekend">Weekend</span>
             </div>
 
-            <div class="cra-cal-grid-wrap">
+            <div id="cra-project-tabs" style="display:none;margin:10px 0 4px;gap:8px;flex-wrap:wrap"></div>
+
+            <div id="cra-stacked-grid" style="overflow-x:auto;margin:12px 0"></div>
+
+            <div class="cra-cal-grid-wrap" style="display:none">
               <div class="cra-weekdays">
                 <div>Lun</div><div>Mar</div><div>Mer</div>
                 <div>Jeu</div><div>Ven</div>
