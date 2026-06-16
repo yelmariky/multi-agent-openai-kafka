@@ -82,6 +82,12 @@
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
+        <!-- Email (CRA reminders, notifications SMTP) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Excel (Apache POI) -->
         <dependency>
             <groupId>org.apache.poi</groupId>

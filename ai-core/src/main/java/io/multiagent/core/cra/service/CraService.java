@@ -45,7 +45,7 @@ public class CraService {
         double totalDays = 0.0;
         if (cra.entries() != null) {
             totalDays = cra.entries().stream()
-                    .filter(e -> e != null && e.value() > 0)
+                    .filter(e -> e != null && "TRAVAIL".equalsIgnoreCase(e.type()))
                     .mapToDouble(CraDayEntry::value)
                     .sum();
         }
@@ -270,11 +270,11 @@ public class CraService {
      * Half-days (0.5j, type=TRAVAIL) are NOT included — consultant still drove to work.
      */
     public List<ExpenseItem.AbsencePeriod> getKmAbsences(String company, String month, String consultant) {
-        List<ExpenseItem.AbsencePeriod> kmAbsences = weaviateService.findKmExpenseAbsences(company, month);
+        List<ExpenseItem.AbsencePeriod> kmAbsences  = weaviateService.findKmExpenseAbsences(company, month);
         List<ExpenseItem.AbsencePeriod> craAbsences = weaviateService.findCraAbsentDays(consultant, company, month);
-        List<ExpenseItem.AbsencePeriod> merged = new ArrayList<>(kmAbsences);
-        merged.addAll(craAbsences);
-        return merged;
+        return java.util.stream.Stream.concat(kmAbsences.stream(), craAbsences.stream())
+                .distinct()
+                .toList();
     }
 
     /**

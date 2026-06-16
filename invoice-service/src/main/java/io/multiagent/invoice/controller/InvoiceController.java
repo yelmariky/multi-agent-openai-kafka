@@ -4,6 +4,7 @@ import io.multiagent.invoice.model.InvoiceLookupRequest;
 import io.multiagent.invoice.model.SimpleInvoiceRequest;
 import io.multiagent.invoice.service.DeleteInvoiceService;
 import io.multiagent.invoice.service.InvoiceService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,11 +15,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/invoices")
 public class InvoiceController {
@@ -61,22 +62,32 @@ public class InvoiceController {
     }
 
     @PostMapping(value = "/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
-    public ResponseEntity<byte[]> generatePdf(@RequestBody InvoiceLookupRequest request) throws IOException {
-        var generated = invoiceService.generateFromDb(request);
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.CONTENT_DISPOSITION, ATTACHMENT_PREFIX + generated.pdfPath().getFileName() + "\"");
-        return ResponseEntity.ok().headers(headers).body(generated.pdfBytes());
+    public ResponseEntity<byte[]> generatePdf(@RequestBody InvoiceLookupRequest request) {
+        try {
+            var generated = invoiceService.generateFromDb(request);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, ATTACHMENT_PREFIX + generated.pdfPath().getFileName() + "\"");
+            return ResponseEntity.ok().headers(headers).body(generated.pdfBytes());
+        } catch (Exception e) {
+            log.error("generatePdf failed for request={}: {}", request, e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @PostMapping(
             value = "/excel",
             produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    public ResponseEntity<byte[]> generateExcel(@RequestBody InvoiceLookupRequest request) throws IOException {
-        var generated = invoiceService.generateFromDb(request);
-        HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.CONTENT_DISPOSITION, ATTACHMENT_PREFIX + generated.excelPath().getFileName() + "\"");
-        return ResponseEntity.ok().headers(headers).body(generated.excelBytes());
+    public ResponseEntity<byte[]> generateExcel(@RequestBody InvoiceLookupRequest request) {
+        try {
+            var generated = invoiceService.generateFromDb(request);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, ATTACHMENT_PREFIX + generated.excelPath().getFileName() + "\"");
+            return ResponseEntity.ok().headers(headers).body(generated.excelBytes());
+        } catch (Exception e) {
+            log.error("generateExcel failed for request={}: {}", request, e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @PostMapping("/delete")

@@ -30,6 +30,17 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseEntity, UUID>
 
     void deleteByTenantIdAndExpenseDateBetween(UUID tenantId, LocalDate start, LocalDate end);
 
+    @Query("SELECT COUNT(e) > 0 FROM ExpenseEntity e WHERE e.tenantId = :tenantId " +
+           "AND LOWER(e.consultantEmail) = LOWER(:email) " +
+           "AND LOWER(e.type) = LOWER(:type) " +
+           "AND e.expenseDate BETWEEN :start AND :end " +
+           "AND (e.approvalStatus IS NULL OR e.approvalStatus <> 'REFUSED')")
+    boolean existsByMonthAndType(@Param("tenantId") UUID tenantId,
+                                 @Param("email") String email,
+                                 @Param("type") String type,
+                                 @Param("start") LocalDate start,
+                                 @Param("end") LocalDate end);
+
     @Query(value = "SELECT * FROM expense WHERE tenant_id = :tenantId " +
             "ORDER BY embedding <=> CAST(:queryVector AS vector) LIMIT :limit",
             nativeQuery = true)

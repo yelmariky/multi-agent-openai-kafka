@@ -1,3 +1,40 @@
+# Securite — Keycloak JWT + Protection LLM
+
+## Couche de protection LLM (PromptGuard)
+
+**Filtre global** `PromptGuardFilter` (`@Order(1)`) — s'exécute avant tout controller.
+
+Protège contre : prompt injection, token flooding, rate limit abus, jailbreak, chars cachés.
+
+Fichiers : `ai-core/…/security/PromptGuard.java` | `PromptGuardFilter.java` | `CachedBodyHttpServletRequest.java`
+
+Config :
+```yaml
+ai-core.guard.max-chars: 4000              # env: AI_CORE_GUARD_MAX_CHARS
+ai-core.guard.max-requests-per-minute: 20  # env: AI_CORE_GUARD_MAX_RPM
+```
+
+Réponse de rejet : **HTTP 429** + `{"error":"..."}`. Logs : `🛡️ [GUARD FILTER]`.
+
+Voir skill `/security` pour le détail complet.
+
+## Clés API — Permissions minimales production
+
+Voir `docs/PRODUCTION-KEYS.md` pour la procédure complète.
+
+**OpenAI** (`platform.openai.com/api-keys`) — Restricted :
+- Chat completions `/v1/chat/completions` → **Request** (fallback LLM si Groq down)
+- Embeddings `/v1/embeddings` → **Request** (usage principal)
+- Tout le reste → **None**
+- Alerte billing : activer à **$1** restant
+
+**Groq** (`console.groq.com`) — clé standard :
+- Modèles : `llama-3.1-8b-instant` + `meta-llama/llama-4-scout-17b-16e-instruct`
+- Surveiller quota : console.groq.com → Usage
+- En cas de dépassement : fallback automatique vers OpenAI (log `"bascule sur OpenAI fallback"`)
+
+---
+
 # Securite — Keycloak JWT
 
 **Multi-realm** : `JwtIssuerAuthenticationManagerResolver` — valide JWT de n'importe quel realm matchant `*/realms/*`. Cache ConcurrentHashMap d'`AuthenticationManager` par issuer.

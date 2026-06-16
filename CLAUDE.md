@@ -9,17 +9,18 @@ Plateforme SaaS **multi-tenant** d'automatisation d'entreprise pour ESN/cabinets
 - Notes de frais (texte libre, OCR) avec workflow approbation admin (PENDING/APPROVED/REFUSED)
 - Factures PDF/Excel Consulting IT — microservice dedie `invoice-service`
 - CRA mensuel (BROUILLON -> SOUMIS -> VALIDE/REFUSE) avec notifications SSE temps reel
-- Pipelines RAG pgvector + OpenAI GPT-4o
+- Pipelines RAG pgvector + Groq LLM (fallback OpenAI)
 - Multi-tenant : realm-per-tenant Keycloak, slug-based URLs, provisioning automatise
 
 ## Stack technique
 
 | Couche | Technologie |
 |---|---|
-| LLM | OpenAI GPT-4o / GPT-4o-mini (`com.openai:openai-java:4.8.0`) |
-| DB + Vector | PostgreSQL 16 + pgvector (colonnes `vector(3072)`, index HNSW cosine) |
+| LLM principal | Groq — `llama-3.1-8b-instant` (intent/rewrite) + `llama-4-scout-17b` (RAG) — gratuit |
+| LLM fallback | OpenAI `gpt-4.1-mini` — si Groq indisponible (`com.openai:openai-java:4.8.0`) |
+| DB + Vector | PostgreSQL 16 + pgvector (colonnes `vector(2000)`, index HNSW cosine) |
 | ORM | Spring Data JPA + Flyway (ai-core owns schema, invoice-service `flyway.enabled=false`) |
-| Embedding | `text-embedding-3-large` (3072 dims) |
+| Embedding | OpenAI `text-embedding-3-large` (toujours OpenAI — Groq ne supporte pas les embeddings) |
 | Messaging | Apache Kafka KRaft (namespace `agent-system`) |
 | Backend | Spring Boot 3.3.4, Java 21, Maven multi-module |
 | OCR | Tesseract + poppler (`pdftoppm`) |
@@ -40,14 +41,16 @@ Plateforme SaaS **multi-tenant** d'automatisation d'entreprise pour ESN/cabinets
       ai-core :8081       invoice-service :8083
             |                     |
        PostgreSQL <---------------+   (shared DB, ai-core owns Flyway)
-       + pgvector
-       Kafka :9092
-       OpenAI API
+       + pgvector / Kafka / Groq API / OpenAI API
             |
       Keycloak :8080  <- JwtIssuerAuthenticationManagerResolver (multi-realm)
 ```
 
 **Kong routing** : `/invoices/*` -> invoice-service | tout le reste -> ai-core
+
+**LLM fallback** : `LLMAIClient.chatJson()` essaie Groq → si KO bascule sur OpenAI `gpt-4.1-mini`. Voir `docs/PRODUCTION-KEYS.md`.
+
+**Sécurité LLM** : `PromptGuardFilter` (`@Order(1)`) intercepte tous les POST/PUT — taille / rate-limit / injection / sanitize — avant tout controller. Voir skill `/security`.
 
 ## Multi-tenant
 
@@ -70,7 +73,7 @@ kubectl port-forward svc/kafka 9092:9092 -n agent-system
 cd ai-core && mvn spring-boot:run          # :8081, Flyway cree le schema
 cd invoice-service && mvn spring-boot:run  # :8083, flyway disabled
 
-# Frontends (SPA server — gère les URLs slug-based type /ia-insight/)
+# Frontends
 cd frontend && python server.py
 cd frontend-consultant && python server.py
 cd frontend-platform && python server.py
@@ -81,18 +84,17 @@ cd ai-core && docker build -t dokeryelmariki/ai-core:latest . && docker push dok
 cd invoice-service && docker build -t dokeryelmariki/invoice-service:latest . && docker push dokeryelmariki/invoice-service:latest
 
 # K8s deploy
-kubectl apply -f ai-core/deploy/k8s/
-kubectl apply -f invoice-service/deploy/k8s/
-kubectl rollout restart deployment/ai-core -n multi-agent
-kubectl rollout restart deployment/invoice-service -n multi-agent
+kubectl apply -f ai-core/deploy/k8s/ && kubectl rollout restart deployment/ai-core -n multi-agent
+kubectl apply -f invoice-service/deploy/k8s/ && kubectl rollout restart deployment/invoice-service -n multi-agent
 ```
 
 ## Conventions critiques
 
-- **CORS** : ne jamais utiliser `CorsConfigurationSource` bean seul — toujours `WebMvcConfigurer.addCorsMappings()` dans `WebCorsConfig.java`
-- **Prompts LLM** : tous dans `ai-core/deploy/k8s/configMap.yaml` (variables `AI_CORE_PROMPT_*`). Apres modif : `kubectl apply` + restart pod
-- **copyExpense()** : propager `consultantEmail` (et tout nouveau champ) a chaque ligne lors de `expandKmMonthly()`
+- **CORS** : toujours `WebMvcConfigurer.addCorsMappings()` dans `WebCorsConfig.java` — jamais `CorsConfigurationSource` bean seul
+- **Prompts LLM** : tous dans `ai-core/deploy/k8s/configMap.yaml` (`AI_CORE_PROMPT_*`). Apres modif : `kubectl apply` + restart pod
+- **copyExpense()** : propager `consultantEmail` (et tout nouveau champ) dans `expandKmMonthly()`
 - **Flyway** : ai-core owns schema (`flyway.enabled=true`), invoice-service `flyway.enabled=false`
+- **PromptGuard** : tout nouvel endpoint texte libre doit être couvert — ne jamais ajouter à `EXCLUDED_PREFIXES` sauf binaire/multipart
 
 ## Reference docs (lire a la demande)
 
@@ -100,79 +102,30 @@ kubectl rollout restart deployment/invoice-service -n multi-agent
 |---|---|
 | `docs/DEPLOYMENT.md` | Procedure de deploiement K8s obligatoire avant livraison |
 | `docs/ENDPOINTS.md` | Tous les endpoints ai-core + invoice-service |
-| `docs/SECURITY.md` | Regles SecurityConfig, roles, SSE token, config.js frontend |
+| `docs/SECURITY.md` | Keycloak RBAC, PromptGuard LLM, SSE token, config.js frontend |
+| `docs/PRODUCTION-KEYS.md` | Creation clés API prod — permissions OpenAI + Groq + fallback |
+| `docs/PITCH.md` | Présentation projet clients/investisseurs (10 slides PowerPoint) |
 | `docs/FILES.md` | Arborescence complete des fichiers cles |
 | `docs/BUSINESS-RULES.md` | paymentMode, frais km, workflow CRA, modele CraRequest, absences |
 | `docs/INFRA.md` | Namespaces K8s, structure monorepo, variables d'env, OCR prerequis |
 | `docs/DATABASE.md` | Tables, pgvector, Flyway, SSE store, WeaviateService facade |
+| `docs/GUIDELINES-KARPATHY.md` | Guidelines complètes Claude Code (7 règles détaillées) |
 
 ## Comportement attendu de Claude (Karpathy Guidelines)
 
-Ces règles réduisent les erreurs courantes des LLM. Elles privilégient la prudence sur la vitesse — pour les tâches triviales, utiliser son jugement.
-
-### 1. Réfléchir avant de coder
-
-**Ne pas supposer. Ne pas cacher la confusion. Exposer les arbitrages.**
-
-Avant d'implémenter :
-- Énoncer les hypothèses explicitement. En cas de doute, demander.
-- Si plusieurs interprétations existent, les présenter — ne pas choisir silencieusement.
-- Si une approche plus simple existe, la dire. Repousser si justifié.
-- Si quelque chose est flou, s'arrêter. Nommer ce qui est confus. Demander.
-
-### 2. Simplicité d'abord
-
-**Minimum de code qui résout le problème. Rien de spéculatif.**
-
-- Pas de fonctionnalités au-delà de ce qui est demandé.
-- Pas d'abstractions pour du code à usage unique.
-- Pas de "flexibilité" ou "configurabilité" non demandée.
-- Pas de gestion d'erreurs pour des scénarios impossibles.
-- Si 200 lignes peuvent en faire 50, réécrire.
-
-Question : "Un ingénieur senior dirait-il que c'est trop compliqué ?" Si oui, simplifier.
-
-### 3. Changements chirurgicaux
-
-**Ne toucher que ce qui est nécessaire. Nettoyer seulement sa propre liste.**
-
-Lors de l'édition de code existant :
-- Ne pas "améliorer" le code, les commentaires ou le formatage adjacents.
-- Ne pas refactorer ce qui n'est pas cassé.
-- Correspondre au style existant, même si on ferait différemment.
-- Si on remarque du code mort non lié, le mentionner — ne pas le supprimer.
-
-Quand les changements créent des orphelins :
-- Supprimer les imports/variables/fonctions que SES PROPRES changements ont rendus inutilisés.
-- Ne pas supprimer le code mort préexistant sauf si demandé.
-
-Test : Chaque ligne modifiée doit être directement liée à la demande de l'utilisateur.
-
-### 4. Exécution orientée objectifs
-
-**Définir des critères de succès. Boucler jusqu'à vérification.**
-
-Transformer les tâches en objectifs vérifiables :
-- "Ajouter une validation" → "Écrire des tests pour les entrées invalides, puis les faire passer"
-- "Corriger le bug" → "Écrire un test qui le reproduit, puis le faire passer"
-- "Refactorer X" → "S'assurer que les tests passent avant et après"
-
-Pour les tâches multi-étapes, énoncer un plan bref :
-```
-1. [Étape] → vérifier : [contrôle]
-2. [Étape] → vérifier : [contrôle]
-3. [Étape] → vérifier : [contrôle]
-```
+1. **Réfléchir avant de coder** — énoncer les hypothèses, exposer les ambiguïtés, demander si flou
+2. **Simplicité d'abord** — minimum de code qui résout le problème, rien de spéculatif ni de configurable sans raison
+3. **Changements chirurgicaux** — ne toucher que ce qui est demandé, correspondre au style existant, supprimer uniquement les orphelins créés par ses propres changements
+4. **Exécution orientée objectifs** — définir des critères de succès vérifiables avant d'implémenter
 
 ## Skills projet (commandes slash)
 
-Utiliser ces skills pour charger uniquement le contexte pertinent et éviter la surcharge du contexte :
-
 | Commande | Domaine |
 |---|---|
-| `/expense` | Notes de frais — OCR, workflow PENDING/APPROVED/REFUSED |
+| `/expense` | Notes de frais — texte libre, OCR, frais km, workflow PENDING/APPROVED/REFUSED, paymentMode, absences |
 | `/invoices` | Factures PDF/Excel — invoice-service :8083 |
 | `/cra` | CRA mensuel — workflow BROUILLON→SOUMIS→VALIDE/REFUSE, SSE |
-| `/rag` | Pipelines RAG — pgvector, embeddings, OpenAI GPT-4o |
+| `/rag` | Pipelines RAG — pgvector, embeddings, Groq/OpenAI |
 | `/tenant` | Multi-tenant — Keycloak, TenantFilter, realm-per-tenant |
 | `/deploy` | Déploiement — Docker build, K8s apply, port-forwards |
+| `/security` | Sécurité LLM — PromptGuard, injection, rate limit, clés API prod |

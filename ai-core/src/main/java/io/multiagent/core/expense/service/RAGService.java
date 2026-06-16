@@ -57,13 +57,15 @@ public class RAGService {
     private final ExpenseIdGenerator idGenerator;
     private final ExpensePdfService expensePdfService;
     private final NotificationService notificationService;
+    private final io.multiagent.core.settings.repository.ConsultantProfileJpaRepository consultantProfileRepo;
+    private final io.multiagent.core.expense.repository.ExpenseJpaRepository expenseRepo;
 
     // Kafka best-effort : null si le broker n'est pas disponible en dev local
     @Autowired(required = false)
     private EventPublisher eventPublisher;
     @Value("${ai-core.expense.km-rate-7cv:0.661}")
     private double kmRate;
-    @Value("${ai-core.expense.km-annual:11000}")
+    @Value("${ai-core.expense.km-annual:4999}")
     private int kmAnnual;
     @Value("${ai-core.company-name:}")
     private String defaultCompanyName;
@@ -123,8 +125,10 @@ public class RAGService {
         ReasoningResult validationError = prepareExpense(expense, text, consultantEmail);
         if (validationError != null) return validationError;
 
-        List<ExpenseItem> expanded = isKmMonthly(expense, text) ? expandKmMonthly(expense, text) : List.of(expense);
+        boolean monthly = isKmMonthly(expense, text);
+        List<ExpenseItem> expanded = monthly ? expandKmMonthly(expense, text) : List.of(expense);
         List<ExpenseItem> validExpenses = indexExpenses(expanded);
+        pushExpenseNotification(validExpenses, expense, consultantEmail, monthly);
 
         return ReasoningResult.builder()
                 .type("create_expense")
@@ -145,7 +149,13 @@ public class RAGService {
     private ReasoningResult prepareExpense(ExpenseItem expense, String text, String consultantEmail) {
         enrichFromText(expense, text);
         normalizeExpense(expense, text);
-        enrichKm(expense, text);
+        ReasoningResult kmError = enrichKm(expense, text, consultantEmail);
+        if (kmError != null) return kmError;
+        if ("carte_transport".equalsIgnoreCase(expense.getType())) {
+            applyTransportCardReimbursement(expense);
+        }
+        ReasoningResult exclusivityError = checkMonthlyExclusivity(consultantEmail, expense);
+        if (exclusivityError != null) return exclusivityError;
         if (isBlank(expense.getPaymentMode())) expense.setPaymentMode(PAYMENT_MODE_PERSONNEL);
         if (!isBlank(consultantEmail)) {
             if (!consultantEmail.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
@@ -178,13 +188,17 @@ public class RAGService {
             try {
                 weaviateService.indexExpense(null, exp, "text", false, null);
                 valid.add(exp);
-                notificationService.push(
-                        "EXPENSE_CREATED",
-                        exp.getConsultantEmail() != null ? exp.getConsultantEmail() : "inconnu",
-                        exp.getConsultantEmail(),
-                        "Nouvelle note de frais : " + safeType(exp.getType()) + " " + exp.getAmount() + " EUR le " + safeDate(exp.getDate()),
-                        String.valueOf(exp.getId())
-                );
+                // frais_km : notification groupée envoyée par extractSingleExpense — on skip ici
+                if (!"frais_km".equalsIgnoreCase(exp.getType())) {
+                    String email = exp.getConsultantEmail() != null ? exp.getConsultantEmail() : "inconnu";
+                    notificationService.push(
+                            "EXPENSE_CREATED",
+                            email,
+                            exp.getConsultantEmail(),
+                            email + " — " + safeType(exp.getType()) + " " + exp.getAmount() + " EUR le " + safeDate(exp.getDate()),
+                            String.valueOf(exp.getId())
+                    );
+                }
                 if (eventPublisher != null) {
                     eventPublisher.publish(
                             KafkaTopics.EXPENSE_CREATED,
@@ -203,6 +217,28 @@ public class RAGService {
             }
         }
         return valid;
+    }
+
+    /**
+     * Pousse UNE notification de synthèse pour les frais km (groupée) ou une notification
+     * standard enrichie de l'email pour les autres types (déjà poussées dans indexExpenses).
+     */
+    private void pushExpenseNotification(List<ExpenseItem> valid, ExpenseItem base,
+                                         String consultantEmail, boolean monthly) {
+        if (valid.isEmpty()) return;
+        if (!"frais_km".equalsIgnoreCase(base.getType())) return; // non-km déjà notifiés
+        String email = consultantEmail != null ? consultantEmail : "inconnu";
+        String refId = String.valueOf(valid.get(0).getId());
+        String message;
+        if (monthly) {
+            YearMonth ym = YearMonth.from(resolveDate(base.getDate()));
+            String mois = ym.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH) + " " + ym.getYear();
+            int km = base.getKm() != null ? base.getKm().intValue() : 0;
+            message = email + " — frais km mensuel " + mois + " : " + valid.size() + " jours × " + km + " km";
+        } else {
+            message = email + " — frais_km " + base.getAmount() + " EUR le " + safeDate(base.getDate());
+        }
+        notificationService.push("EXPENSE_CREATED", email, consultantEmail, message, refId);
     }
 
     private void assignId(ExpenseItem exp) {
@@ -381,33 +417,97 @@ public class RAGService {
         }
     }
 
+    private record VehicleProfile(io.multiagent.core.model.VehicleType vehicleType, int fiscalPower, int kmAnnual) {}
+
+    private VehicleProfile resolveVehicleProfile(String consultantEmail) {
+        if (isBlank(consultantEmail)) return new VehicleProfile(io.multiagent.core.model.VehicleType.CAR, 7, kmAnnual);
+        return consultantProfileRepo
+                .findByTenantIdAndEmailIgnoreCase(
+                        io.multiagent.core.infrastructure.tenant.TenantContext.getTenantId(), consultantEmail)
+                .map(p -> new VehicleProfile(
+                        p.getVehicleType() != null ? p.getVehicleType() : io.multiagent.core.model.VehicleType.CAR,
+                        p.getFiscalPower() != null ? p.getFiscalPower() : 7,
+                        p.getKmAnnual() != null ? p.getKmAnnual() : kmAnnual))
+                .orElse(new VehicleProfile(io.multiagent.core.model.VehicleType.CAR, 7, kmAnnual));
+    }
+
     /**
-     * Enrichit les frais km si l’utilisateur mentionne un kilométrage ou si le type frais_km est déjà détecté.
+     * Vérifie le véhicule et calcule le montant km selon le barème fiscal du profil consultant.
+     * Retourne une erreur si le consultant n’a pas de véhicule.
      */
-    private void enrichKm(ExpenseItem e, String raw) {
-        if (e == null) return;
+    private ReasoningResult enrichKm(ExpenseItem e, String raw, String consultantEmail) {
+        if (e == null) return null;
         if (!"frais_km".equalsIgnoreCase(e.getType() == null ? "" : e.getType())) {
-            return; // détection laissée au prompt
+            return null;
         }
-        // Si le LLM fournit un km, on calcule le montant à partir du barème ; sinon on ne devine rien.
-        if (e.getKm() != null) {
-            if (e.getAmount() == null) {
-                double costPerKm = computeCostPerKm(kmAnnual, kmRate);
-                e.setAmount(round2(costPerKm * e.getKm()));
-            }
-            if (isBlank(e.getCurrency())) {
-                e.setCurrency("EUR");
-            }
+
+        VehicleProfile vp = resolveVehicleProfile(consultantEmail);
+
+        if (vp.vehicleType() == io.multiagent.core.model.VehicleType.NONE) {
+            log.warn("⚠️ Frais km refusés : consultant {} n’a pas de véhicule enregistré", consultantEmail);
+            return ReasoningResult.error(
+                    "Votre profil n’indique aucun véhicule personnel. " +
+                    "Les frais kilométriques ne peuvent pas être remboursés sans véhicule. " +
+                    "Si vous utilisez les transports en commun, soumettez votre abonnement de transport " +
+                    "en précisant le montant de votre carte ou pass mensuel.");
         }
+
+        if (e.getKm() != null && e.getAmount() == null) {
+            double costPerKm = computeCostPerKm(vp.kmAnnual(), vp.vehicleType());
+            e.setAmount(round2(costPerKm * e.getKm()));
+            log.info("📐 Barème km: vehicleType={} fiscalPower={}CV kmAnnual={} taux={}/km montant={}€",
+                    vp.vehicleType(), vp.fiscalPower(), vp.kmAnnual(),
+                    String.format("%.4f", costPerKm), e.getAmount());
+        }
+        if (isBlank(e.getCurrency())) e.setCurrency("EUR");
         if (isBlank(e.getDescription())) {
             e.setDescription("Frais km automatiques" + (e.getKm() != null ? " (" + e.getKm().intValue() + " km)" : ""));
         }
-        if (isBlank(e.getPaymentMode())) {
-            e.setPaymentMode(PAYMENT_MODE_PERSONNEL);
+        if (isBlank(e.getPaymentMode())) e.setPaymentMode(PAYMENT_MODE_PERSONNEL);
+        if (isBlank(e.getAddress())) e.setAddress("lieu de déplacement");
+        return null;
+    }
+
+    /** Applique le remboursement à 50% du montant de la carte de transport. */
+    private void applyTransportCardReimbursement(ExpenseItem e) {
+        if (e.getAmount() != null) {
+            double fullAmount = e.getAmount();
+            e.setAmount(round2(fullAmount * 0.50));
+            String base = isBlank(e.getDescription()) ? "Carte de transport" : e.getDescription();
+            e.setDescription(base + String.format(" — remboursement 50%% (abonnement %.2f€)", fullAmount));
         }
-        if (isBlank(e.getAddress())) {
-            e.setAddress("lieu de déplacement");
+        if (isBlank(e.getCurrency())) e.setCurrency("EUR");
+        e.setPaymentMode(PAYMENT_MODE_PERSONNEL);
+    }
+
+    /** Vérifie qu’un consultant ne cumule pas frais_km et carte_transport sur le même mois. */
+    private ReasoningResult checkMonthlyExclusivity(String consultantEmail, ExpenseItem e) {
+        if (isBlank(consultantEmail)) return null;
+        String type = e.getType();
+        if (!"frais_km".equalsIgnoreCase(type) && !"carte_transport".equalsIgnoreCase(type)) return null;
+
+        LocalDate expenseDate = resolveDate(e.getDate());
+        LocalDate start = expenseDate.withDayOfMonth(1);
+        LocalDate end   = expenseDate.withDayOfMonth(expenseDate.lengthOfMonth());
+        java.util.UUID tenantId = io.multiagent.core.infrastructure.tenant.TenantContext.getTenantId();
+
+        String conflictType = "frais_km".equalsIgnoreCase(type) ? "carte_transport" : "frais_km";
+        boolean hasConflict = expenseRepo.existsByMonthAndType(tenantId, consultantEmail, conflictType, start, end);
+
+        if (hasConflict) {
+            if ("frais_km".equalsIgnoreCase(type)) {
+                return ReasoningResult.error(
+                        "Vous avez déjà enregistré un remboursement de carte de transport ce mois-ci (" +
+                        expenseDate.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH) + " " + expenseDate.getYear() + "). " +
+                        "Il n’est pas possible de cumuler frais kilométriques et carte de transport sur le même mois.");
+            } else {
+                return ReasoningResult.error(
+                        "Vous avez déjà des frais kilométriques enregistrés ce mois-ci (" +
+                        expenseDate.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH) + " " + expenseDate.getYear() + "). " +
+                        "Il n’est pas possible de cumuler frais kilométriques et carte de transport sur le même mois.");
+            }
         }
+        return null;
     }
 
     private boolean isKmMonthly(ExpenseItem e, String raw) {
@@ -494,10 +594,19 @@ public class RAGService {
         return h;
     }
 
-    private double computeCostPerKm(int kmAnnual, double kmRate) {
-        if (kmAnnual <= 0) {
-            return kmRate;
+    /** Calcule le taux €/km selon le type de véhicule (barème fiscal 2025). */
+    private double computeCostPerKm(int kmAnnual, io.multiagent.core.model.VehicleType vehicleType) {
+        if (vehicleType == io.multiagent.core.model.VehicleType.MOTORCYCLE) {
+            return computeMotoCostPerKm(kmAnnual);
         }
+        double rate = computeVoitureCostPerKm(kmAnnual);
+        if (vehicleType == io.multiagent.core.model.VehicleType.ELECTRIC_CAR) rate *= 1.20;
+        return rate;
+    }
+
+    /** Barème voiture 7CV+ (2025) : ≤5 000 km, 5 001-20 000 km, >20 000 km. */
+    private double computeVoitureCostPerKm(int kmAnnual) {
+        if (kmAnnual <= 0) return kmRate;
         double d = kmAnnual;
         double annualCost;
         if (d <= 5000) {
@@ -506,6 +615,21 @@ public class RAGService {
             annualCost = (d * 0.394) + 1515;
         } else {
             annualCost = d * 0.470;
+        }
+        return annualCost / d;
+    }
+
+    /** Barème moto >500cc (2025) : ≤3 000 km, 3 001-6 000 km, >6 000 km. */
+    private double computeMotoCostPerKm(int kmAnnual) {
+        if (kmAnnual <= 0) return 0.412;
+        double d = kmAnnual;
+        double annualCost;
+        if (d <= 3000) {
+            annualCost = d * 0.412;
+        } else if (d <= 6000) {
+            annualCost = (d * 0.274) + 412;
+        } else {
+            annualCost = d * 0.274;
         }
         return annualCost / d;
     }

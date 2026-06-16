@@ -2,6 +2,7 @@ package io.multiagent.core.document.repository;
 
 import io.multiagent.core.document.entity.DocumentChunkEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -22,4 +23,13 @@ public interface DocumentChunkJpaRepository extends JpaRepository<DocumentChunkE
     List<DocumentChunkEntity> findSimilar(@Param("tenantId") UUID tenantId,
                                          @Param("queryVector") String queryVector,
                                          @Param("limit") int limit);
+
+    @Modifying
+    @Query(value = "UPDATE document_chunk SET embedding = CAST(:vector AS vector) WHERE id = :id",
+            nativeQuery = true)
+    void updateEmbedding(@Param("id") UUID id, @Param("vector") String vector);
+
+    @Query(value = "SELECT * FROM document_chunk WHERE tenant_id = :tenantId AND embedding IS NULL",
+            nativeQuery = true)
+    List<DocumentChunkEntity> findOrphans(@Param("tenantId") UUID tenantId);
 }

@@ -1,5 +1,6 @@
 package io.multiagent.core.organization.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,6 +20,7 @@ public class Client {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tenant_id", nullable = false)
     private Organization tenant;
@@ -36,6 +38,9 @@ public class Client {
 
     @Column(name = "contact_email")
     private String contactEmail;
+
+    @Column(nullable = false)
+    private boolean active = true;
 
     @Column(name = "created_at")
     private Instant createdAt;

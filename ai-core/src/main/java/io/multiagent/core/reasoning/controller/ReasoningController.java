@@ -30,6 +30,7 @@ public class ReasoningController {
         log.info("➡️ AI-Core /reasoning/analyze received payload ({} chars) normalized to {} chars, consultant={}",
                 payload.length(), normalizedPayload.length(), maskEmail(consultantEmail));
 
+        // Guard appliqué globalement par PromptGuardFilter avant d'atteindre ce controller
         if ("web-ui".equals(source)) {
             String intent = detectDeleteIntent(normalizedPayload);
             if (intent != null) {

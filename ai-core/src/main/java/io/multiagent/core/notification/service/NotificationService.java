@@ -48,7 +48,7 @@ public class NotificationService {
         notifications.add(0, n);
         // push to all SSE clients
         String payload = "{\"id\":\"" + n.getId() + "\",\"type\":\"" + n.getType()
-                + "\",\"consultantName\":\"" + escape(n.getConsultantName())
+                + "\",\"consultantEmail\":\"" + escape(safeStr(n.getConsultantEmail()))
                 + "\",\"message\":\"" + escape(n.getMessage())
                 + "\",\"timestamp\":\"" + n.getTimestamp()
                 + "\",\"refId\":\"" + safeStr(n.getRefId()) + "\"}";

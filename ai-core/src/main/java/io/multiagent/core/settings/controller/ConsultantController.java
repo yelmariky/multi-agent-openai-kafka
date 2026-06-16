@@ -11,8 +11,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @RestController
@@ -25,16 +27,16 @@ public class ConsultantController {
 
     @GetMapping("/profiles")
     public ResponseEntity<List<ConsultantProfile>> getProfiles(
-            @RequestParam(required = false) String company) {
+            @RequestParam(name = "company", required = false) String company) {
         return ResponseEntity.ok(weaviateService.findAllConsultantProfiles(company));
     }
 
     @PostMapping("/profiles")
     public ResponseEntity<Object> upsertProfile(@RequestBody ConsultantProfile profile) {
         try {
-            weaviateService.upsertConsultantProfile(profile);
+            java.util.UUID id = weaviateService.upsertConsultantProfile(profile);
             return ResponseEntity.ok(Map.of(
-                    "message", "Profil consultant sauvegardé",
+                    "id", id.toString(),
                     "email", profile.email() == null ? "" : profile.email()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("Erreur : " + e.getMessage());
@@ -85,7 +87,7 @@ public class ConsultantController {
             ConsultantProfile profile = new ConsultantProfile(
                     null, email, fullName, role,
                     company.isBlank() ? realm.toUpperCase() : company,
-                    clientName, "", "", null, 0.0, true);
+                    clientName, "", "", null, 0.0, true, io.multiagent.core.model.VehicleType.CAR, 7, 4999);
             weaviateService.upsertConsultantProfile(profile);
 
             log.info("Invited consultant '{}' in realm '{}' (keycloakId={})", email, realm, keycloakUserId);
@@ -106,9 +108,12 @@ public class ConsultantController {
             return ResponseEntity.badRequest().build();
         }
         try {
+            Set<String> staffEmails = new HashSet<>(keycloakService.getUserEmailsWithRole(realm, "admin"));
+            staffEmails.addAll(keycloakService.getUserEmailsWithRole(realm, "manager"));
             List<UserRepresentation> users = keycloakService.listRealmUsers(realm);
             List<Map<String, String>> result = users.stream()
                     .filter(u -> u.getEmail() != null && !u.getEmail().isBlank())
+                    .filter(u -> !staffEmails.contains(u.getEmail().toLowerCase()))
                     .map(u -> Map.of(
                             "email", u.getEmail(),
                             "name", u.getFirstName() != null && u.getLastName() != null

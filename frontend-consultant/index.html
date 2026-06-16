@@ -66,18 +66,6 @@
         </button>
         <div id="login-status" class="status"></div>
       </form>
-      <p class="login-hint">
-        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        Authentification de démonstration — intégration Keycloak à venir
-      </p>
-      <div class="login-demo-users">
-        <p class="demo-label">Comptes de démo</p>
-        <div class="demo-list">
-          <button class="demo-user" data-email="alice.martin@ia-insight.fr"    data-pwd="demo123">alice.martin@ia-insight.fr</button>
-          <button class="demo-user" data-email="bob.dupont@ia-insight.fr"      data-pwd="demo123">bob.dupont@ia-insight.fr</button>
-          <button class="demo-user" data-email="charlie.bernard@freelance.com" data-pwd="demo123">charlie.bernard@freelance.com</button>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -174,10 +162,6 @@
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 Charger / Nouveau
               </button>
-              <button id="cra-import-absences" class="btn-secondary">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Importer mes absences
-              </button>
             </div>
             <div id="cra-load-status" class="status"></div>
           </div>
@@ -189,7 +173,7 @@
             <div class="cra-cal-header">
               <div>
                 <p class="eyebrow">Calendrier mensuel</p>
-                <h2 id="cra-cal-title">Janvier 2026</h2>
+                <h2 id="cra-cal-title"></h2>
               </div>
               <div class="cra-summary">
                 <span class="cra-total-label">Total</span>
@@ -232,9 +216,9 @@
               <button id="cra-recall" class="btn-recall" style="display:none">
                 ↩ Retirer ma soumission
               </button>
-              <button id="cra-download-pdf" class="btn-secondary" style="display:none">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                Telecharger PDF
+              <button id="cra-download-pdf" class="btn-pdf" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                Télécharger PDF
               </button>
             </div>
             <div id="cra-action-status" class="status"></div>
@@ -294,12 +278,12 @@
             <!-- Exemples express -->
             <div class="examples-row" style="margin-top:10px">
               <span class="examples-label">Exemples :</span>
-              <button class="btn-example" data-example="Le 5 mai j'ai mangé au restaurant DE LA PORTE et j'ai payé 28 € sur ma carte personnelle">🍽 Restaurant</button>
-              <button class="btn-example" data-example="Nuit à l'hôtel Mercure Paris le 12 mai, 145 € réglés par carte business">🏨 Hôtel</button>
-              <button class="btn-example" data-example="Taxi Uber le 8 mai de Paris Gare de Lyon à La Défense, 32 €, payé en personnel">🚕 Taxi</button>
-              <button class="btn-example" data-example="Achat d'un écran Dell 27 pouces le 15 mai pour le télétravail, 389 € carte business">🖥 Matériel</button>
-              <button class="btn-example" data-example="Train Paris-Lyon le 20 mai aller-retour, 112 €, carte business">🚆 Transport</button>
-              <button class="btn-example" id="example-km" data-example-tpl="Frais kilométriques mai pour {company}, 44 km aller-retour quotidien, voiture 7CV">🚗 Km mensuel</button>
+              <button class="btn-example" data-example-tpl="Le 5 {month} j'ai mangé au restaurant DE LA PORTE et j'ai payé 28 € sur ma carte personnelle">🍽 Restaurant</button>
+              <button class="btn-example" data-example-tpl="Nuit à l'hôtel Mercure Paris le 12 {month}, 145 € réglés par carte business">🏨 Hôtel</button>
+              <button class="btn-example" data-example-tpl="Taxi Uber le 8 {month} de Paris Gare de Lyon à La Défense, 32 €, payé en personnel">🚕 Taxi</button>
+              <button class="btn-example" data-example-tpl="Achat d'un écran Dell 27 pouces le 15 {month} pour le télétravail, 389 € carte business">🖥 Matériel</button>
+              <button class="btn-example" data-example-tpl="Train Paris-Lyon le 20 {month} aller-retour, 112 €, carte business">🚆 Transport</button>
+              <button class="btn-example" id="example-km" data-example-tpl="Frais kilométriques {month}, 44 km aller-retour domicile-bureau par jour">🚗 Km mensuel</button>
             </div>
 
             <div class="actions-row" style="margin-top:8px">
@@ -366,8 +350,8 @@
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                 Charger
               </button>
-              <button id="notes-report-pdf" class="btn-secondary" style="display:none">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <button id="notes-report-pdf" class="btn-pdf" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                 PDF
               </button>
               <button id="notes-report-excel" class="btn-secondary" style="display:none">
@@ -399,12 +383,6 @@
                 </label>
               </div>
             </div>
-            <div class="actions-row" style="margin-top:12px">
-              <button id="abs-load" class="btn-secondary">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                Charger mes absences
-              </button>
-            </div>
             <div id="abs-status" class="status"></div>
           </div>
 
@@ -414,6 +392,10 @@
               <div>
                 <p class="eyebrow">Vue mensuelle</p>
                 <h2 id="abs-cal-title">Janvier 2026</h2>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+                  <span id="abs-cra-status"></span>
+                  <button id="abs-goto-cra" class="btn-link" style="display:none;font-size:12px">Modifier ce CRA →</button>
+                </div>
               </div>
               <div class="cra-summary">
                 <span class="cra-total-label">Absences</span>

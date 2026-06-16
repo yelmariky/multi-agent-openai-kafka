@@ -27,7 +27,7 @@ keycloak:
 
 openai:
   api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
-  model: ${OPENAI_MODEL:gpt-4o-mini}
+  model: ${OPENAI_MODEL:gpt-4.1-mini}
   embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
   embedding-dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:2000}
   retry:

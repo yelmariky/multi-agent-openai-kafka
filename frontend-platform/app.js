@@ -218,8 +218,7 @@ async function createTenant() {
       }),
     });
     if (!res.ok && res.status !== 207) {
-      const text = await res.text();
-      throw new Error(text || `HTTP ${res.status}`);
+      throw new Error(`Erreur serveur (HTTP ${res.status})`);
     }
     const result = await res.json();
     const org = result.organization || result;

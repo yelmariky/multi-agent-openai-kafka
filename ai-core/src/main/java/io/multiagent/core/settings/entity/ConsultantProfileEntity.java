@@ -51,6 +51,16 @@ public class ConsultantProfileEntity {
 
     private Boolean active = true;
 
+    @Enumerated(jakarta.persistence.EnumType.STRING)
+    @Column(name = "vehicle_type", length = 20)
+    private io.multiagent.core.model.VehicleType vehicleType = io.multiagent.core.model.VehicleType.CAR;
+
+    @Column(name = "fiscal_power")
+    private Integer fiscalPower = 7;
+
+    @Column(name = "km_annual")
+    private Integer kmAnnual = 4999;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         name = "consultant_project",

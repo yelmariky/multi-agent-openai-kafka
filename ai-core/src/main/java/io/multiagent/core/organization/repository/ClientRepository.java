@@ -9,5 +9,6 @@ import java.util.UUID;
 
 public interface ClientRepository extends JpaRepository<Client, UUID> {
     List<Client> findByTenantId(UUID tenantId);
+    List<Client> findByTenantIdAndActiveTrue(UUID tenantId);
     Optional<Client> findByTenantIdAndName(UUID tenantId, String name);
 }

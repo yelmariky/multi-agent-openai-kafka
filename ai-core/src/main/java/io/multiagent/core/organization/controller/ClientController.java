@@ -23,7 +23,7 @@ public class ClientController {
 
     @GetMapping
     public List<Client> list() {
-        return clientRepository.findByTenantId(TenantContext.getTenantId());
+        return clientRepository.findByTenantIdAndActiveTrue(TenantContext.getTenantId());
     }
 
     @PostMapping
@@ -50,8 +50,10 @@ public class ClientController {
     @DeleteMapping("/{id}")
     @Transactional
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        if (!clientRepository.existsById(id)) return ResponseEntity.notFound().build();
-        clientRepository.deleteById(id);
+        Client client = clientRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
+        client.setActive(false);
+        clientRepository.save(client);
         return ResponseEntity.noContent().build();
     }
 }

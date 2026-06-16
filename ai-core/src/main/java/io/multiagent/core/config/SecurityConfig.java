@@ -62,7 +62,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/consultants/invite").hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.DELETE, "/consultants/profiles").hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.GET, "/consultants/keycloak-users").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
-                .requestMatchers("/settings/seller-profile", "/settings/seller").hasRole(ROLE_ADMIN)
+                .requestMatchers("/settings/seller-profile", "/settings/seller", "/settings/reindex-chunks").hasRole(ROLE_ADMIN)
                 // Platform admin endpoints
                 .requestMatchers("/platform/**").hasRole("platform_admin")
                 .anyRequest().authenticated()

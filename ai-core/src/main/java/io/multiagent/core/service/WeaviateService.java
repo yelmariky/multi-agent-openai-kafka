@@ -326,7 +326,12 @@ public class WeaviateService {
                     }
                 }
             }
-            return result;
+            // Chaque ligne km mensuel (une par jour ouvré) porte le même absencePeriodsJson —
+            // on déduplique par (from, to) pour éviter les répétitions dans l'UI.
+            return result.stream()
+                    .filter(p -> p.getFrom() != null && p.getTo() != null)
+                    .distinct()
+                    .toList();
         } catch (Exception e) {
             log.error("findKmExpenseAbsences exception: {}", e.getMessage(), e);
             return List.of();
@@ -506,7 +511,7 @@ public class WeaviateService {
     }
 
     @Transactional
-    public void upsertConsultantProfile(ConsultantProfile profile) {
+    public UUID upsertConsultantProfile(ConsultantProfile profile) {
         try {
             UUID tenantId = TenantContext.getTenantId();
             String email = profile.email() != null ? profile.email().toLowerCase(Locale.ROOT).trim() : "";
@@ -524,8 +529,12 @@ public class WeaviateService {
             entity.setClientContactEmail(profile.clientContactEmail());
             entity.setTjm(profile.tjm() != null ? BigDecimal.valueOf(profile.tjm()) : null);
             entity.setActive(profile.active() != null ? profile.active() : true);
-            consultantProfileRepo.save(entity);
-            log.info("ConsultantProfile upserted (email={})", email);
+            if (profile.vehicleType() != null) entity.setVehicleType(profile.vehicleType());
+            if (profile.fiscalPower() != null) entity.setFiscalPower(profile.fiscalPower());
+            if (profile.kmAnnual() != null) entity.setKmAnnual(profile.kmAnnual());
+            ConsultantProfileEntity saved = consultantProfileRepo.save(entity);
+            log.info("ConsultantProfile upserted (email={}, id={})", email, saved.getId());
+            return saved.getId();
         } catch (Exception e) {
             log.error("upsertConsultantProfile exception: {}", e.getMessage(), e);
             throw new RuntimeException("upsertConsultantProfile failed: " + e.getMessage(), e);
@@ -571,8 +580,38 @@ public class WeaviateService {
         entity.setTenantId(tenantId);
         entity.setContent(text);
         entity.setSource(source);
-        // Note: embedding stored via native SQL since JPA doesn't natively handle pgvector
         documentChunkRepo.save(entity);
+        if (embedding != null && embedding.length > 0) {
+            documentChunkRepo.updateEmbedding(entity.getId(), toPgVectorString(embedding));
+        }
+    }
+
+    @Transactional
+    public int reindexOrphanChunks() {
+        UUID tenantId = TenantContext.getTenantId();
+        List<io.multiagent.core.document.entity.DocumentChunkEntity> orphans = documentChunkRepo.findOrphans(tenantId);
+        int count = 0;
+        for (io.multiagent.core.document.entity.DocumentChunkEntity chunk : orphans) {
+            if (chunk.getContent() == null || chunk.getContent().isBlank()) continue;
+            try {
+                float[] embedding = llm.embed(chunk.getContent());
+                documentChunkRepo.updateEmbedding(chunk.getId(), toPgVectorString(embedding));
+                count++;
+            } catch (Exception e) {
+                log.warn("reindexOrphanChunks: failed for chunk {} — {}", chunk.getId(), e.getMessage());
+            }
+        }
+        log.info("reindexOrphanChunks: {} chunks re-embeddés pour tenant {}", count, tenantId);
+        return count;
+    }
+
+    private String toPgVectorString(float[] arr) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < arr.length; i++) {
+            if (i > 0) sb.append(",");
+            sb.append(arr[i]);
+        }
+        return sb.append("]").toString();
     }
 
     private ExpenseItem toExpenseItem(ExpenseEntity e) {
@@ -677,7 +716,10 @@ public class WeaviateService {
                 e.getClientName(), e.getClientAddress(), e.getClientRcs(),
                 e.getClientContactEmail(),
                 e.getTjm() != null ? e.getTjm().doubleValue() : null,
-                e.getActive()
+                e.getActive(),
+                e.getVehicleType() != null ? e.getVehicleType() : io.multiagent.core.model.VehicleType.CAR,
+                e.getFiscalPower() != null ? e.getFiscalPower() : 7,
+                e.getKmAnnual() != null ? e.getKmAnnual() : 4999
         );
     }
 

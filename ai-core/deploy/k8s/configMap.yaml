@@ -12,13 +12,21 @@ data:
   KEYCLOAK_ADMIN_REALM: "master"
   KEYCLOAK_ADMIN_CLIENT_ID: "admin-cli"
   KAFKA_BOOTSTRAP_SERVERS: "kafka.agent-system.svc.cluster.local:9092"
+  MAIL_HOST: "smtp.gmail.com"
+  MAIL_PORT: "587"
+  FRONTEND_CONSULTANT_URL: "https://votre-domaine.com"
+  CRA_REMINDER_ENABLED: "true"
   WEAVIATE_HOST: "weaviate.weaviate.svc.cluster.local:80"
   WEAVIATE_SCHEME: "http"
   WEAVIATE_EXPENSE_CLASS: "Expense"
   WEAVIATE_INVOICE_CLASS: "Invoice"
-  OPENAI_MODEL: "gpt-4o-mini"
+  OPENAI_MODEL: "llama-3.1-8b-instant"
   OPENAI_EMBEDDING_MODEL: "text-embedding-3-large"
   OPENAI_EMBEDDING_DIMENSIONS: "2000"
+  OPENAI_LLM_BASE_URL: "https://api.groq.com/openai/v1"
+  AI_CORE_INTENT_MODEL: "llama-3.1-8b-instant"
+  AI_CORE_REWRITE_MODEL: "llama-3.1-8b-instant"
+  AI_CORE_RAG_MODEL: "meta-llama/llama-4-scout-17b-16e-instruct"
   AI_CORE_DOCUMENTS_TOPIC: "documents.raw"
   INTENT_INPUT_TOPIC: "intent-input-topic"
   INTENT_OUTPUT_TOPIC: "reasoning-input-topic"
@@ -68,13 +76,15 @@ data:
     - JSON strict obligatoire (pas de texte autour).
     - confidence ∈ [0.0 , 1.0].
     - Désambiguïse les cas flous.
-    - Si l'utilisateur mentionne un mois en toutes lettres ou une période mensuelle (ex: "mars", "mois de mars", "mars 2026"), renseigne `entities.month` au format `YYYY-MM`.
-    - Pour une suppression par ids + mois, `entities.ids` et `entities.month` doivent être renseignés ensemble si l'information est présente.
+    - Si l’utilisateur mentionne un mois en toutes lettres ou une période mensuelle (ex: "mars", "mois de mars", "mars 2026"), renseigne `entities.month` au format `YYYY-MM`.
+    - Pour une suppression par ids + mois, `entities.ids` et `entities.month` doivent être renseignés ensemble si l’information est présente.
     - Pour un rapport mensuel, renseigne aussi `entities.month` quand le mois est explicite.
     - Pas d’invention de dépenses.
     - Pas de role-play.
     - Pas de méta-commentaire.
     - Pas de phrases inutiles.
+    - ANNOTATIONS TECHNIQUES : le texte peut contenir des métadonnées entre crochets comme `[absences: absence le 2026-06-01, absence le 2026-06-08]` ou `[km: ...]`. Ces annotations sont insérées automatiquement par le système. Ignore-les pour la classification — elles ne changent pas l’intention principale.
+    - PRÉSOMPTION DÉPENSE : si le texte décrit clairement un achat, une dépense professionnelle ou personnelle, un trajet, une prestation ou tout événement avec un montant, classe en `create_expense` même si le format est inhabituel. Réserve `unknown` uniquement au texte totalement incompréhensible ou hors contexte professionnel.
   AI_CORE_PROMPT_CLASSIFIER_EXAMPLES: |
     USER: "J'ai payé 75€ au restaurant hier soir"
     OUTPUT:
@@ -246,6 +256,23 @@ data:
       "explanation": "Demande de suppression d'une facture par numéro de facture."
     }
 
+    USER: "Achat d'un écran Dell 27 pouces le 15 mai pour le télétravail, 389 € carte business [absences: absence le 2026-06-01, absence le 2026-06-08]"
+    OUTPUT:
+    {
+      "intent": "create_expense",
+      "confidence": 0.97,
+      "entities": { "date": "2026-05-15" },
+      "explanation": "Achat professionnel avec montant et date explicites. L'annotation [absences: ...] est une métadonnée système à ignorer."
+    }
+
+    USER: "j'ai parcouru 50 km par jour ouvré ce mois-ci pour aller au bureau [absences: absence le 2026-06-09, absence le 2026-06-16]"
+    OUTPUT:
+    {
+      "intent": "create_expense",
+      "confidence": 0.96,
+      "explanation": "Frais kilométriques mensuels. L'annotation [absences: ...] indique les jours non travaillés, déjà pris en compte dans le calcul."
+    }
+
     USER: "Facture le client ACME pour 5 jours de dev à 600eur/j"
     OUTPUT:
     { "intent": "generate_invoice", "confidence": 0.98 }
@@ -333,7 +360,7 @@ data:
 
     6. Champs à extraire :
        - amount (nombre), currency (code ISO si possible)
-       - type parmi : restaurant, boulangerie, café, hôtel, taxi, transport, carburant, péage, matériel informatique, pc portable, location, frais_km, abonnement, autre (choisir le plus précis)
+       - type parmi : restaurant, boulangerie, café, hôtel, taxi, transport, carburant, péage, matériel informatique, pc portable, location, frais_km, carte_transport, abonnement, autre (choisir le plus précis). Utilise carte_transport (et non abonnement) pour tout remboursement de pass/abonnement de transport en commun (Navigo, carte mensuelle, pass transport...). Mets le montant total de l'abonnement — le serveur applique automatiquement les 50% de remboursement légal.
        - km : kilométrage si mentionné (ex: "50 km"). Si non fourni → null.
        - date ISO (YYYY-MM-DD)
        - description: doit décrire d'abord l'objet réel de la dépense (enseigne, prestation, motif métier ou libellé utile), puis ajouter la méthode de paiement si elle est connue.
@@ -414,7 +441,7 @@ data:
 
     6. Champs à extraire :
        - amount (nombre), currency (code ISO si possible)
-       - type parmi : restaurant, boulangerie, café, hôtel, taxi, transport, carburant, péage, matériel informatique, pc portable, location, frais_km, abonnement, autre (choisir le plus précis)
+       - type parmi : restaurant, boulangerie, café, hôtel, taxi, transport, carburant, péage, matériel informatique, pc portable, location, frais_km, carte_transport, abonnement, autre (choisir le plus précis). Utilise carte_transport (et non abonnement) pour tout remboursement de pass/abonnement de transport en commun (Navigo, carte mensuelle, pass transport...). Mets le montant total de l'abonnement — le serveur applique automatiquement les 50% de remboursement légal.
        - km : kilométrage si mentionné (ex: "50 km"). Si non fourni → null.
        - date ISO (YYYY-MM-DD)
        - description: doit décrire d'abord l'objet réel de la dépense (enseigne, prestation, motif métier ou libellé utile), puis ajouter la méthode de paiement si elle est connue.

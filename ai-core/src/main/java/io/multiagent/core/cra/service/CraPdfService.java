@@ -162,30 +162,53 @@ public class CraPdfService {
                 y = drawInfoBlocks(cs, y, pageW, seller, prestaContact, clientSociete, clientAddr, clientContact);
 
                 // === ACTIVITY GRID (multi-projets) ===
-                // Grouper les entrées par projectId
+                // Grouper les entrées par projectId.
+                // Les entrées de type ABSENT ou projectId "__ABSENCE__" → groupe dédié "Absences" (affiché en premier).
                 Map<String, List<CraDayEntry>> byProject = new LinkedHashMap<>();
                 for (CraDayEntry e : entries) {
-                    String pid = (e.projectId() != null && !e.projectId().isBlank())
-                            ? e.projectId() : "__fallback__";
+                    String pid;
+                    if ("ABSENT".equals(e.type()) || "__ABSENCE__".equals(e.projectId())) {
+                        pid = "__ABSENCE__";
+                    } else {
+                        pid = (e.projectId() != null && !e.projectId().isBlank())
+                                ? e.projectId() : "__fallback__";
+                    }
                     byProject.computeIfAbsent(pid, k -> new ArrayList<>()).add(e);
                 }
                 if (byProject.isEmpty()) {
                     byProject.put("__fallback__", entries.isEmpty() ? new ArrayList<>() : new ArrayList<>(entries));
                 }
-                // Résoudre le label de chaque groupe
+                // Résoudre le label de chaque groupe — ligne Absences en premier.
+                // Ignorer les groupes sans entrées de travail ou d'absence (ex. résidu WEEKEND/FERIE d'anciens CRAs).
                 List<ProjectRow> rows = new ArrayList<>();
+                ProjectRow absenceRow = null;
                 for (Map.Entry<String, List<CraDayEntry>> grp : byProject.entrySet()) {
                     String pid = grp.getKey();
-                    String label = fallbackLabel;
-                    if (!"__fallback__".equals(pid)) {
+                    boolean hasMeaningfulData = grp.getValue().stream()
+                            .anyMatch(e -> "TRAVAIL".equals(e.type()) || "ABSENT".equals(e.type()));
+                    if (!hasMeaningfulData) continue;
+
+                    String label;
+                    if ("__ABSENCE__".equals(pid)) {
+                        label = "Absences";
+                    } else if ("__fallback__".equals(pid)) {
+                        label = fallbackLabel;
+                    } else {
+                        label = fallbackLabel;
                         try {
                             label = projectRepo.findById(UUID.fromString(pid))
                                     .map(p -> safeText(p.getName()))
                                     .orElse(fallbackLabel);
                         } catch (Exception ignored) {}
                     }
-                    rows.add(new ProjectRow(label, grp.getValue()));
+                    ProjectRow pr = new ProjectRow(label, grp.getValue());
+                    if ("__ABSENCE__".equals(pid)) {
+                        absenceRow = pr;
+                    } else {
+                        rows.add(pr);
+                    }
                 }
+                if (absenceRow != null) rows.add(0, absenceRow);
                 y -= 8;
                 y = drawActivityGrid(cs, y, pageW, rows, daysInMonth);
 
@@ -336,6 +359,8 @@ public class CraPdfService {
         y -= cellH;
 
         // === Data rows (one per project) ===
+        // Pré-calcul des totaux par jour (TRAVAIL + ABSENT) pour la ligne Total
+        double[] dayTotals = new double[daysInMonth + 1];
         for (ProjectRow row : rows) {
             cs.setFont(PDType1Font.HELVETICA, 7);
             cs.setNonStrokingColor(new Color(245, 245, 245));
@@ -353,10 +378,10 @@ public class CraPdfService {
                     switch (entry.type()) {
                         case "WEEKEND" -> bg = COLOR_WEEKEND;
                         case "FERIE"   -> { bg = COLOR_FERIE;  lbl = "F"; }
-                        case "ABSENT"  -> { bg = COLOR_ABSENT; lbl = "A"; }
+                        case "ABSENT"  -> { bg = COLOR_ABSENT; lbl = entry.value() < 1.0 ? "1/2" : "A"; dayTotals[d] += entry.value(); }
                         default -> {
-                            if (entry.value() >= 1.0)  { bg = COLOR_TRAVAIL; lbl = "1"; }
-                            else if (entry.value() > 0) { bg = COLOR_TRAVAIL; lbl = "0.5"; }
+                            if (entry.value() >= 1.0)  { bg = COLOR_TRAVAIL; lbl = "1";   dayTotals[d] += entry.value(); }
+                            else if (entry.value() > 0) { bg = COLOR_TRAVAIL; lbl = "0.5"; dayTotals[d] += entry.value(); }
                         }
                     }
                 }
@@ -376,11 +401,42 @@ public class CraPdfService {
             y -= cellH;
         }
 
-        // === Outer border (encadre header + toutes les lignes) ===
+        // === Ligne Total ===
+        cs.setNonStrokingColor(COLOR_HEADER_BG);
+        cs.addRect(gridLeft, y - cellH, labelW, cellH);
+        cs.fill();
+        cs.setNonStrokingColor(COLOR_HEADER_TEXT);
+        cs.setFont(PDType1Font.HELVETICA_BOLD, 7);
+        writeLine(cs, gridLeft + 4, y - 13, "Total");
+        double grandTotal = 0;
+        for (int d = 1; d <= daysInMonth; d++) {
+            float cellX = gridLeft + labelW + (d - 1) * cellW;
+            double val = dayTotals[d];
+            grandTotal += val;
+            String lbl = val == 0 ? "" : (val >= 1.0 ? String.valueOf((int) val) : "0.5");
+            // Fond : vert si journée complète, jaune si demi, gris si 0
+            Color bg = val == 0 ? new Color(230, 230, 230) : (val >= 1.0 ? COLOR_TRAVAIL : COLOR_FERIE);
+            cs.setNonStrokingColor(bg);
+            cs.addRect(cellX, y - cellH, cellW, cellH);
+            cs.fill();
+            cs.setStrokingColor(new Color(180, 180, 180));
+            cs.setLineWidth(0.3f);
+            cs.addRect(cellX, y - cellH, cellW, cellH);
+            cs.stroke();
+            if (!lbl.isEmpty()) {
+                cs.setNonStrokingColor(Color.BLACK);
+                cs.setFont(PDType1Font.HELVETICA_BOLD, 7);
+                float tw = PDType1Font.HELVETICA_BOLD.getStringWidth(lbl) / 1000 * 7;
+                writeLine(cs, cellX + (cellW - tw) / 2, y - 13, lbl);
+            }
+        }
+        y -= cellH;
+
+        // === Outer border (encadre header + toutes les lignes + total) ===
         float gridW = labelW + daysInMonth * cellW;
         cs.setStrokingColor(new Color(100, 100, 100));
         cs.setLineWidth(0.8f);
-        cs.addRect(gridLeft, y, gridW, cellH * (1 + rowCount));
+        cs.addRect(gridLeft, y, gridW, cellH * (2 + rowCount));
         cs.stroke();
 
         return y;

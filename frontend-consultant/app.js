@@ -178,6 +178,12 @@ document.querySelectorAll('.tab').forEach(btn => {
       const session = getSession();
       if (session) loadAbsencesForNotes(session);
     }
+    if (btn.dataset.tab === 'absences') {
+      const session = getSession();
+      const craMonth = document.getElementById('cra-month')?.value;
+      if (craMonth) document.getElementById('abs-month').value = craMonth;
+      if (session) loadAbsences(session);
+    }
   });
 });
 
@@ -259,7 +265,7 @@ function connectConsultantSSE(user) {
         const n = JSON.parse(e.data);
         notifCount++;
         updateNotifBadge();
-        showConsultantToast(n.message, n.type === 'CRA_VALIDATED' ? 'ok' : 'err');
+        showToast(n.message, n.type === 'CRA_VALIDATED' ? 'ok' : n.type === 'CRA_REFUSED' ? 'err' : 'info');
         const dropdown = document.getElementById('notif-dropdown');
         if (!dropdown.classList.contains('hidden')) loadNotifications(user);
       } catch { /* ignore malformed */ }
@@ -323,16 +329,22 @@ function formatNotifTs(ts) {
   } catch { return ts; }
 }
 
-function showConsultantToast(msg, type = '') {
+function showToast(msg, type = '') {
+  let container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
   const t = document.createElement('div');
+  t.className = `toast${type ? ` toast-${type}` : ''}`;
   t.textContent = msg;
-  t.style.cssText = `position:fixed;bottom:24px;right:24px;padding:12px 18px;border-radius:10px;
-    font-size:13px;z-index:9999;max-width:360px;word-break:break-word;
-    background:${type === 'ok' ? '#1a3a2a' : '#3a1a1a'};
-    color:${type === 'ok' ? '#2ce5a7' : '#ff8a8a'};
-    border:1px solid ${type === 'ok' ? '#2ce5a740' : '#ff8a8a40'}`;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 5000);
+  container.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('toast-show'));
+  setTimeout(() => {
+    t.classList.remove('toast-show');
+    t.addEventListener('transitionend', () => t.remove(), { once: true });
+  }, 4000);
 }
 
 // ============================================================
@@ -371,7 +383,6 @@ const CRA_READONLY = () => craStatus === 'SOUMIS' || craStatus === 'VALIDE';
 async function initCra(user) {
   currentUser = user;
   document.getElementById('cra-load').addEventListener('click',             () => loadCra(user));
-  document.getElementById('cra-import-absences').addEventListener('click',  () => importKmAbsences(user));
   document.getElementById('cra-save').addEventListener('click',             () => saveCra('/cra/save'));
   document.getElementById('cra-submit').addEventListener('click',           submitCra);
   document.getElementById('cra-recall').addEventListener('click',           () => recallCra(user));
@@ -439,22 +450,56 @@ async function loadMissions(user) {
       opt.dataset.contactEmail = clientContactEmail;
       opt.textContent = m.title + (clientName ? ' (' + clientName + ')' : '');
       sel.appendChild(opt);
-      craProjects.push({ id: m.id, name: m.title, clientName, clientContactEmail });
+      craProjects.push({ id: m.id, name: m.title, clientName, clientContactEmail, tjm: null });
     });
     projects.forEach(proj => {
+      if (craProjects.some(cp => cp.id === proj.id)) return;
+      const clientName         = currentProfile?.clientName         || '';
+      const clientContactEmail = currentProfile?.clientContactEmail || '';
       const opt = document.createElement('option');
       opt.value = proj.id;
       opt.dataset.type = 'project';
-      const clientName         = currentProfile?.clientName         || '';
-      const clientContactEmail = currentProfile?.clientContactEmail || '';
       opt.dataset.client = clientName;
       opt.dataset.contactEmail = clientContactEmail;
       opt.textContent = proj.name;
       sel.appendChild(opt);
-      craProjects.push({ id: proj.id, name: proj.name, clientName, clientContactEmail });
+      craProjects.push({ id: proj.id, name: proj.name, clientName, clientContactEmail, tjm: null });
     });
 
-    // Auto-select first option; hide dropdown if only one project (onglets gèrent la navigation)
+    // Source principale : trios (assignments) configurés dans l'admin
+    if (currentProfile?.id) {
+      try {
+        const aRes = await fetch(`${base()}/consultants/${currentProfile.id}/assignments`, { headers: authHeaders() });
+        if (aRes.ok) {
+          const assignments = await aRes.json();
+          assignments.forEach(a => {
+            if (!a.project?.id) return;
+            const existing = craProjects.find(cp => cp.id === a.project.id);
+            if (existing) {
+              // Enrichir avec client + TJM si pas déjà renseigné
+              if (!existing.clientName) existing.clientName = a.client?.name || '';
+              if (!existing.tjm)        existing.tjm        = a.tjm || null;
+            } else {
+              const opt = document.createElement('option');
+              opt.value = a.project.id;
+              opt.dataset.type = 'assignment';
+              opt.dataset.client = a.client?.name || '';
+              opt.textContent = a.project.name + (a.client?.name ? ' — ' + a.client.name : '');
+              sel.appendChild(opt);
+              craProjects.push({
+                id:                 a.project.id,
+                name:               a.project.name,
+                clientName:         a.client?.name    || '',
+                clientContactEmail: '',
+                tjm:                a.tjm || null,
+              });
+            }
+          });
+        }
+      } catch { /* assignments non disponibles */ }
+    }
+
+    // Auto-select first option
     const options = Array.from(sel.options).filter(o => o.value);
     if (options.length >= 1) {
       sel.value = options[0].value;
@@ -463,10 +508,9 @@ async function loadMissions(user) {
 
     // Consultant cannot change mission/project — set by admin
     sel.disabled = true;
-    sel.style.background = '#f5f5f5';
+    sel.style.background = 'transparent';
     sel.style.cursor = 'default';
 
-    // Initialise les onglets (visibles seulement si >1 projet)
     if (!currentSelectedProjectId && craProjects.length > 0) {
       currentSelectedProjectId = craProjects[0].id;
     }
@@ -477,18 +521,25 @@ async function loadMissions(user) {
 
 async function downloadCraPdf() {
   if (!craId) return;
+  await downloadCraPdfById(craId, document.getElementById('cra-month').value,
+    document.getElementById('cra-action-status'));
+}
+
+async function downloadCraPdfById(id, month, statusEl) {
+  if (!id) return;
   try {
-    const res = await fetch(`${base()}/cra/pdf/${craId}`, { headers: authHeaders() });
+    const res = await fetch(`${base()}/cra/pdf/${id}`, { headers: authHeaders() });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'CRA-' + (document.getElementById('cra-month').value || 'export') + '.pdf';
+    a.download = `CRA-${month || id}.pdf`;
     a.click();
     URL.revokeObjectURL(url);
   } catch (e) {
-    setStatus(document.getElementById('cra-action-status'), 'Erreur PDF : ' + e.message, 'err');
+    if (statusEl) setStatus(statusEl, 'Erreur PDF : ' + e.message, 'err');
+    else showToast('Erreur PDF : ' + e.message, 'error');
   }
 }
 
@@ -502,7 +553,7 @@ function buildBaseMonthMap(monthStr) {
     const dow     = new Date(y, m - 1, d).getDay();
     if (dow === 0 || dow === 6)       map[dateStr] = { value: 0, type: 'WEEKEND' };
     else if (holidays.has(dateStr))   map[dateStr] = { value: 0, type: 'FERIE'   };
-    else                              map[dateStr] = { value: 1, type: 'TRAVAIL'  };
+    else                              map[dateStr] = { value: 0, type: 'EMPTY'   };
   }
   return map;
 }
@@ -517,13 +568,27 @@ function initCraMonth(monthStr, savedEntries) {
   craProjects.forEach(p => { allProjectEntries[p.id] = { ...baseMap }; });
   if (!allProjectEntries[defaultPid]) allProjectEntries['__none__'] = { ...baseMap };
 
+  // Ligne dédiée aux absences
+  allProjectEntries['__ABSENCE__'] = { ...baseMap };
+
   // Applique les entrées sauvegardées (chacune porte son projectId)
   if (savedEntries?.length) {
     savedEntries.forEach(e => {
-      const pid = e.projectId || defaultPid;
-      if (!allProjectEntries[pid]) allProjectEntries[pid] = { ...baseMap };
-      if (allProjectEntries[pid][e.date]) {
-        allProjectEntries[pid][e.date] = { value: e.value, type: e.type };
+      if (e.type === 'ABSENT') {
+        // Rétrocompat : migrer les absences des lignes projet vers la ligne absence
+        if (allProjectEntries['__ABSENCE__']?.[e.date]) {
+          allProjectEntries['__ABSENCE__'][e.date] = { value: e.value || 1, type: 'ABSENT' };
+        }
+        // Vider la cellule projet si elle existait
+        if (e.projectId && allProjectEntries[e.projectId]?.[e.date]) {
+          allProjectEntries[e.projectId][e.date] = { value: 0, type: 'EMPTY' };
+        }
+      } else {
+        const pid = e.projectId || defaultPid;
+        if (!allProjectEntries[pid]) allProjectEntries[pid] = { ...baseMap };
+        if (allProjectEntries[pid][e.date]) {
+          allProjectEntries[pid][e.date] = { value: e.value, type: e.type };
+        }
       }
     });
   }
@@ -560,16 +625,49 @@ function renderProjectTabs() {
 }
 
 function renderProjectsInfoTable() {
-  const tbody = document.getElementById('cra-projects-table-body');
-  const table = document.getElementById('cra-projects-table');
-  if (!tbody || !craProjects.length) { if (table) table.style.display = 'none'; return; }
-  tbody.innerHTML = craProjects.map(p => `
-    <tr>
-      <td>${escHtml(p.name)}</td>
-      <td>${escHtml(p.clientName || '—')}</td>
-      <td>${escHtml(p.clientContactEmail || '—')}</td>
-    </tr>`).join('');
-  table.style.display = '';
+  const table = document.getElementById('cra-projects-table') || document.getElementById('cra-proj-cards');
+  if (!table) return;
+
+  if (!craProjects.length) { table.style.display = 'none'; return; }
+
+  // Calculer les jours déjà saisis par projet
+  function daysForProject(pid) {
+    const entries = allProjectEntries[pid] || {};
+    return Object.values(entries).reduce((s, e) => s + (e.type === 'TRAVAIL' ? e.value : 0), 0);
+  }
+
+  // Remplacer la table par des cartes projet
+  table.outerHTML = `<div id="cra-proj-cards" class="cra-proj-cards">
+    ${craProjects.map((p, i) => {
+      const days = daysForProject(p.id);
+      const daysLabel = days > 0 ? (days % 1 === 0 ? days + 'j' : days.toFixed(1) + 'j') : '—';
+      const tjmLabel  = p.tjm ? p.tjm.toLocaleString('fr-FR') + ' €/j' : '—';
+      const colors    = ['var(--accent)', 'var(--accent-2)', '#a78bfa', '#f59e0b'];
+      const color     = colors[i % colors.length];
+      return `
+        <div class="cra-proj-card" style="--proj-color:${color}">
+          <div class="cra-proj-card-dot" style="background:${color}"></div>
+          <div class="cra-proj-card-body">
+            <span class="cra-proj-card-name">${escHtml(p.name)}</span>
+            <span class="cra-proj-card-client">${escHtml(p.clientName || '—')}</span>
+          </div>
+          <div class="cra-proj-card-kpis">
+            <div class="cra-proj-kpi"><span>TJM</span><strong>${tjmLabel}</strong></div>
+            <div class="cra-proj-kpi"><span>Jours</span><strong id="proj-days-${escHtml(p.id)}">${daysLabel}</strong></div>
+          </div>
+        </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function refreshProjectDays() {
+  craProjects.forEach(p => {
+    const el = document.getElementById(`proj-days-${p.id}`);
+    if (!el) return;
+    const entries = allProjectEntries[p.id] || {};
+    const days = Object.values(entries).reduce((s, e) => s + (e.type === 'TRAVAIL' ? e.value : 0), 0);
+    el.textContent = days > 0 ? (days % 1 === 0 ? days + 'j' : days.toFixed(1) + 'j') : '—';
+  });
 }
 
 function escHtml(s) {
@@ -647,11 +745,28 @@ function renderCraGrid() {
 
   document.getElementById('cra-cal-title').textContent = `${MONTHS_FR[m - 1]} ${y}`;
 
+  // Jours ouvrés incomplets (TRAVAIL + ABSENCE > 0 mais < 1)
+  const incompleteSet = new Set();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+    const dow = new Date(y, m - 1, d).getDay();
+    if (dow === 0 || dow === 6 || holidays.has(dateStr)) continue;
+    const projSum = craProjects.reduce((s, p) => {
+      const e = (allProjectEntries[p.id] || {})[dateStr];
+      return s + (e?.type === 'TRAVAIL' ? e.value : 0);
+    }, 0);
+    const absVal = allProjectEntries['__ABSENCE__']?.[dateStr]?.value || 0;
+    const dayTotal = projSum + absVal;
+    if (dayTotal > 0 && dayTotal < 1) incompleteSet.add(d);
+  }
+
   // En-tête : numéros de jours
   let hdr = '<thead><tr><th class="cra-g-label">Projet</th>';
   for (let d = 1; d <= daysInMonth; d++) {
     const dow = new Date(y, m - 1, d).getDay();
-    hdr += `<th class="${dow === 0 || dow === 6 ? 'cra-g-wkd' : ''}">${d}</th>`;
+    const isWkd = dow === 0 || dow === 6;
+    const cls = isWkd ? 'cra-g-wkd' : (incompleteSet.has(d) ? 'cra-g-hdr-warn' : '');
+    hdr += `<th class="${cls}">${d}</th>`;
   }
   hdr += '</tr></thead>';
 
@@ -661,27 +776,56 @@ function renderCraGrid() {
     const entries = allProjectEntries[proj.id] || {};
     body += `<tr><td class="cra-g-label">${escHtml(proj.name)}</td>`;
     for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr  = `${y}-${pad(m)}-${pad(d)}`;
-      const e        = entries[dateStr] || { value: 1, type: 'TRAVAIL' };
-      const dow      = new Date(y, m - 1, d).getDay();
-      const isWkd    = dow === 0 || dow === 6;
-      const isFerie  = holidays.has(dateStr);
-      const clickable = !readonly && !isWkd && !isFerie &&
-                        (e.type === 'TRAVAIL' || e.type === 'ABSENT');
-      let cls = isWkd    ? 'cra-g-wkd'
-              : isFerie  ? 'cra-g-ferie'
-              : e.type === 'ABSENT'  ? 'cra-g-absent'
-              : e.value  === 0.5     ? 'cra-g-half'
-              :                        'cra-g-full';
-      const lbl = isWkd || isFerie ? ''
-                : e.type === 'ABSENT' ? 'A'
-                : e.value === 0.5     ? '½'
-                :                       '1';
+      const dateStr       = `${y}-${pad(m)}-${pad(d)}`;
+      const e             = entries[dateStr] || { value: 0, type: 'EMPTY' };
+      const dow           = new Date(y, m - 1, d).getDay();
+      const isWkd         = dow === 0 || dow === 6;
+      const isFerie       = holidays.has(dateStr);
+      const absVal        = allProjectEntries['__ABSENCE__']?.[dateStr]?.value || 0;
+      const projectDisabled = absVal >= 1;
+      const clickable     = !readonly && !isWkd && !isFerie && !projectDisabled;
+      let cls = isWkd           ? 'cra-g-wkd'
+              : isFerie         ? 'cra-g-ferie'
+              : projectDisabled ? 'cra-g-disabled'
+              : e.type === 'EMPTY' ? 'cra-g-empty'
+              : e.value === 0.5    ? 'cra-g-half'
+              :                      'cra-g-full';
+      const lbl = isWkd || isFerie || projectDisabled ? ''
+                : e.type === 'EMPTY' ? ''
+                : e.value === 0.5    ? '½'
+                :                      '1';
       if (clickable) cls += ' clickable';
       body += `<td class="${cls}" data-pid="${escHtml(proj.id)}" data-date="${dateStr}">${lbl}</td>`;
     }
     body += '</tr>';
   });
+
+  // Ligne Absence (avant Total)
+  body += '<tr class="cra-g-absence-row"><td class="cra-g-label">Absence</td>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+    const ae      = allProjectEntries['__ABSENCE__']?.[dateStr] || { value: 0, type: 'EMPTY' };
+    const dow     = new Date(y, m - 1, d).getDay();
+    const isWkd   = dow === 0 || dow === 6;
+    const isFerie = holidays.has(dateStr);
+    const projSum = craProjects.reduce((s, p) => {
+      const oe = (allProjectEntries[p.id] || {})[dateStr];
+      return s + (oe?.type === 'TRAVAIL' ? oe.value : 0);
+    }, 0);
+    const absDisabled = projSum >= 1;
+    let cls = isWkd       ? 'cra-g-wkd'
+            : isFerie     ? 'cra-g-ferie'
+            : absDisabled ? 'cra-g-disabled'
+            : ae.type === 'EMPTY' ? 'cra-g-empty'
+            : ae.value === 0.5   ? 'cra-g-abs-half'
+            :                      'cra-g-abs-full';
+    const lbl = isWkd || isFerie || absDisabled || ae.type === 'EMPTY' ? ''
+              : ae.value === 0.5 ? '½A' : 'A';
+    const clickable = !readonly && !isWkd && !isFerie && !absDisabled;
+    if (clickable) cls += ' clickable';
+    body += `<td class="${cls}" data-pid="__ABSENCE__" data-date="${dateStr}">${lbl}</td>`;
+  }
+  body += '</tr>';
 
   // Ligne total
   body += '<tr class="cra-g-total"><td class="cra-g-label">Total</td>';
@@ -692,13 +836,23 @@ function renderCraGrid() {
       const e = (allProjectEntries[proj.id] || {})[dateStr];
       if (e && e.type === 'TRAVAIL') sum += e.value;
     });
-    const dow   = new Date(y, m - 1, d).getDay();
-    const isWkd = dow === 0 || dow === 6;
-    body += `<td class="${isWkd ? 'cra-g-wkd' : ''}">${sum > 0 ? (sum % 1 ? sum.toFixed(1) : sum) : ''}</td>`;
+    const dow          = new Date(y, m - 1, d).getDay();
+    const isWkd        = dow === 0 || dow === 6;
+    const isIncomplete = incompleteSet.has(d);
+    const absVal       = isIncomplete ? (allProjectEntries['__ABSENCE__']?.[dateStr]?.value || 0) : 0;
+    const displayVal   = isIncomplete ? sum + absVal : sum;
+    const cls          = isWkd ? 'cra-g-wkd' : (isIncomplete ? 'cra-g-incomplete' : '');
+    const lbl          = displayVal > 0 ? (displayVal % 1 ? displayVal.toFixed(1) : String(displayVal)) : '';
+    body += `<td class="${cls}">${lbl}</td>`;
   }
   body += '</tr></tbody>';
 
-  wrapper.innerHTML = `<table class="cra-stacked">${hdr}${body}</table>`;
+  let warningHtml = '';
+  if (incompleteSet.size > 0) {
+    const daysList = [...incompleteSet].sort((a, b) => a - b).join(', ');
+    warningHtml = `<p class="cra-incomplete-banner">Jours incomplets (total &lt; 1j) : <strong>${daysList}</strong> — vérifiez la saisie de ces jours.</p>`;
+  }
+  wrapper.innerHTML = `<table class="cra-stacked">${hdr}${body}</table>${warningHtml}`;
 
   if (!readonly) {
     wrapper.querySelectorAll('td.clickable').forEach(cell => {
@@ -708,12 +862,50 @@ function renderCraGrid() {
         if (!allProjectEntries[pid]) return;
         const e = allProjectEntries[pid][date];
         if (!e) return;
-        if (e.type === 'ABSENT' || e.value === 0)
-          allProjectEntries[pid][date] = { value: 1,   type: 'TRAVAIL' };
-        else if (e.value === 1)
-          allProjectEntries[pid][date] = { value: 0.5, type: 'TRAVAIL' };
-        else
-          allProjectEntries[pid][date] = { value: 0,   type: 'ABSENT'  };
+
+        if (pid === '__ABSENCE__') {
+          // Cycle absence : EMPTY → ½A → A → EMPTY
+          const projSum = craProjects.reduce((s, p) => {
+            const oe = (allProjectEntries[p.id] || {})[date];
+            return s + (oe?.type === 'TRAVAIL' ? oe.value : 0);
+          }, 0);
+          if (e.type === 'EMPTY') {
+            if (projSum <= 0.5)
+              allProjectEntries['__ABSENCE__'][date] = { value: 0.5, type: 'ABSENT' };
+          } else if (e.value === 0.5) {
+            if (projSum === 0)
+              allProjectEntries['__ABSENCE__'][date] = { value: 1, type: 'ABSENT' };
+          } else {
+            // A → EMPTY + vider les projets du jour
+            allProjectEntries['__ABSENCE__'][date] = { value: 0, type: 'EMPTY' };
+            craProjects.forEach(p => {
+              if (allProjectEntries[p.id]?.[date])
+                allProjectEntries[p.id][date] = { value: 0, type: 'EMPTY' };
+            });
+          }
+        } else {
+          // Cellule projet — cycle EMPTY → 1j → ½j → EMPTY, sans ABSENT
+          const absVal   = allProjectEntries['__ABSENCE__']?.[date]?.value || 0;
+          const otherSum = craProjects
+            .filter(p => p.id !== pid)
+            .reduce((s, p) => {
+              const oe = (allProjectEntries[p.id] || {})[date];
+              return s + (oe?.type === 'TRAVAIL' ? oe.value : 0);
+            }, 0);
+          const budget = 1 - otherSum - absVal;
+
+          if (e.type === 'EMPTY') {
+            if (budget >= 1)
+              allProjectEntries[pid][date] = { value: 1,   type: 'TRAVAIL' };
+            else if (budget >= 0.5)
+              allProjectEntries[pid][date] = { value: 0.5, type: 'TRAVAIL' };
+          } else if (e.value === 1) {
+            allProjectEntries[pid][date] = { value: 0.5, type: 'TRAVAIL' };
+          } else if (e.value === 0.5) {
+            allProjectEntries[pid][date] = { value: 0, type: 'EMPTY' };
+          }
+        }
+
         craEntries = allProjectEntries[currentSelectedProjectId] || {};
         renderCraGrid();
       });
@@ -722,6 +914,7 @@ function renderCraGrid() {
 
   updateCraTotal();
   updateCraButtons();
+  refreshProjectDays();
 }
 
 function updateCraTotal() {
@@ -736,21 +929,60 @@ function updateCraTotal() {
     total % 1 === 0 ? String(total) : total.toFixed(1);
 }
 
+function isCloture(billingMonth) {
+  if (!billingMonth) return false;
+  const [y, m] = billingMonth.split('-').map(Number);
+  // CLOTURÉ le 5ème jour du mois suivant (m est 1-based, new Date(y, m, 5) = 5ème du mois m+1)
+  return new Date() >= new Date(y, m, 5);
+}
+
+function isAllWorkdaysFilled() {
+  const monthStr = document.getElementById('cra-month')?.value;
+  if (!monthStr || !craProjects.length) return false;
+  const [y, m] = monthStr.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const holidays = craHolidays(y);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+    const dow = new Date(y, m - 1, d).getDay();
+    if (dow === 0 || dow === 6 || holidays.has(dateStr)) continue;
+    const projSum = craProjects.reduce((s, p) => {
+      const e = (allProjectEntries[p.id] || {})[dateStr];
+      return s + (e?.type === 'TRAVAIL' ? e.value : 0);
+    }, 0);
+    const absVal = allProjectEntries['__ABSENCE__']?.[dateStr]?.value || 0;
+    if (projSum + absVal < 1) return false;
+  }
+  return true;
+}
+
 function updateCraButtons() {
+  const monthStr = document.getElementById('cra-month')?.value;
+  const effectiveStatus = (craStatus === 'VALIDE' && isCloture(monthStr)) ? 'CLOTURE' : craStatus;
   const badge = document.getElementById('cra-status-badge');
-  const LABEL = { BROUILLON: 'BROUILLON', SOUMIS: 'SOUMIS', VALIDE: 'VALIDÉ', REFUSE: 'REFUSÉ' };
-  badge.textContent = LABEL[craStatus] || craStatus;
-  badge.className   = `cra-status-badge ${craStatus.toLowerCase()}`;
+  const LABEL = { BROUILLON: 'BROUILLON', SOUMIS: 'SOUMIS', VALIDE: 'VALIDÉ', REFUSE: 'REFUSÉ', CLOTURE: 'CLÔTURÉ' };
+  badge.textContent = LABEL[effectiveStatus] || effectiveStatus;
+  badge.className   = `cra-status-badge ${effectiveStatus.toLowerCase()}`;
   // REFUSE resets to BROUILLON-like: consultant can re-edit and resubmit
-  const canSubmit = craStatus === 'BROUILLON' || craStatus === 'REFUSE';
-  document.getElementById('cra-submit').style.display = canSubmit ? '' : 'none';
+  const canSubmit = effectiveStatus === 'BROUILLON' || effectiveStatus === 'REFUSE';
+  const submitBtn = document.getElementById('cra-submit');
+  if (canSubmit) {
+    const allFilled = isAllWorkdaysFilled();
+    submitBtn.style.display = '';
+    submitBtn.disabled = !allFilled;
+    submitBtn.title = allFilled ? '' : 'Tous les jours ouvrés du mois doivent être saisis avant de soumettre';
+  } else {
+    submitBtn.style.display = 'none';
+    submitBtn.disabled = false;
+    submitBtn.title = '';
+  }
   document.getElementById('cra-save').disabled        = CRA_READONLY();
   // "Retirer ma soumission" uniquement quand SOUMIS (avant action admin)
   const recallBtn = document.getElementById('cra-recall');
-  if (recallBtn) recallBtn.style.display = craStatus === 'SOUMIS' ? '' : 'none';
-  // PDF download only available when CRA is VALIDE
+  if (recallBtn) recallBtn.style.display = effectiveStatus === 'SOUMIS' ? '' : 'none';
+  // PDF download available when CRA is VALIDE ou CLÔTURÉ
   const pdfBtn = document.getElementById('cra-download-pdf');
-  if (pdfBtn) pdfBtn.style.display = (craId && craStatus === 'VALIDE') ? '' : 'none';
+  if (pdfBtn) pdfBtn.style.display = (craId && (effectiveStatus === 'VALIDE' || effectiveStatus === 'CLOTURE')) ? '' : 'none';
 }
 
 async function loadCra(user) {
@@ -769,7 +1001,7 @@ async function loadCra(user) {
   setStatus(statusEl, 'Synchronisation avec le serveur…');
 
   try {
-    const p = new URLSearchParams({ start: monthStr, end: monthStr, consultant: user.email, company: user.company });
+    const p = new URLSearchParams({ start: monthStr, end: monthStr, consultant: user.email });
     const res = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const items = await res.json();
@@ -834,49 +1066,14 @@ async function loadCra(user) {
   }
 }
 
-async function importKmAbsences(user) {
-  const monthStr = document.getElementById('cra-month').value;
-  const statusEl = document.getElementById('cra-load-status');
-
-  if (!monthStr || !Object.keys(craEntries).length) {
-    setStatus(statusEl, 'Chargez d\'abord un CRA.', 'err');
-    return;
-  }
-
-  setStatus(statusEl, 'Import des absences km…');
-  try {
-    const p = new URLSearchParams({ month: monthStr, company: user.company, consultant: user.email });
-    const res = await fetch(`${base()}/cra/absences?${p}`, { headers: authHeaders() });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const periods = await res.json();
-
-    if (!periods.length) { setStatus(statusEl, 'Aucune absence km trouvée.', ''); return; }
-
-    let count = 0;
-    periods.forEach(period => {
-      for (let ms = new Date(period.from).getTime(); ms <= new Date(period.to).getTime(); ms += DAY_MS) {
-        const dateStr = new Date(ms).toISOString().substring(0, 10);
-        const e = craEntries[dateStr];
-        if (e && (e.type === 'TRAVAIL' || e.type === 'ABSENT')) {
-          craEntries[dateStr] = { value: 0, type: 'ABSENT' };
-          count++;
-        }
-      }
-    });
-
-    renderCraGrid();
-    setStatus(statusEl, `${count} jour${count > 1 ? 's' : ''} marqué${count > 1 ? 's' : ''} absent.`, 'ok');
-  } catch (e) {
-    setStatus(statusEl, 'Erreur import : ' + e.message, 'err');
-  }
-}
 
 function buildCraPayload() {
   // Aplatir toutes les entrées de tous les projets avec leur projectId
   const entries = [];
   Object.entries(allProjectEntries).forEach(([pid, projectMap]) => {
     Object.entries(projectMap).forEach(([date, e]) => {
-      entries.push({ date, value: e.value, type: e.type, projectId: pid === '__none__' ? null : pid });
+      if (e.type === 'EMPTY') return; // jour non saisi — ne pas envoyer
+      entries.push({ date, value: e.value, type: e.type, projectId: (pid === '__none__') ? null : pid });
     });
   });
   entries.sort((a, b) => a.date.localeCompare(b.date));
@@ -896,8 +1093,8 @@ function buildCraPayload() {
     submittedAt:   craSubmittedAt,
     validatedAt:   null,
     validatedBy:   null,
-    missionId:     sel.value && sel.selectedOptions[0]?.dataset.type !== 'project' ? sel.value : null,
-    projectId:     sel.value && sel.selectedOptions[0]?.dataset.type === 'project'  ? sel.value : null,
+    missionId:     sel.value && sel.selectedOptions[0]?.dataset.type === 'mission'  ? sel.value : null,
+    projectId:     sel.value && sel.selectedOptions[0]?.dataset.type !== 'mission' ? sel.value : null,
   };
 }
 
@@ -910,13 +1107,14 @@ async function saveCra(endpoint) {
       headers: authHeaders(),
       body:    JSON.stringify(buildCraPayload()),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
     const saved = await res.json();
     craId = saved.id; craStatus = saved.status;
     localStorage.setItem(`cra:${currentUser.email}:${saved.billingMonth}`, saved.id);
     updateCraButtons();
-    setStatus(statusEl, 'CRA sauvegardé.', 'ok');
-  } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
+    showToast('CRA sauvegardé.', 'ok');
+    setStatus(statusEl, '');
+  } catch (e) { setStatus(statusEl, 'Erreur de sauvegarde. Réessayez ou contactez votre administrateur.', 'err'); }
 }
 
 async function submitCra() {
@@ -929,13 +1127,14 @@ async function submitCra() {
       headers: authHeaders(),
       body:    JSON.stringify(buildCraPayload()),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
     const saved = await res.json();
     craId = saved.id; craStatus = saved.status; craSubmittedAt = saved.submittedAt;
     localStorage.setItem(`cra:${currentUser.email}:${saved.billingMonth}`, saved.id);
     updateCraButtons();
-    setStatus(statusEl, 'CRA soumis avec succès. En attente de validation.', 'ok');
-  } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
+    showToast('CRA soumis. En attente de validation.', 'ok');
+    setStatus(statusEl, '');
+  } catch (e) { setStatus(statusEl, 'Erreur de soumission. Réessayez ou contactez votre administrateur.', 'err'); }
 }
 
 async function recallCra(_user) {
@@ -948,12 +1147,13 @@ async function recallCra(_user) {
       headers: authHeaders(),
       body:    JSON.stringify(buildCraPayload()),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
     const saved = await res.json();
     craId = saved.id; craStatus = saved.status; craSubmittedAt = null;
     renderCraGrid();
     updateCraButtons();
-    setStatus(statusEl, 'Soumission retirée. Vous pouvez modifier et re-soumettre.', 'ok');
+    showToast('Soumission retirée. CRA repassé en brouillon.', 'info');
+    setStatus(statusEl, '');
   } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
 }
 
@@ -967,7 +1167,7 @@ async function loadHistory(user) {
   resultEl.style.display = 'none';
 
   try {
-    const p = new URLSearchParams({ start, end, consultant: user.email, company: user.company });
+    const p = new URLSearchParams({ start, end, consultant: user.email });
     const res = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const items = await res.json();
@@ -976,38 +1176,47 @@ async function loadHistory(user) {
 
     setStatus(statusEl, `${items.length} CRA trouvé${items.length > 1 ? 's' : ''}.`, 'ok');
     resultEl.innerHTML = renderHistoryList(items);
+    resultEl.querySelectorAll('.hist-pdf-btn').forEach(btn => {
+      btn.addEventListener('click', () => downloadCraPdfById(btn.dataset.id, btn.dataset.month));
+    });
     resultEl.style.display = 'block';
   } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
 }
 
 function renderHistoryList(items) {
-  const STATUS_LABEL = { BROUILLON: 'Brouillon', SOUMIS: 'Soumis', VALIDE: 'Validé', REFUSE: 'Refusé' };
-  let html = '<div class="inv-report-list">';
+  const STATUS_COLOR = { BROUILLON: 'grey', SOUMIS: 'orange', VALIDE: 'green', REFUSE: 'red', CLOTURE: 'purple' };
+  const STATUS_LABEL = { BROUILLON: 'Brouillon', SOUMIS: 'Soumis', VALIDE: 'Validé', REFUSE: 'Refusé', CLOTURE: 'Clôturé' };
+  const COLS = '1fr 1fr 80px 110px 1fr 60px';
+  let html = `
+    <div class="data-list">
+      <div class="data-list-header" style="grid-template-columns:${COLS}">
+        <span>Mois</span><span>Client</span><span>Jours</span><span>Statut</span><span>Validé par</span><span>PDF</span>
+      </div>`;
   for (const cra of items) {
-    let days = '—';
-    if (cra.totalDays != null) {
-      days = cra.totalDays % 1 === 0 ? String(cra.totalDays) : Number(cra.totalDays).toFixed(1);
-    }
-    const status = cra.status || 'BROUILLON';
-    const refusedBlock = status === 'REFUSE' && cra.refusedReason
-      ? `<p class="refused-reason" style="margin:4px 0 0;font-size:12px;color:#fca5a5;font-style:italic">
-           Motif : ${escapeHtml(cra.refusedReason)}
-         </p>`
+    const days   = cra.totalDays != null
+      ? (cra.totalDays % 1 === 0 ? String(cra.totalDays) : Number(cra.totalDays).toFixed(1))
+      : '—';
+    const rawStatus = cra.status || 'BROUILLON';
+    const status = (rawStatus === 'VALIDE' && isCloture(cra.billingMonth)) ? 'CLOTURE' : rawStatus;
+    const color  = STATUS_COLOR[status] || 'grey';
+    const label  = STATUS_LABEL[status] || status;
+    const refusedNote = status === 'REFUSE' && cra.refusedReason
+      ? `<span class="cell-sub refused-reason" style="font-style:italic">Motif : ${escapeHtml(cra.refusedReason)}</span>`
       : '';
     html += `
-      <div class="inv-report-row">
-        <div class="inv-rep-meta">
-          <span class="inv-rep-name">${escapeHtml(cra.billingMonth || '—')}</span>
-          <span class="inv-rep-detail">${escapeHtml(cra.clientCompany || '—')}</span>
-          ${refusedBlock}
+      <div class="data-list-row" style="grid-template-columns:${COLS}">
+        <div class="cell-primary">
+          <span class="cell-name">${escapeHtml(cra.billingMonth || '—')}</span>
+          ${refusedNote}
         </div>
-        <div class="inv-rep-amounts">
-          <span class="inv-rep-kv"><span>Jours</span><strong>${escapeHtml(days)}</strong></span>
-          <span class="inv-rep-kv"><span>Statut</span>
-            <strong class="cra-status-inline ${status.toLowerCase()}">${STATUS_LABEL[status] || status}</strong>
-          </span>
-          ${cra.validatedBy ? `<span class="inv-rep-kv"><span>Validé par</span><strong>${escapeHtml(cra.validatedBy)}</strong></span>` : ''}
-        </div>
+        <span class="cell-muted">${escapeHtml(cra.clientCompany || '—')}</span>
+        <span style="font-weight:600;font-size:14px">${escapeHtml(days)}</span>
+        <span><span class="status-badge ${color}">${escapeHtml(label)}</span></span>
+        <span class="cell-muted">${cra.validatedBy ? escapeHtml(cra.validatedBy) : '—'}</span>
+        <span>${cra.id ? `<button class="btn-pdf hist-pdf-btn" data-id="${escapeHtml(cra.id)}" data-month="${escapeHtml(cra.billingMonth || '')}" title="Télécharger PDF">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          PDF
+        </button>` : ''}</span>
       </div>`;
   }
   html += '</div>';
@@ -1018,7 +1227,12 @@ function renderHistoryList(items) {
 // ABSENCES
 // ============================================================
 function initAbsences(user) {
-  document.getElementById('abs-load').addEventListener('click', () => loadAbsences(user));
+  document.getElementById('abs-month').addEventListener('change', () => loadAbsences(user));
+  document.getElementById('abs-goto-cra').addEventListener('click', () => {
+    const monthStr = document.getElementById('abs-month').value;
+    if (monthStr) document.getElementById('cra-month').value = monthStr;
+    document.querySelector('.tab[data-tab="cra"]')?.click();
+  });
 }
 
 async function loadAbsences(user) {
@@ -1033,11 +1247,23 @@ async function loadAbsences(user) {
   try {
     const absenceMap = await buildAbsenceMap(monthStr, user);
     renderAbsenceCalendar(monthStr, absenceMap);
-    const count = absenceMap.size;
-    const msg = count
-      ? `${count} jour${count > 1 ? 's' : ''} d'absence ce mois.`
-      : 'Aucune absence ce mois.';
-    setStatus(statusEl, msg, count ? 'ok' : '');
+
+    // Badge statut CRA
+    const craMonth    = document.getElementById('cra-month')?.value;
+    const statusBadge = document.getElementById('abs-cra-status');
+    const gotoBtn     = document.getElementById('abs-goto-cra');
+    const LABELS      = { BROUILLON: 'BROUILLON', SOUMIS: 'SOUMIS', VALIDE: 'VALIDÉ', REFUSE: 'REFUSÉ' };
+    if (craMonth === monthStr && craStatus) {
+      statusBadge.textContent = LABELS[craStatus] || craStatus;
+      statusBadge.className   = `status-badge ${craStatus.toLowerCase()}`;
+      gotoBtn.style.display   = (craStatus === 'BROUILLON' || craStatus === 'REFUSE') ? '' : 'none';
+    } else {
+      statusBadge.textContent = '';
+      gotoBtn.style.display   = 'none';
+    }
+
+    const count = [...absenceMap.values()].reduce((s, v) => s + v, 0);
+    setStatus(statusEl, count > 0 ? `${count % 1 ? count.toFixed(1) : count} jour${count > 1 ? 's' : ''} d'absence ce mois.` : 'Aucune absence ce mois.', count ? 'ok' : '');
     calCard.style.display = '';
   } catch (e) {
     setStatus(statusEl, 'Erreur : ' + e.message, 'err');
@@ -1045,46 +1271,54 @@ async function loadAbsences(user) {
 }
 
 /**
- * Construit une Map<dateStr, 1|0.5> depuis deux sources :
- *  1. /cra/absences — périodes km (toujours 1j)
- *  2. /cra/report   — entrées CRA : ABSENT=1, TRAVAIL 0.5j=0.5 (demi-journée)
+ * Construit une Map<dateStr, 1|0.5> depuis trois sources (par priorité) :
+ *  0. allProjectEntries['__ABSENCE__'] si le même mois est chargé en mémoire (source de vérité)
+ *  1. /cra/absences — périodes km (toujours 1j, ne remplace pas la source 0)
+ *  2. /cra/report   — fallback API si le CRA d'un autre mois est en mémoire
  */
 async function buildAbsenceMap(monthStr, user) {
   const map = new Map();
 
-  // Source 1 : absences km
-  const pAbs = new URLSearchParams({ month: monthStr, company: user.company, consultant: user.email });
+  // Source 0 (prioritaire) : CRA chargé en mémoire pour ce mois exact
+  const craMonth = document.getElementById('cra-month')?.value;
+  if (craMonth === monthStr && allProjectEntries['__ABSENCE__']) {
+    Object.entries(allProjectEntries['__ABSENCE__']).forEach(([dateStr, ae]) => {
+      if (ae.type === 'ABSENT' && ae.value > 0) map.set(dateStr, ae.value);
+    });
+  }
+
+  // Source 1 : absences km (notes de frais) — toujours 1j, ne remplace pas les entrées CRA
+  const pAbs = new URLSearchParams({ month: monthStr, consultant: user.email });
   const resAbs = await fetch(`${base()}/cra/absences?${pAbs}`, { headers: authHeaders() });
   if (!resAbs.ok) throw new Error(`HTTP ${resAbs.status}`);
   const kmPeriods = await resAbs.json();
   kmPeriods.forEach(p => {
     for (let ms = new Date(p.from).getTime(); ms <= new Date(p.to).getTime(); ms += DAY_MS) {
-      map.set(new Date(ms).toISOString().substring(0, 10), 1);
+      const d = new Date(ms).toISOString().substring(0, 10);
+      if (!map.has(d)) map.set(d, 1);
     }
   });
 
-  // Source 2 : entrées CRA (non bloquant si indisponible)
-  try {
-    const pCra = new URLSearchParams({ start: monthStr, end: monthStr, consultant: user.email, company: user.company });
-    const resCra = await fetch(`${base()}/cra/report?${pCra}`, { headers: authHeaders() });
-    if (resCra.ok) {
-      const items = await resCra.json();
-      const myCra = items.find(item =>
-        item.billingMonth === monthStr &&
-        (item.consultant || '').trim().toLowerCase() === user.email.toLowerCase()
-      );
-      if (myCra?.entriesJson) {
-        JSON.parse(myCra.entriesJson).forEach(e => {
-          if (e.type === 'ABSENT') {
-            map.set(e.date, 1);
-          } else if (e.type === 'TRAVAIL' && e.value === 0.5) {
-            map.set(e.date, 0.5);
-          }
-        });
+  // Source 2 : CRA API — fallback si un autre mois est chargé en mémoire
+  if (craMonth !== monthStr) {
+    try {
+      const pCra = new URLSearchParams({ start: monthStr, end: monthStr, consultant: user.email });
+      const resCra = await fetch(`${base()}/cra/report?${pCra}`, { headers: authHeaders() });
+      if (resCra.ok) {
+        const items = await resCra.json();
+        const myCra = items.find(item =>
+          item.billingMonth === monthStr &&
+          (item.consultant || '').trim().toLowerCase() === user.email.toLowerCase()
+        );
+        if (myCra?.entriesJson) {
+          JSON.parse(myCra.entriesJson).forEach(e => {
+            if (e.type === 'ABSENT' && e.value > 0) map.set(e.date, e.value);
+          });
+        }
       }
+    } catch {
+      // CRA indisponible — on continue avec les données km uniquement
     }
-  } catch {
-    // CRA non disponible — on continue avec les données km uniquement
   }
 
   return map;
@@ -1133,13 +1367,16 @@ function renderAbsenceCalendar(monthStr, absenceMap) {
     return;
   }
 
-  // Regrouper les jours consécutifs pour afficher les périodes
+  // Regrouper les jours consécutifs pour afficher les périodes.
+  // Les demi-journées (0.5) ne sont jamais fusionnées — chacune a sa propre ligne.
   const sortedDays = [...absenceMap.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const periods = [];
   let from = sortedDays[0], to = sortedDays[0];
   for (let i = 1; i < sortedDays.length; i++) {
-    const next = new Date(new Date(to).getTime() + DAY_MS).toISOString().substring(0, 10);
-    if (next === sortedDays[i]) {
+    const next       = new Date(new Date(to).getTime() + DAY_MS).toISOString().substring(0, 10);
+    const toIsHalf   = absenceMap.get(to) === 0.5;
+    const nextIsHalf = absenceMap.get(sortedDays[i]) === 0.5;
+    if (next === sortedDays[i] && !toIsHalf && !nextIsHalf) {
       to = sortedDays[i];
     } else {
       periods.push({ from, to });
@@ -1148,18 +1385,23 @@ function renderAbsenceCalendar(monthStr, absenceMap) {
   }
   periods.push({ from, to });
 
+  const fmtDate = d => `${d.getDate()} ${MONTHS_FR[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
   let periodHtml = '<div class="abs-periods">';
   periods.forEach(p => {
     const fromDate = new Date(p.from);
     const toDate   = new Date(p.to);
-    const fmtDate  = d => `${d.getDate()} ${MONTHS_FR[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
-    const days     = Math.round((toDate - fromDate) / DAY_MS) + 1;
+    const isHalf   = absenceMap.get(p.from) === 0.5 && p.from === p.to;
+    const days     = isHalf ? 0.5 : Math.round((toDate - fromDate) / DAY_MS) + 1;
+    const daysLabel = isHalf ? '½ jour' : `${days} jour${days > 1 ? 's' : ''}`;
+    const rangeLabel = p.from === p.to
+      ? fmtDate(fromDate)
+      : `${fmtDate(fromDate)} → ${fmtDate(toDate)}`;
     periodHtml += `<div class="abs-period-row">
       <span class="abs-period-range">
         <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        ${p.from === p.to ? fmtDate(fromDate) : `${fmtDate(fromDate)} → ${fmtDate(toDate)}`}
+        ${rangeLabel}
       </span>
-      <span class="abs-period-days">${days} jour${days > 1 ? 's' : ''}</span>
+      <span class="abs-period-days">${daysLabel}</span>
     </div>`;
   });
   periodHtml += '</div>';
@@ -1186,8 +1428,9 @@ function initNotes(user) {
     btn.addEventListener('click', () => {
       const textarea = document.getElementById('notes-text');
       const tpl = btn.dataset.exampleTpl;
+      const currentMonth = new Date().toLocaleString('fr-FR', { month: 'long' });
       textarea.value = tpl
-        ? tpl.replace('{company}', tenantName())
+        ? tpl.replace('{month}', currentMonth).replace('{company}', tenantName())
         : btn.dataset.example;
       textarea.focus();
       textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1233,32 +1476,33 @@ async function loadNotesReport(user) {
 }
 
 function renderConsultantExpenses(expenses) {
-  const APPROVAL = {
-    APPROVED: '<span class="approval-badge approved">Approuvé</span>',
-    REFUSED:  '<span class="approval-badge refused">Refusé</span>',
-    PENDING:  '<span class="approval-badge pending">En attente</span>',
-  };
+  const APPROVAL_COLOR = { APPROVED: 'green', REFUSED: 'red', PENDING: 'orange' };
+  const APPROVAL_LABEL = { APPROVED: 'Approuvé', REFUSED: 'Refusé', PENDING: 'En attente' };
 
-  let html = '<div class="consultant-expense-list">';
+  let html = `
+    <div class="data-list">
+      <div class="data-list-header" style="grid-template-columns:90px 100px 1fr 110px 110px">
+        <span>Date</span><span>Type</span><span>Description</span><span>Montant</span><span>Statut</span>
+      </div>`;
   for (const exp of expenses) {
-    const badge = exp.approvalStatus
-      ? (APPROVAL[exp.approvalStatus] || '<span class="approval-badge pending">En attente</span>')
-      : '<span class="approval-badge none">—</span>';
+    const color = APPROVAL_COLOR[exp.approvalStatus] || 'grey';
+    const label = APPROVAL_LABEL[exp.approvalStatus] || '—';
+    const amount = exp.amount != null
+      ? Number(exp.amount).toFixed(2) + '\u00a0' + (exp.currency || 'EUR')
+      : '—';
     const refusalNote = exp.approvalStatus === 'REFUSED' && exp.approvalNote
-      ? `<p class="refused-reason">Motif : ${escapeHtml(exp.approvalNote)}</p>`
+      ? `<span class="cell-sub refused-reason" style="font-style:italic">Motif : ${escapeHtml(exp.approvalNote)}</span>`
       : '';
     html += `
-      <div class="cons-expense-row">
-        <div class="cons-exp-meta">
-          <span class="cons-exp-date">${escapeHtml(exp.date || '—')}</span>
-          <span class="cons-exp-type">${escapeHtml(exp.type || '—')}</span>
-          <span class="cons-exp-desc">${escapeHtml(exp.description || '')}</span>
-        </div>
-        <div class="cons-exp-right">
-          <span class="cons-exp-amount">${exp.amount != null ? Number(exp.amount).toFixed(2) + ' ' + (exp.currency || 'EUR') : '—'}</span>
-          ${badge}
+      <div class="data-list-row" style="grid-template-columns:90px 100px 1fr 110px 110px">
+        <span style="font-size:12px;font-weight:600;color:var(--accent-2)">${escapeHtml(exp.date || '—')}</span>
+        <span style="font-size:13px;font-weight:600">${escapeHtml(exp.type || '—')}</span>
+        <div class="cell-primary">
+          <span class="cell-name" style="font-size:13px;font-weight:500">${escapeHtml(exp.description || '')}</span>
           ${refusalNote}
         </div>
+        <span class="cell-amount">${escapeHtml(amount)}</span>
+        <span><span class="status-badge ${color}">${escapeHtml(label)}</span></span>
       </div>`;
   }
   html += '</div>';
@@ -1274,7 +1518,7 @@ async function loadAbsencesForNotes(user) {
   setStatus(statusEl, 'Chargement des absences…');
 
   try {
-    const p = new URLSearchParams({ month: monthStr, company: user.company, consultant: user.email });
+    const p = new URLSearchParams({ month: monthStr, consultant: user.email });
     const res = await fetch(`${base()}/cra/absences?${p}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     notesAbsences = await res.json();
@@ -1349,12 +1593,13 @@ async function submitNotesSaisie(user) {
       headers: authHeaders(),
       body:    JSON.stringify({ text: fullText, consultantEmail: user.email }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
     await res.json();
-    setStatus(statusEl, 'Note de frais enregistrée avec succès.', 'ok');
+    showToast('Note de frais enregistrée avec succès.', 'ok');
+    setStatus(statusEl, '');
     textEl.value = '';
   } catch (e) {
-    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+    setStatus(statusEl, 'Erreur lors de l\'enregistrement. Réessayez ou contactez votre administrateur.', 'err');
   }
 }
 
@@ -1379,12 +1624,13 @@ async function uploadJustificatif(user) {
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       body:    fd,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status} — ${await res.text()}`);
+    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
     await res.json();
-    setStatus(statusEl, 'Justificatif traité et note de frais créée.', 'ok');
+    showToast('Justificatif traité et note de frais créée.', 'ok');
+    setStatus(statusEl, '');
     fileInput.value = '';
   } catch (e) {
-    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+    setStatus(statusEl, 'Erreur lors de l\'upload. Réessayez ou contactez votre administrateur.', 'err');
   }
 }
 

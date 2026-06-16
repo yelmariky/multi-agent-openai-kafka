@@ -11,6 +11,9 @@ public record ConsultantProfile(
         String clientRcs,
         String clientContactEmail,
         Double tjm,
-        Boolean active
+        Boolean active,
+        VehicleType vehicleType,
+        Integer fiscalPower,
+        Integer kmAnnual
 ) {
 }

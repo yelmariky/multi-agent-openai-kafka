@@ -104,10 +104,41 @@ function setStatus(el, msg, type = '') {
   el.className   = 'status' + (type ? ` ${type}` : '');
 }
 
+/** Disable a button and show a loading label; returns a restore function. */
+function setBtnLoading(btnId, label = 'Enregistrement…') {
+  const btn = document.getElementById(btnId);
+  if (!btn) return () => {};
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = label;
+  return () => { btn.disabled = false; btn.textContent = orig; };
+}
+
+/** Returns a debounced version of fn that fires after ms milliseconds. */
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
+}
+
 function escapeHtml(s) {
   return String(s ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  const parts = String(name).trim().split(/\s+/);
+  return parts.length >= 2
+    ? (parts[0][0] + parts[1][0]).toUpperCase()
+    : String(name).slice(0, 2).toUpperCase();
+}
+
+function rowIconVariant(str) {
+  const variants = ['', 'blue', 'purple'];
+  let hash = 0;
+  for (const c of (str || '')) hash = (hash * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return variants[Math.abs(hash) % 3];
 }
 
 function avatarColor(name) {
@@ -211,6 +242,25 @@ function startApp() {
   initMainNavTabs();
   initProjects();
   initClients();
+
+  // ESC closes any open modal
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (!document.getElementById('cons-edit-modal').classList.contains('hidden'))  { closeEditModal(); return; }
+    if (!document.getElementById('assignment-modal').classList.contains('hidden')) { closeAssignmentModal(); return; }
+    if (!document.getElementById('settings-drawer').classList.contains('hidden'))  { closeSettingsDrawer(); }
+  });
+
+  // Assignment modal wiring
+  document.getElementById('cons-assign-add-btn').addEventListener('click', () => {
+    if (currentConsultant) openAssignmentModal(currentConsultant, null);
+  });
+  document.getElementById('assignment-cancel').addEventListener('click', closeAssignmentModal);
+  document.getElementById('assignment-modal-close').addEventListener('click', closeAssignmentModal);
+  document.getElementById('assignment-overlay').addEventListener('click', closeAssignmentModal);
+  document.getElementById('assignment-save').addEventListener('click', () => {
+    if (currentConsultant) saveAssignment(currentConsultant);
+  });
   loadSellerSettings();
   loadTenantInfo();
 }
@@ -308,7 +358,7 @@ function initSettingsDrawer() {
         headers: adminHeaders(),
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
       sellerSettings = payload;
       setStatus(statusEl, 'Parametres sauvegardes.', 'ok');
       showToast('Parametres de facturation sauvegardes.', 'ok');
@@ -404,6 +454,7 @@ async function loadNotifications() {
         <span class="notif-icon">${n.type === 'CRA_SUBMITTED' ? '📋' : '💶'}</span>
         <div class="notif-body">
           <p class="notif-msg">${escapeHtml(n.message)}</p>
+          ${n.consultantEmail ? `<p class="notif-email">${escapeHtml(n.consultantEmail)}</p>` : ''}
           <p class="notif-ts">${formatTs(n.timestamp)}</p>
         </div>
       </div>`).join('');
@@ -436,8 +487,11 @@ const CONS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
 
 function isCacheValid() {
   const ts  = parseInt(localStorage.getItem(CONS_CACHE_TS_KEY) || '0', 10);
-  const raw = localStorage.getItem(CONS_KEY);
-  return !!raw && (Date.now() - ts) < CONS_CACHE_TTL_MS;
+  if ((Date.now() - ts) >= CONS_CACHE_TTL_MS) return false;
+  try {
+    const stored = JSON.parse(localStorage.getItem(CONS_KEY) || '[]');
+    return Array.isArray(stored) && stored.length > 0;
+  } catch { return false; }
 }
 
 function setCacheTimestamp() {
@@ -476,6 +530,9 @@ function loadConsultants() {
       if (c.clientContactEmail === undefined) c.clientContactEmail = '';
       if (c.active        === undefined) c.active        = true;
       if (c.tjm           === undefined || c.tjm === null) c.tjm = 0;
+      if (c.vehicleType   === undefined) c.vehicleType   = 'CAR';
+      if (c.fiscalPower   === undefined) c.fiscalPower   = 7;
+      if (c.kmAnnual      === undefined) c.kmAnnual      = 4999;
     });
     return list;
   } catch {
@@ -485,11 +542,20 @@ function loadConsultants() {
 
 async function saveConsultantToBackend(cons) {
   try {
-    await fetch(`${base()}/consultants/profiles`, {
+    const res = await fetch(`${base()}/consultants/profiles`, {
       method: 'POST',
       headers: adminHeaders(),
       body: JSON.stringify(cons),
     });
+    if (res.ok) {
+      const saved = await res.json();
+      if (saved?.id) {
+        cons.id = saved.id;
+        const idx = allConsultants.findIndex(c => c.email === cons.email);
+        if (idx >= 0) allConsultants[idx].id = saved.id;
+        saveConsultants(allConsultants);
+      }
+    }
   } catch { /* silent — local cache is already updated */ }
 }
 
@@ -517,15 +583,15 @@ async function initConsultantsData() {
         if (c.clientRcs     === undefined) c.clientRcs     = '';
         if (c.active        === undefined) c.active        = true;
         if (c.tjm           === undefined || c.tjm === null) c.tjm = 0;
+        if (c.vehicleType   === undefined) c.vehicleType   = 'CAR';
+        if (c.fiscalPower   === undefined) c.fiscalPower   = 7;
+        if (c.kmAnnual      === undefined) c.kmAnnual      = 4999;
       });
       saveConsultants(allConsultants);
       setCacheTimestamp();
       renderConsultantsGrid();
     } else {
-      // Backend empty — no default consultants, admin adds them manually
-      allConsultants = [];
-      saveConsultants(allConsultants);
-      setCacheTimestamp();
+      // Backend returned empty — keep local cache intact, re-fetch on next load
       renderConsultantsGrid();
     }
   } catch { /* backend unreachable — keep local cache */ }
@@ -550,9 +616,9 @@ function initConsultants(user) {
 
   renderConsultantsGrid();
 
-  document.getElementById('cons-search').addEventListener('input', e => {
+  document.getElementById('cons-search').addEventListener('input', debounce(e => {
     renderConsultantsGrid(e.target.value);
-  });
+  }, 150));
 
   // --- Add form: mode toggle (existing vs invite) ---
   let addMode = 'existing'; // 'existing' or 'invite'
@@ -604,18 +670,18 @@ function initConsultants(user) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const users = await res.json();
       const existingEmails = new Set(allConsultants.filter(c => c.email).map(c => c.email.toLowerCase()));
+      if (adminUser?.email) existingEmails.add(adminUser.email.toLowerCase());
       const available = users.filter(u => u.email && !existingEmails.has(u.email.toLowerCase()));
       if (!available.length) {
         sel.innerHTML = '<option value="">Tous les utilisateurs sont deja ajoutes</option>';
-        statusEl.textContent = `${users.length} utilisateur(s) Keycloak, tous deja enregistres.`;
       } else {
         sel.innerHTML = '<option value="">-- Selectionnez --</option>' +
           available.map(u => `<option value="${escapeHtml(u.email)}" data-name="${escapeHtml(u.name)}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('');
-        statusEl.textContent = `${available.length} utilisateur(s) disponible(s) sur ${users.length} dans Keycloak.`;
       }
+      statusEl.textContent = '';
     } catch {
       sel.innerHTML = '<option value="">-- Erreur chargement --</option>';
-      statusEl.textContent = 'Impossible de charger les utilisateurs Keycloak.';
+      statusEl.textContent = 'Impossible de charger les utilisateurs internes.';
     }
   });
 
@@ -625,32 +691,27 @@ function initConsultants(user) {
   });
 
   // Edit form
-  document.getElementById('cons-edit-save').addEventListener('click', () => {
+  document.getElementById('cons-edit-save').addEventListener('click', async () => {
     if (!editingConsEmail) return;
-    const clientName         = document.getElementById('cons-edit-clientname').value.trim();
-    const clientAddress      = document.getElementById('cons-edit-clientaddress').value.trim();
-    const clientRcs          = document.getElementById('cons-edit-clientrcs').value.trim();
-    const clientContactEmail = document.getElementById('cons-edit-clientcontactemail').value.trim();
-    const tjmVal             = parseFloat(document.getElementById('cons-edit-tjm').value);
+    const name    = document.getElementById('cons-edit-name').value.trim();
+    const role    = document.getElementById('cons-edit-role').value;
+    const company = document.getElementById('cons-edit-company').value.trim();
+    const restore = setBtnLoading('cons-edit-save');
     const idx = allConsultants.findIndex(c => c.email === editingConsEmail);
     if (idx >= 0) {
-      allConsultants[idx].clientName         = clientName;
-      allConsultants[idx].clientAddress      = clientAddress;
-      allConsultants[idx].clientRcs          = clientRcs;
-      allConsultants[idx].clientContactEmail = clientContactEmail;
-      allConsultants[idx].tjm                = isNaN(tjmVal) ? (allConsultants[idx].tjm || 0) : tjmVal;
+      if (name)    allConsultants[idx].name    = name;
+      if (role)    allConsultants[idx].role    = role;
+      if (company) allConsultants[idx].company = company;
       saveConsultants(allConsultants);
-      saveConsultantToBackend(allConsultants[idx]);
+      await saveConsultantToBackend(allConsultants[idx]);
       if (currentConsultant?.email === editingConsEmail) {
         currentConsultant = allConsultants[idx];
-        document.getElementById('cons-detail-clientname').textContent = clientName || '—';
-        document.getElementById('cons-clientname-input').value = clientName;
-        document.getElementById('cons-tjm-display').textContent           = allConsultants[idx].tjm || '—';
-        document.getElementById('cons-clientaddress-display').textContent = clientAddress || '—';
-        document.getElementById('cons-clientrcs-display').textContent     = clientRcs     || '—';
+        document.getElementById('cons-detail-name').textContent    = allConsultants[idx].name;
+        document.getElementById('cons-detail-company').textContent = allConsultants[idx].company;
       }
-      showToast(`Client mis a jour : ${clientName || '—'}`, 'ok');
+      showToast('Consultant mis à jour.', 'ok');
     }
+    restore();
     closeEditModal();
     renderConsultantsGrid(document.getElementById('cons-search').value);
   });
@@ -680,7 +741,7 @@ function initConsultants(user) {
       try {
         const res = await fetch(`${base()}/consultants/invite`, {
           method: 'POST',
-          headers: authHeaders(),
+          headers: adminHeaders(),
           body: JSON.stringify({
             email, firstName, lastName,
             tempPassword: authType === 'internal' ? password : null,
@@ -732,45 +793,6 @@ function initConsultants(user) {
     currentConsultant = null;
   });
 
-  document.getElementById('cons-edit-detail-btn').addEventListener('click', () => {
-    if (currentConsultant) openEditConsultant(currentConsultant);
-  });
-
-  document.getElementById('cons-disable-btn').addEventListener('click', () => {
-    if (!currentConsultant) return;
-    const isActive = currentConsultant.active !== false;
-    const action   = isActive ? 'Desactiver' : 'Reactiver';
-    if (!confirm(`${action} ${currentConsultant.name} ?`)) return;
-    const idx = allConsultants.findIndex(c => c.email === currentConsultant.email);
-    if (idx >= 0) {
-      allConsultants[idx].active = !isActive;
-      currentConsultant = allConsultants[idx];
-      saveConsultants(allConsultants);
-      saveConsultantToBackend(allConsultants[idx]);
-      updateDisableBtn(currentConsultant);
-      renderConsultantsGrid();
-      showToast(`${currentConsultant.name} ${isActive ? 'desactive' : 'reactive'}.`, 'ok');
-    }
-  });
-
-  document.getElementById('cons-delete-btn').addEventListener('click', async () => {
-    if (!currentConsultant) return;
-    if (!confirm(`Supprimer definitivement ${currentConsultant.name} (${currentConsultant.email}) ?`)) return;
-    try {
-      await fetch(`${base()}/consultants/profiles?email=${encodeURIComponent(currentConsultant.email)}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-    } catch { /* best effort */ }
-    allConsultants = allConsultants.filter(c => c.email !== currentConsultant.email);
-    saveConsultants(allConsultants);
-    currentConsultant = null;
-    document.getElementById('cons-detail-view').style.display = 'none';
-    document.getElementById('cons-grid-view').style.display   = '';
-    renderConsultantsGrid();
-    showToast('Consultant supprime.', 'ok');
-  });
-
   // Sub-tabs — auto-load on switch
   document.querySelectorAll('.cons-stab').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -781,8 +803,27 @@ function initConsultants(user) {
       if (!currentConsultant) return;
       if (btn.dataset.consTab === 'notes')    loadConsNotes(currentConsultant);
       if (btn.dataset.consTab === 'factures') loadConsInvoices(currentConsultant);
-      if (btn.dataset.consTab === 'projets')  loadConsultantProjects(currentConsultant);
     });
+  });
+
+  // Vehicle profile save
+  document.getElementById('cons-vehicle-save').addEventListener('click', async () => {
+    if (!currentConsultant) return;
+    const statusEl = document.getElementById('cons-vehicle-status');
+    currentConsultant.vehicleType = document.getElementById('cons-vehicle-type').value;
+    currentConsultant.fiscalPower = parseInt(document.getElementById('cons-fiscal-power').value, 10) || 7;
+    currentConsultant.kmAnnual    = parseInt(document.getElementById('cons-km-annual').value,    10) || 4999;
+    const idx = allConsultants.findIndex(c => c.email === currentConsultant.email);
+    if (idx >= 0) {
+      allConsultants[idx].vehicleType = currentConsultant.vehicleType;
+      allConsultants[idx].fiscalPower = currentConsultant.fiscalPower;
+      allConsultants[idx].kmAnnual    = currentConsultant.kmAnnual;
+      saveConsultants(allConsultants);
+    }
+    await saveConsultantToBackend(currentConsultant);
+    statusEl.textContent = '✓ Profil véhicule enregistré';
+    statusEl.className = 'status ok';
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
   });
 
   // CRA panel
@@ -823,9 +864,11 @@ function initConsultants(user) {
 function renderConsultantsGrid(filter = '') {
   const grid = document.getElementById('cons-grid');
   const q    = filter.trim().toLowerCase();
-  const list = q ? allConsultants.filter(c =>
-    c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)
-  ) : allConsultants;
+  const staffEmails = new Set((allConsultants.filter(c => c.role === 'admin' || c.role === 'manager').map(c => c.email?.toLowerCase())));
+  if (adminUser?.email) staffEmails.add(adminUser.email.toLowerCase());
+  const activeList = allConsultants.filter(c => c.active !== false && !staffEmails.has(c.email?.toLowerCase()));
+  const filterFn = c => !q || c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
+  const list = activeList.filter(filterFn);
 
   if (!list.length) {
     const msg = q
@@ -836,10 +879,8 @@ function renderConsultantsGrid(filter = '') {
     return;
   }
 
-  grid.innerHTML = list.map(c => {
-    const inactive = c.active === false;
-    return `
-    <div class="consultant-card${inactive ? ' cons-card-inactive' : ''}" data-email="${escapeHtml(c.email)}">
+  grid.innerHTML = list.map(c => `
+    <div class="consultant-card" data-email="${escapeHtml(c.email)}">
       <div class="card-inner">
         <div class="cons-avatar" style="background:${avatarColor(c.name)}">${initials(c.name)}</div>
         <p class="cons-card-name">${escapeHtml(c.name)}</p>
@@ -847,7 +888,6 @@ function renderConsultantsGrid(filter = '') {
         <div class="cons-card-badges">
           <span class="cons-role-badge ${c.role.toLowerCase()}">${escapeHtml(c.role)}</span>
           <span class="cons-company-tag">${escapeHtml(c.company)}</span>
-          ${inactive ? '<span class="status-badge red" style="font-size:10px;padding:2px 6px">Desactive</span>' : ''}
         </div>
         ${c.clientName ? `<p class="cons-card-client">↳ ${escapeHtml(c.clientName)}</p>` : ''}
         <div class="cons-card-kpis" id="kpis-${btoa(c.email).replace(/[^a-zA-Z0-9]/g,'')}">
@@ -859,21 +899,22 @@ function renderConsultantsGrid(filter = '') {
             <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Modifier
           </button>
-          <button class="btn-card-toggle${inactive ? ' reactivate' : ''}" data-email="${escapeHtml(c.email)}">
-            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">${inactive ? '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>' : '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>'}</svg>
-            ${inactive ? 'Reactiver' : 'Desactiver'}
+          <button class="btn-card-toggle" data-email="${escapeHtml(c.email)}">
+            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            Desactiver
           </button>
         </div>
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 
   grid.querySelectorAll('.consultant-card').forEach(card => {
     const email = card.dataset.email;
     const cons  = allConsultants.find(c => c.email === email);
     if (!cons) return;
-    card.addEventListener('click', () => openConsultantDetail(cons));
-    loadCardKpis(cons);
+    if (!card.dataset.inactive) {
+      card.addEventListener('click', () => openConsultantDetail(cons));
+      loadCardKpis(cons);
+    }
   });
 
   grid.querySelectorAll('.btn-card-edit').forEach(btn => {
@@ -895,56 +936,12 @@ function renderConsultantsGrid(filter = '') {
 
 function openEditConsultant(cons) {
   editingConsEmail = cons.email;
-  document.getElementById('cons-edit-name-display').textContent = `${cons.name} — ${cons.company}`;
-  document.getElementById('cons-edit-clientname').value         = cons.clientName         || '';
-  document.getElementById('cons-edit-clientaddress').value      = cons.clientAddress      || '';
-  document.getElementById('cons-edit-clientrcs').value          = cons.clientRcs          || '';
-  document.getElementById('cons-edit-clientcontactemail').value = cons.clientContactEmail || '';
-  document.getElementById('cons-edit-tjm').value                = (cons.tjm != null && cons.tjm !== '') ? cons.tjm : '';
-
-  // Populate client dropdown from the managed clients list
-  populateClientSelect(cons.clientName || '');
-
+  document.getElementById('cons-edit-cons-name').textContent = `${cons.name} — ${cons.email}`;
+  document.getElementById('cons-edit-name').value    = cons.name    || '';
+  document.getElementById('cons-edit-role').value    = cons.role    || 'Freelance';
+  document.getElementById('cons-edit-company').value = cons.company || '';
   document.getElementById('cons-edit-overlay').classList.remove('hidden');
   document.getElementById('cons-edit-modal').classList.remove('hidden');
-}
-
-function populateClientSelect(currentClientName) {
-  const sel = document.getElementById('cons-edit-client-select');
-  if (!sel) return;
-
-  const buildOptions = (clients) => {
-    sel.innerHTML = '<option value="">-- Sélectionner un client --</option>'
-      + clients.map(c => `<option value="${escapeHtml(c.id)}"
-          data-address="${escapeHtml(c.address || '')}"
-          data-rcs="${escapeHtml(c.rcs || '')}"
-          data-contact-name="${escapeHtml(c.contactName || '')}"
-          data-contact-email="${escapeHtml(c.contactEmail || '')}">
-          ${escapeHtml(c.name)}</option>`).join('');
-    // Pre-select if clientName matches
-    if (currentClientName) {
-      const match = clients.find(c => c.name.toLowerCase() === currentClientName.toLowerCase());
-      if (match) sel.value = match.id;
-    }
-  };
-
-  if (allClients.length > 0) {
-    buildOptions(allClients);
-  } else {
-    fetch(`${base()}/clients`, { headers: adminHeaders() })
-      .then(r => r.ok ? r.json() : [])
-      .then(clients => { allClients = clients; buildOptions(clients); })
-      .catch(() => {});
-  }
-
-  // One-time change listener (replaced on each open)
-  sel.onchange = () => {
-    const opt = sel.selectedOptions[0];
-    document.getElementById('cons-edit-clientname').value         = opt?.textContent?.trim() || '';
-    document.getElementById('cons-edit-clientaddress').value      = opt?.dataset.address     || '';
-    document.getElementById('cons-edit-clientrcs').value          = opt?.dataset.rcs         || '';
-    document.getElementById('cons-edit-clientcontactemail').value = opt?.dataset.contactEmail || '';
-  };
 }
 
 function closeEditModal() {
@@ -963,20 +960,11 @@ function toggleConsultantActive(cons) {
   saveConsultantToBackend(allConsultants[idx]);
   if (currentConsultant?.email === cons.email) {
     currentConsultant = allConsultants[idx];
-    updateDisableBtn(currentConsultant);
   }
   renderConsultantsGrid(document.getElementById('cons-search')?.value || '');
   showToast(`${cons.name} ${isActive ? 'desactive' : 'reactive'}.`, 'ok');
 }
 
-function updateDisableBtn(cons) {
-  const btn     = document.getElementById('cons-disable-btn');
-  if (!btn) return;
-  const isActive = cons.active !== false;
-  btn.innerHTML = isActive
-    ? `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Desactiver`
-    : `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg> Reactiver`;
-}
 
 async function loadCardKpis(cons) {
   const kpiId  = `kpis-${btoa(cons.email).replace(/[^a-zA-Z0-9]/g,'')}`;
@@ -985,11 +973,11 @@ async function loadCardKpis(cons) {
   const now    = new Date();
   const month  = toMonthStr(now.getFullYear(), now.getMonth());
 
-  let craPending   = 0;
-  let expenseCount = 0;
+  let craPending     = 0;
+  let expensePending = 0;
 
   try {
-    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email, company: cons.company });
+    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email });
     const r = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
     if (r.ok) {
       const items = await r.json();
@@ -1004,14 +992,51 @@ async function loadCardKpis(cons) {
     const p   = new URLSearchParams({ start: s, end: e, consultantEmail: cons.email });
     const res = await fetch(`${base()}/expenses/report?${p}`, { headers: authHeaders() });
     if (res.ok) {
-      const data = await res.json();
-      expenseCount = Array.isArray(data) ? data.length : (data.expenses ? data.expenses.length : 0);
+      const data     = await res.json();
+      const expenses = Array.isArray(data) ? data : (data.expenses || []);
+      expensePending = expenses.filter(x => !x.approvalStatus || x.approvalStatus === 'PENDING').length;
     }
   } catch { /* ignore */ }
 
   kpiEl.innerHTML = `
-    <div class="cons-kpi-chip"><span class="kpi-v" style="color:${craPending>0?'#fde68a':'var(--accent)'}">${craPending}</span><span class="kpi-l">CRA soumis</span></div>
-    <div class="cons-kpi-chip"><span class="kpi-v">${expenseCount}</span><span class="kpi-l">Frais ce mois</span></div>`;
+    <div class="cons-kpi-chip${craPending > 0 ? ' kpi-alert' : ''}">
+      <span class="kpi-v" style="color:${craPending>0?'#fde68a':'var(--accent)'}">${craPending}</span>
+      <span class="kpi-l">CRA soumis</span>
+    </div>
+    <div class="cons-kpi-chip${expensePending > 0 ? ' kpi-alert' : ''}">
+      <span class="kpi-v" style="color:${expensePending>0?'#fde68a':'var(--accent)'}">${expensePending}</span>
+      <span class="kpi-l">Frais en attente</span>
+    </div>`;
+
+  // Show/hide alert dots on the card header
+  const card = kpiEl.closest('.consultant-card');
+  if (card) {
+    let craDot = card.querySelector('.cons-alert-dot-cra');
+    if (craPending > 0) {
+      if (!craDot) {
+        craDot = document.createElement('span');
+        craDot.className = 'cons-alert-dot cons-alert-dot-cra';
+        card.querySelector('.cons-avatar')?.after(craDot);
+      }
+      craDot.title = `${craPending} CRA en attente de validation`;
+      craDot.textContent = craPending;
+    } else if (craDot) {
+      craDot.remove();
+    }
+
+    let expDot = card.querySelector('.cons-alert-dot-exp');
+    if (expensePending > 0) {
+      if (!expDot) {
+        expDot = document.createElement('span');
+        expDot.className = 'cons-alert-dot cons-alert-dot-exp';
+        card.querySelector('.cons-avatar')?.after(expDot);
+      }
+      expDot.title = `${expensePending} frais en attente de validation`;
+      expDot.textContent = expensePending;
+    } else if (expDot) {
+      expDot.remove();
+    }
+  }
 }
 
 /**
@@ -1019,16 +1044,7 @@ async function loadCardKpis(cons) {
  * before the user navigates away. Guards against the user not blurring a field.
  */
 function flushDetailEdits() {
-  if (!currentConsultant) return;
-  const idx = allConsultants.findIndex(c => c.email === currentConsultant.email);
-  if (idx < 0) return;
-
-  // TJM, clientAddress and clientRcs are now read-only in the detail view.
-  // They can only be changed via the card "Modifier" form which saves immediately.
-  // Only clientName remains inline-editable here.
-  const nameVal = document.getElementById('cons-clientname-input')?.value.trim() ?? '';
-  allConsultants[idx].clientName = nameVal || allConsultants[idx].clientName || '';
-  saveConsultants(allConsultants);
+  // No inline edits remain in the detail view — all edits go through modals.
 }
 
 function openConsultantDetail(cons) {
@@ -1046,34 +1062,12 @@ function openConsultantDetail(cons) {
   document.getElementById('cons-detail-role').textContent    = cons.role;
   document.getElementById('cons-detail-role').className      = `cons-role-badge ${cons.role.toLowerCase()}`;
   document.getElementById('cons-detail-company').textContent = cons.company;
-  const clientNameBadge = document.getElementById('cons-detail-clientname');
-  clientNameBadge.textContent = cons.clientName || '—';
-  clientNameBadge.style.display = '';
 
-  // Client name — editable inline
-  const clientNameInput = document.getElementById('cons-clientname-input');
-  clientNameInput.value = cons.clientName || '';
-  clientNameInput.onchange = () => {
-    const v = clientNameInput.value.trim();
-    const idx = allConsultants.findIndex(c => c.email === cons.email);
-    if (idx >= 0) {
-      allConsultants[idx].clientName = v;
-      currentConsultant = allConsultants[idx];
-      clientNameBadge.textContent = v || '—';
-      saveConsultants(allConsultants);
-      saveConsultantToBackend(allConsultants[idx]);
-    }
-  };
-
-  // TJM — read-only display (edit via card "Modifier" form)
-  document.getElementById('cons-tjm-display').textContent =
-    (cons.tjm != null && cons.tjm !== '') ? cons.tjm : '—';
-
-  // Client address & RCS — read-only display (edit via card "Modifier" form)
-  document.getElementById('cons-clientaddress-display').textContent = cons.clientAddress || '—';
-  document.getElementById('cons-clientrcs-display').textContent     = cons.clientRcs     || '—';
-
-  updateDisableBtn(cons);
+  // Vehicle profile fields
+  document.getElementById('cons-vehicle-type').value  = cons.vehicleType  || 'CAR';
+  document.getElementById('cons-fiscal-power').value  = cons.fiscalPower  ?? 7;
+  document.getElementById('cons-km-annual').value     = cons.kmAnnual     ?? 4999;
+  document.getElementById('cons-vehicle-status').textContent = '';
 
   document.getElementById('kpi-cra-pending').textContent     = '…';
   document.getElementById('kpi-expense-pending').textContent = '…';
@@ -1090,6 +1084,7 @@ function openConsultantDetail(cons) {
 
   loadDetailKpis(cons);
   loadConsCra(cons);
+  loadConsultantAssignments(cons);
 }
 
 async function loadDetailKpis(cons) {
@@ -1097,7 +1092,7 @@ async function loadDetailKpis(cons) {
   const month = toMonthStr(now.getFullYear(), now.getMonth());
 
   try {
-    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email, company: cons.company });
+    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email });
     const r = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
     if (r.ok) {
       const items = await r.json();
@@ -1133,7 +1128,7 @@ async function loadConsCra(cons) {
   resultEl.style.display = 'none';
 
   try {
-    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email, company: cons.company });
+    const p = new URLSearchParams({ start: month, end: month, consultant: cons.email });
     const res = await fetch(`${base()}/cra/report?${p}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const items = await res.json();
@@ -1153,19 +1148,50 @@ async function loadConsCra(cons) {
   }
 }
 
+/** Construit un résumé des jours travaillés par projet pour l'affichage CRA. */
+function _craDaysSummary(cra) {
+  const entries = Array.isArray(cra.entries) ? cra.entries : [];
+  const projectDays = {};
+  for (const e of entries) {
+    if (e.type === 'TRAVAIL' && e.value > 0 && e.projectId) {
+      projectDays[e.projectId] = (projectDays[e.projectId] || 0) + e.value;
+    }
+  }
+  const projectIds = Object.keys(projectDays);
+  if (projectIds.length < 2) {
+    const d = cra.totalDays != null
+      ? (cra.totalDays % 1 === 0 ? String(cra.totalDays) : Number(cra.totalDays).toFixed(1))
+      : '—';
+    return `${d}j`;
+  }
+  const parts = projectIds.map(pid => {
+    const proj = allProjects.find(p => p.id === pid);
+    const name = proj?.name || (pid.slice(0,6) + '…');
+    const d = projectDays[pid] % 1 === 0 ? String(projectDays[pid]) : Number(projectDays[pid]).toFixed(1);
+    return `${escapeHtml(name)} : ${d}j`;
+  });
+  return parts.join(' | ');
+}
+
+function isCloture(billingMonth) {
+  if (!billingMonth) return false;
+  const [y, m] = billingMonth.split('-').map(Number);
+  return new Date() >= new Date(y, m, 5);
+}
+
 function renderCraList(items) {
   const STATUS_LABEL = {
     BROUILLON: '<span class="status-badge grey">BROUILLON</span>',
     SOUMIS:    '<span class="status-badge orange">SOUMIS</span>',
     VALIDE:    '<span class="status-badge green">VALIDE</span>',
     REFUSE:    '<span class="status-badge red">REFUSE</span>',
+    CLOTURE:   '<span class="status-badge purple">CLÔTURÉ</span>',
   };
 
   return '<div class="approval-list">' + items.map(cra => {
-    const days   = cra.totalDays != null
-      ? (cra.totalDays % 1 === 0 ? String(cra.totalDays) : Number(cra.totalDays).toFixed(1))
-      : '—';
-    const status = cra.status || 'BROUILLON';
+    const days   = _craDaysSummary(cra);
+    const rawStatus = cra.status || 'BROUILLON';
+    const status = (rawStatus === 'VALIDE' && isCloture(cra.billingMonth)) ? 'CLOTURE' : rawStatus;
     const badge  = STATUS_LABEL[status] || `<span class="status-badge grey">${escapeHtml(status)}</span>`;
     const craJson = escapeHtml(JSON.stringify(cra));
 
@@ -1186,6 +1212,12 @@ function renderCraList(items) {
           <button class="btn-gen-invoice" data-cra='${craJson}'>📄 Generer la facture</button>
           <button class="btn-reopen-cra" data-cra='${craJson}' title="Remettre en SOUMIS pour re-traitement">↩ Annuler validation</button>
         </div>`;
+    } else if (status === 'CLOTURE') {
+      actions = `
+        <div class="cra-action-row">
+          <p class="validated-info" style="margin:0">Clôturé — validé par <strong>${escapeHtml(cra.validatedBy || '—')}</strong>${cra.validatedAt ? ` le ${formatTs(cra.validatedAt)}` : ''}</p>
+          <button class="btn-gen-invoice" data-cra='${craJson}'>📄 Generer la facture</button>
+        </div>`;
     } else if (status === 'REFUSE') {
       actions = `
         <div class="cra-action-row">
@@ -1203,7 +1235,7 @@ function renderCraList(items) {
       <div class="approval-row">
         <div class="approval-meta">
           <span class="approval-name">${escapeHtml(cra.billingMonth || '—')}</span>
-          <span class="approval-detail">${escapeHtml(cra.clientCompany || '—')}${missionLabel} — ${escapeHtml(days)}j</span>
+          <span class="approval-detail">${escapeHtml(cra.clientCompany || '—')}${missionLabel} — ${days}</span>
         </div>
         <div class="approval-right">
           ${badge}
@@ -1215,73 +1247,117 @@ function renderCraList(items) {
 }
 
 /**
- * Genere automatiquement une facture apres validation d'un CRA si le TJM est renseigne.
- * Convention : billingMonth + 2 mois -> invoiceDate, invoiceName = F-YYYYMM-01
+ * Génère une seule facture vers invoice-service.
+ * opts: { clientName, clientAddress, clientRcs, projectName, tjm, days }
  */
-async function generateInvoiceOnValidation(cra, cons) {
-  const tjm = parseFloat(cons.tjm) || 0;
-  if (tjm <= 0) return;
-
-  const days = parseFloat(cra.totalDays) || 0;
-  if (days <= 0) return;
-
-  // Re-fetch seller settings just before generation — avoids stale/empty cache
-  // if backend restarted between login and now.
-  await loadSellerSettings();
+async function generateOneInvoice(cra, cons, { clientName, clientAddress, clientRcs, projectName, tjm, days }) {
+  const [y, m] = cra.billingMonth.split('-').map(Number);
+  let iy = y, im = m + 2;
+  if (im > 12) { im -= 12; iy += 1; }
+  const imPad          = String(im).padStart(2,'0');
+  const invoiceDateStr = `${iy}-${imPad}-01`;
+  const dueStr         = `${iy}-${imPad}-${new Date(iy, im, 0).getDate()}`;
+  const totalHt        = Math.round(tjm * days * 100) / 100;
+  const vatRate        = 0.20;
+  const totalTtc       = Math.round(totalHt * (1 + vatRate) * 100) / 100;
 
   try {
-    const [y, m] = cra.billingMonth.split('-').map(Number);
-    let iy = y, im = m + 2;
-    if (im > 12) { im -= 12; iy += 1; }
-    const imPad          = String(im).padStart(2,'0');
-    const invoiceDateStr = `${iy}-${imPad}-01`;
-    const invoiceName    = `F-${iy}${imPad}-01`;
-    const dueStr         = `${iy}-${imPad}-${new Date(iy, im, 0).getDate()}`;
-
-    const totalHt  = Math.round(tjm * days * 100) / 100;
-    const vatRate  = 0.20;
-    const totalTtc = Math.round(totalHt * (1 + vatRate) * 100) / 100;
-
-    const sellerCompanyName = (cons.company || '').trim() || tenantName();
-    const clientCompanyName = (cons.clientName || '').trim() || (cra.clientCompany || '').trim() || sellerCompanyName;
-
-    const payload = {
-      invoiceName,
-      invoiceDate:     invoiceDateStr,
-      billingMonth:    cra.billingMonth,
-      sellerCompanyName,
-      sellerAddress:   sellerSettings.address         || '',
-      sellerRcs:       sellerSettings.rcs             || '',
-      clientCompanyName,
-      clientAddress:   cons.clientAddress             || '',
-      clientRcs:       cons.clientRcs                 || '',
-      invoiceTitle:    `Prestation informatique — ${cra.billingMonth}`,
-      daysCount:       days,
-      unitPriceHt:     tjm,
-      totalHt,
-      vatRate,
-      totalTtc,
-      currency:        'EUR',
-      paymentDueDate:  dueStr,
-      latePaymentClause: '',   // backend uses SellerProfile.latePaymentClause if blank
-      notes:           null,
-      absencePeriods:  null,
-      consultantEmail: cons.email || null,
-    };
-
     const res = await fetch(`${invoiceBase()}/invoices/generate`, {
       method:  'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body:    JSON.stringify(payload),
+      headers: adminHeaders(),
+      body: JSON.stringify({
+        invoiceDate:       invoiceDateStr,
+        billingMonth:      cra.billingMonth,
+        sellerCompanyName: tenantName(),
+        sellerAddress:     sellerSettings.address || '',
+        sellerRcs:         sellerSettings.rcs     || '',
+        clientCompanyName: clientName,
+        clientAddress,
+        clientRcs,
+        projectName,
+        invoiceTitle:      `Prestation informatique — ${cra.billingMonth}`,
+        daysCount:         days,
+        unitPriceHt:       tjm,
+        totalHt,
+        vatRate,
+        totalTtc,
+        currency:          'EUR',
+        paymentDueDate:    dueStr,
+        latePaymentClause: '',
+        notes:             null,
+        absencePeriods:    null,
+        consultantEmail:   cons.email || null,
+      }),
     });
     if (res.ok) {
-      showToast(`Facture ${invoiceName} generee automatiquement (${totalHt.toFixed(2)} € HT).`, 'ok');
+      const result = await res.json().catch(() => ({}));
+      const name = result.invoiceName ? ' ' + result.invoiceName : '';
+      showToast(`Facture${name} générée — ${clientName} (${totalHt.toFixed(2)} € HT).`, 'ok');
     } else {
-      showToast(`CRA valide — facture non generee : ${await res.text()}`, 'err');
+      showToast(`CRA validé — facture non générée pour ${clientName}. Contactez votre administrateur.`, 'err');
     }
   } catch (e) {
-    showToast(`CRA valide — erreur generation facture : ${e.message}`, 'err');
+    showToast(`CRA validé — erreur génération facture : ${e.message}`, 'err');
   }
+}
+
+/**
+ * Génère automatiquement les factures après validation d'un CRA.
+ * — Flux multi-projets : une facture par (projectId → assignment) si les entries ont des projectIds
+ * — Fallback : une seule facture globale (cons.tjm × totalDays) pour les anciens CRA
+ */
+async function generateInvoiceOnValidation(cra, cons) {
+  await loadSellerSettings();
+
+  // Grouper les entries TRAVAIL par projectId
+  const projectDays = {};
+  for (const entry of (cra.entries || [])) {
+    if (entry.type === 'TRAVAIL' && entry.value > 0 && entry.projectId) {
+      projectDays[entry.projectId] = (projectDays[entry.projectId] || 0) + entry.value;
+    }
+  }
+
+  const projectIds = Object.keys(projectDays);
+  if (projectIds.length > 0 && cons?.id) {
+    // Récupérer les assignments du consultant pour avoir client + TJM par projet
+    let assignments = [];
+    try {
+      const aRes = await fetch(`${base()}/consultants/${cons.id}/assignments`, { headers: adminHeaders() });
+      if (aRes.ok) assignments = await aRes.json();
+    } catch { /* non-bloquant */ }
+
+    let generated = 0;
+    for (const projectId of projectIds) {
+      const assignment = assignments.find(a => a.project?.id === projectId);
+      if (!assignment) continue;
+      const days = projectDays[projectId];
+      const tjm  = parseFloat(assignment.tjm) || 0;
+      if (tjm <= 0 || days <= 0) continue;
+      await generateOneInvoice(cra, cons, {
+        clientName:    assignment.client?.name    || '',
+        clientAddress: assignment.client?.address || '',
+        clientRcs:     assignment.client?.rcs     || '',
+        projectName:   assignment.project?.name   || '',
+        tjm,
+        days,
+      });
+      generated++;
+    }
+    if (generated > 0) return;
+  }
+
+  // Fallback — CRA sans projectId par entry (ancienne saisie) ou sans assignments
+  const tjm  = parseFloat(cons.tjm) || 0;
+  const days = parseFloat(cra.totalDays) || 0;
+  if (tjm <= 0 || days <= 0) return;
+  await generateOneInvoice(cra, cons, {
+    clientName:    (cons.clientName || '').trim() || (cra.clientCompany || '').trim(),
+    clientAddress: cons.clientAddress || '',
+    clientRcs:     cons.clientRcs     || '',
+    projectName:   '',
+    tjm,
+    days,
+  });
 }
 
 /**
@@ -1290,10 +1366,9 @@ async function generateInvoiceOnValidation(cra, cons) {
  */
 async function deleteInvoiceForCra(cra, cons) {
   try {
-    const bm      = cra.billingMonth;
-    const company = (cons.company || '').trim() || tenantName();
-    const email   = cons.email || '';
-    const p       = new URLSearchParams({ start: bm, end: bm, company });
+    const bm    = cra.billingMonth;
+    const email = cons.email || '';
+    const p     = new URLSearchParams({ start: bm, end: bm });
     if (email) p.set('consultantEmail', email);
 
     const res = await fetch(`${invoiceBase()}/invoices/report?${p}`, { headers: authHeaders() });
@@ -1308,7 +1383,7 @@ async function deleteInvoiceForCra(cra, cons) {
       const delRes = await fetch(`${invoiceBase()}/invoices/delete`, {
         method:  'POST',
         headers: adminHeaders(),
-        body:    JSON.stringify({ billingMonth: bm, sellerCompanyName: company, invoiceName }),
+        body:    JSON.stringify({ billingMonth: bm, sellerCompanyName: tenantName(), invoiceName }),
       });
       if (delRes.ok) showToast(`Facture ${invoiceName} supprimee (CRA refuse).`, 'ok');
     }
@@ -1330,11 +1405,17 @@ function wireCraActions(container, cons) {
           headers: adminHeaders(),
           body: JSON.stringify(cra),
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
         showToast(`CRA ${cra.billingMonth} valide.`, 'ok');
         await generateInvoiceOnValidation(cra, cons);
         loadConsCra(cons);
         loadDetailKpis(cons);
+        // Expand Factures date range to include this CRA's billing month, then refresh
+        const invStart = document.getElementById('cons-inv-start');
+        if (cra.billingMonth && (!invStart.value || cra.billingMonth < invStart.value)) {
+          invStart.value = cra.billingMonth;
+        }
+        loadConsInvoices(cons);
       } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✓ Valider'; }
     });
   });
@@ -1354,7 +1435,7 @@ function wireCraActions(container, cons) {
           headers: adminHeaders(),
           body: JSON.stringify(cra),
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
         showToast(`CRA ${cra.billingMonth} refuse.`, 'ok');
         await deleteInvoiceForCra(cra, cons);
         loadConsCra(cons);
@@ -1389,7 +1470,7 @@ function wireCraActions(container, cons) {
           headers: adminHeaders(),
           body: JSON.stringify(cra),
         });
-        if (!res.ok) throw new Error(await res.text());
+        if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
         showToast(`CRA ${cra.billingMonth} remis en SOUMIS.`, 'ok');
         loadConsCra(cons);
         loadDetailKpis(cons);
@@ -1436,7 +1517,7 @@ async function loadConsNotes(cons) {
   const resultEl = document.getElementById('cons-notes-result');
   const approveAllBtn = document.getElementById('cons-notes-approve-all');
 
-  if (!month) { setStatus(statusEl, 'Selectionnez un mois.', 'err'); return; }
+  if (!month) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
   setStatus(statusEl, 'Chargement…');
   resultEl.style.display = 'none';
   approveAllBtn.style.display = 'none';
@@ -1447,7 +1528,7 @@ async function loadConsNotes(cons) {
     const start = `${month}-01`;
     const end   = `${month}-${new Date(ny, nm, 0).getDate()}`;
     const p     = new URLSearchParams({ start, end, consultantEmail: cons.email });
-    const res   = await fetch(`${base()}/expenses/report?${p}`, { headers: authHeaders() });
+    const res   = await fetch(`${base()}/expenses/report?${p}`, { headers: adminHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data  = await res.json();
     const expenses = Array.isArray(data) ? data : (data.expenses || []);
@@ -1458,15 +1539,21 @@ async function loadConsNotes(cons) {
       return;
     }
 
-    setStatus(statusEl, `${expenses.length} depense${expenses.length > 1 ? 's' : ''} trouvee${expenses.length > 1 ? 's' : ''}.`, 'ok');
+    // Compteurs et total pour la synthèse
+    const nbPending  = expenses.filter(x => !x.approvalStatus || x.approvalStatus === 'PENDING').length;
+    const nbApproved = expenses.filter(x => x.approvalStatus === 'APPROVED').length;
+    const nbRefused  = expenses.filter(x => x.approvalStatus === 'REFUSED').length;
+    const total      = expenses.reduce((s, x) => s + (x.amount || 0), 0);
+    const currency   = expenses.find(x => x.currency)?.currency || 'EUR';
+
+    setStatus(statusEl, `${expenses.length} dépense${expenses.length > 1 ? 's' : ''} — ${nbPending} en attente · ${nbApproved} approuvée${nbApproved > 1 ? 's' : ''} · ${nbRefused} refusée${nbRefused > 1 ? 's' : ''} · Total : ${total.toFixed(2)} ${currency}`, 'ok');
     resultEl.innerHTML = renderExpenseList(expenses);
     resultEl.style.display = '';
 
-    // "Tout approuver" uniquement si des depenses sont encore PENDING
-    const hasPending = expenses.some(x => !x.approvalStatus || x.approvalStatus === 'PENDING');
-    approveAllBtn.style.display = hasPending ? '' : 'none';
+    // "Tout approuver" uniquement si des dépenses sont encore en attente
+    approveAllBtn.style.display = nbPending > 0 ? '' : 'none';
 
-    // PDF / Excel uniquement quand toutes les depenses ont un statut final
+    // PDF / Excel uniquement quand toutes les dépenses ont un statut final
     const allSettled = expenses.every(x => x.approvalStatus === 'APPROVED' || x.approvalStatus === 'REFUSED');
     document.getElementById('cons-notes-pdf').style.display   = allSettled ? '' : 'none';
     document.getElementById('cons-notes-excel').style.display = allSettled ? '' : 'none';
@@ -1479,8 +1566,8 @@ async function loadConsNotes(cons) {
 
 function renderExpenseList(expenses) {
   const APPROVAL_BADGE = {
-    APPROVED: '<span class="status-badge green">Approuve</span>',
-    REFUSED:  '<span class="status-badge red">Refuse</span>',
+    APPROVED: '<span class="status-badge green">Approuvé</span>',
+    REFUSED:  '<span class="status-badge red">Refusé</span>',
     PENDING:  '<span class="status-badge orange">En attente</span>',
   };
 
@@ -1488,21 +1575,28 @@ function renderExpenseList(expenses) {
     const approvalStatus = exp.approvalStatus || null;
     const badge = approvalStatus
       ? (APPROVAL_BADGE[approvalStatus] || '<span class="status-badge grey">—</span>')
-      : '<span class="status-badge grey">Non soumis</span>';
+      : '<span class="status-badge grey">En attente</span>';
 
-    const expenseId = exp.id || exp.weaviateId || '';
+    // Utiliser weaviateId (UUID) — le backend attend un UUID pour approve/refuse
+    const expenseId = exp.weaviateId || '';
 
+    const isPending = !approvalStatus || approvalStatus === 'PENDING';
     let actions = '';
-    if (expenseId) {
+    if (expenseId && isPending) {
       actions = `
         <div class="cra-action-row">
-          <button class="btn-approve" data-id="${escapeHtml(expenseId)}">✓</button>
+          <button class="btn-approve" data-id="${escapeHtml(expenseId)}">✓ Approuver</button>
           <div class="refuse-inline">
-            <input type="text" class="refuse-reason-input" placeholder="Motif…">
-            <button class="btn-refuse" data-id="${escapeHtml(expenseId)}">✗</button>
+            <input type="text" class="refuse-reason-input" placeholder="Motif de refus…">
+            <button class="btn-refuse" data-id="${escapeHtml(expenseId)}">✗ Refuser</button>
           </div>
         </div>`;
     }
+
+    const modeLabel = exp.paymentMode === 'Business' ? 'Business' : (exp.paymentMode === 'Personnel' ? 'Personnel' : (exp.paymentMode || ''));
+    const modeBadge = modeLabel
+      ? `<span class="badge-mode ${modeLabel === 'Business' ? 'badge-mode-pro' : 'badge-mode-perso'}">${escapeHtml(modeLabel)}</span>`
+      : '';
 
     return `
       <div class="approval-row">
@@ -1511,8 +1605,8 @@ function renderExpenseList(expenses) {
           <span class="approval-detail">${escapeHtml(exp.description || '—')}</span>
         </div>
         <div class="approval-right">
-          <span class="approval-amount">${exp.amount != null ? Number(exp.amount).toFixed(2) + ' ' + (exp.currency || 'EUR') : '—'}</span>
-          <span class="approval-mode">${escapeHtml(exp.paymentMode || '')}</span>
+          <span class="approval-amount">${exp.amount != null ? Number(exp.amount).toFixed(2) + '\u00a0' + (exp.currency || 'EUR') : '—'}</span>
+          ${modeBadge}
           ${badge}
           ${approvalStatus === 'REFUSED' && exp.approvalNote ? `<p class="refused-reason">${escapeHtml(exp.approvalNote)}</p>` : ''}
           ${actions}
@@ -1525,7 +1619,7 @@ function wireExpenseActions(container, cons) {
   container.querySelectorAll('.btn-approve').forEach(btn => {
     btn.addEventListener('click', async () => {
       const expenseId = btn.dataset.id;
-      if (!expenseId) { showToast('ID manquant pour cet enregistrement.', 'err'); return; }
+      if (!expenseId) { showToast('Identifiant manquant pour cette dépense.', 'err'); return; }
       btn.disabled = true; btn.textContent = '…';
       try {
         const res = await fetch(`${base()}/expenses/approve`, {
@@ -1533,18 +1627,19 @@ function wireExpenseActions(container, cons) {
           headers: adminHeaders(),
           body: JSON.stringify({ weaviateId: expenseId }),
         });
-        if (!res.ok) throw new Error(await res.text());
-        showToast('Depense approuvee.', 'ok');
+        if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
+        showToast('Dépense approuvée.', 'ok');
         loadConsNotes(cons);
         loadDetailKpis(cons);
-      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✓'; }
+        loadCardKpis(cons);
+      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✓ Approuver'; }
     });
   });
 
   container.querySelectorAll('.btn-refuse').forEach(btn => {
     btn.addEventListener('click', async () => {
       const expenseId = btn.dataset.id;
-      if (!expenseId) { showToast('ID manquant pour cet enregistrement.', 'err'); return; }
+      if (!expenseId) { showToast('Identifiant manquant pour cette dépense.', 'err'); return; }
       const input = btn.closest('.refuse-inline')?.querySelector('.refuse-reason-input');
       const note  = input?.value?.trim() || '';
       btn.disabled = true; btn.textContent = '…';
@@ -1554,20 +1649,21 @@ function wireExpenseActions(container, cons) {
           headers: adminHeaders(),
           body: JSON.stringify({ weaviateId: expenseId, note }),
         });
-        if (!res.ok) throw new Error(await res.text());
-        showToast('Depense refusee.', 'ok');
+        if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
+        showToast('Dépense refusée.', 'ok');
         loadConsNotes(cons);
         loadDetailKpis(cons);
-      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✗'; }
+        loadCardKpis(cons);
+      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✗ Refuser'; }
     });
   });
 }
 
 async function approveAllNotes(cons) {
   if (!loadedExpenses.length) return;
-  const toApprove = loadedExpenses.filter(e => (e.id || e.weaviateId) && e.approvalStatus !== 'APPROVED');
-  if (!toApprove.length) { showToast('Toutes les depenses sont deja approuvees.'); return; }
-  if (!confirm(`Approuver les ${toApprove.length} depenses de ${cons.name} ?`)) return;
+  const toApprove = loadedExpenses.filter(e => e.weaviateId && e.approvalStatus !== 'APPROVED');
+  if (!toApprove.length) { showToast('Toutes les dépenses sont déjà approuvées.'); return; }
+  if (!confirm(`Approuver les ${toApprove.length} dépense${toApprove.length > 1 ? 's' : ''} de ${cons.name} ?`)) return;
 
   let ok = 0, err = 0;
   for (const exp of toApprove) {
@@ -1575,28 +1671,50 @@ async function approveAllNotes(cons) {
       const res = await fetch(`${base()}/expenses/approve`, {
         method: 'POST',
         headers: adminHeaders(),
-        body: JSON.stringify({ weaviateId: exp.id || exp.weaviateId }),
+        body: JSON.stringify({ weaviateId: exp.weaviateId }),
       });
       if (res.ok) ok++; else err++;
     } catch { err++; }
   }
-  showToast(`${ok} approuvee(s)${err ? `, ${err} erreur(s)` : ''}.`, err ? '' : 'ok');
+  showToast(`${ok} approuvée${ok > 1 ? 's' : ''}${err ? ` · ${err} erreur${err > 1 ? 's' : ''}` : ''}.`, err ? '' : 'ok');
   loadConsNotes(cons);
   loadDetailKpis(cons);
+  loadCardKpis(cons);
 }
 
-function downloadNotesPdf(cons) {
+async function downloadNotesPdf(cons) {
   const month = document.getElementById('cons-notes-month').value;
-  if (!month) { showToast('Selectionnez un mois.', 'err'); return; }
-  const p = new URLSearchParams({ month, consultantEmail: cons.email });
-  window.open(`${base()}/expenses/report/pdf/month?${p}`, '_blank');
+  if (!month) { showToast('Sélectionnez un mois.', 'err'); return; }
+  try {
+    const p   = new URLSearchParams({ month, consultantEmail: cons.email });
+    const res = await fetch(`${base()}/expenses/report/pdf/month?${p}`, { headers: adminHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href     = URL.createObjectURL(blob);
+    link.download = `notes-${cons.name || cons.email}-${month}.pdf`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (e) { showToast('Erreur téléchargement PDF : ' + e.message, 'err'); }
 }
 
-function downloadNotesExcel(cons) {
+async function downloadNotesExcel(cons) {
   const month = document.getElementById('cons-notes-month').value;
-  if (!month) { showToast('Selectionnez un mois.', 'err'); return; }
-  const p = new URLSearchParams({ month, consultantEmail: cons.email });
-  window.open(`${base()}/expenses/report/excel?${p}`, '_blank');
+  if (!month) { showToast('Sélectionnez un mois.', 'err'); return; }
+  try {
+    const [ny, nm] = month.split('-').map(Number);
+    const start    = `${month}-01`;
+    const end      = `${month}-${new Date(ny, nm, 0).getDate()}`;
+    const p   = new URLSearchParams({ start, end, consultantEmail: cons.email });
+    const res = await fetch(`${base()}/expenses/report/excel?${p}`, { headers: adminHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href     = URL.createObjectURL(blob);
+    link.download = `notes-${cons.name || cons.email}-${month}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (e) { showToast('Erreur téléchargement Excel : ' + e.message, 'err'); }
 }
 
 // ============================================================
@@ -1607,7 +1725,6 @@ let loadedInvoices = [];
 async function loadConsInvoices(cons) {
   const start    = document.getElementById('cons-inv-start').value;
   const end      = document.getElementById('cons-inv-end').value;
-  const company  = cons?.company || document.getElementById('cons-inv-company').value.trim() || tenantName();
   const statusEl = document.getElementById('cons-inv-status');
   const resultEl = document.getElementById('cons-inv-result');
   const delAllBtn = document.getElementById('cons-inv-delete-all');
@@ -1618,7 +1735,7 @@ async function loadConsInvoices(cons) {
   loadedInvoices = [];
 
   try {
-    const p   = new URLSearchParams({ start, end, company, consultantEmail: cons?.email || '' });
+    const p   = new URLSearchParams({ start, end, consultantEmail: cons?.email || '' });
     const res = await fetch(`${invoiceBase()}/invoices/report?${p}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const items = await res.json();
@@ -1649,7 +1766,7 @@ async function downloadInvoiceFile(inv, format) {
   try {
     const res = await fetch(url, {
       method:  'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      headers: adminHeaders(),
       body,
     });
     if (!res.ok) { showToast(`Erreur telechargement ${format.toUpperCase()} : HTTP ${res.status}`, 'err'); return; }
@@ -1715,7 +1832,7 @@ async function deleteInvoice(inv, cons) {
         sellerCompanyName: inv.sellerCompanyName  || '',
       }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
     showToast(`Facture ${inv.invoiceName} supprimee.`, 'ok');
     loadConsInvoices(cons);
   } catch (e) {
@@ -1775,38 +1892,36 @@ function renderProjectsTable(filter = '') {
   }
 
   wrap.innerHTML = `
-    <div class="card" style="padding:0;overflow:hidden">
-      <table class="proj-table">
-        <thead>
-          <tr>
-            <th>Nom</th>
-            <th>Description</th>
-            <th style="width:100px"></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filtered.map(p => `
-            <tr data-proj-id="${escapeHtml(p.id)}">
-              <td style="font-weight:500">${escapeHtml(p.name)}</td>
-              <td class="proj-desc">${escapeHtml(p.description || '—')}</td>
-              <td>
-                <button class="btn-ghost" style="font-size:12px;padding:4px 10px"
-                  onclick="openEditProject('${escapeHtml(p.id)}','${escapeHtml(p.name)}','${escapeHtml(p.description || '')}')">
-                  Modifier
-                </button>
-                <button class="proj-remove-btn" title="Supprimer"
-                  onclick="deleteProject('${escapeHtml(p.id)}')">
-                  <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-                </button>
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+    <div class="data-list">
+      <div class="data-list-header dl-projects-grid">
+        <span>Projet</span>
+        <span>Description</span>
+        <span></span>
+      </div>
+      ${filtered.map(p => `
+        <div class="data-list-row dl-projects-grid">
+          <div class="cell-primary">
+            <div class="row-icon ${rowIconVariant(p.name)}">${getInitials(p.name)}</div>
+            <span>${escapeHtml(p.name)}</span>
+          </div>
+          <div class="cell-sub">${escapeHtml(p.description || '—')}</div>
+          <div class="cell-actions">
+            <button class="btn-row-edit"
+              onclick="openEditProject('${escapeHtml(p.id)}','${escapeHtml(p.name)}','${escapeHtml(p.description || '')}')">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Modifier
+            </button>
+            <button class="btn-row-delete" title="Supprimer"
+              onclick="deleteProject('${escapeHtml(p.id)}')">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            </button>
+          </div>
+        </div>`).join('')}
     </div>`;
 }
 
 function initProjects() {
-  document.getElementById('proj-search').addEventListener('input', () => renderProjectsTable());
+  document.getElementById('proj-search').addEventListener('input', debounce(() => renderProjectsTable(), 150));
 
   document.getElementById('proj-add-btn').addEventListener('click', () => {
     document.getElementById('proj-form-id').value    = '';
@@ -1843,9 +1958,10 @@ async function saveProject() {
 
   if (!name) { setStatus(statusEl, 'Le nom est obligatoire.', 'error'); return; }
 
-  const isEdit = !!id;
-  const url    = isEdit ? `${base()}/projects/${id}` : `${base()}/projects`;
-  const method = isEdit ? 'PUT' : 'POST';
+  const isEdit  = !!id;
+  const url     = isEdit ? `${base()}/projects/${id}` : `${base()}/projects`;
+  const method  = isEdit ? 'PUT' : 'POST';
+  const restore = setBtnLoading('proj-form-save');
 
   try {
     const res = await fetch(url, {
@@ -1853,11 +1969,13 @@ async function saveProject() {
       headers: adminHeaders(),
       body: JSON.stringify({ name, description: desc }),
     });
+    restore();
     if (!res.ok) { setStatus(statusEl, 'Erreur lors de la sauvegarde.', 'error'); return; }
     document.getElementById('proj-form-wrap').style.display = 'none';
     showToast(isEdit ? 'Projet modifié.' : 'Projet créé.', 'ok');
     loadProjects();
   } catch {
+    restore();
     setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
   }
 }
@@ -1878,90 +1996,143 @@ async function deleteProject(id) {
 }
 
 // ============================================================
-// CONSULTANT ↔ PROJETS — onglet "Projets" dans le détail
+// TRIOS PROJET / CLIENT / TJM — section assignments
 // ============================================================
-async function loadConsultantProjects(cons) {
+async function loadConsultantAssignments(cons) {
   if (!cons?.id) return;
-  const listEl   = document.getElementById('cons-proj-list');
-  const statusEl = document.getElementById('cons-proj-status');
-  const selectEl = document.getElementById('cons-proj-select');
-  setStatus(statusEl, 'Chargement…');
-
+  const listEl   = document.getElementById('cons-assignments-list');
+  const statusEl = document.getElementById('cons-assignments-status');
+  if (listEl) listEl.innerHTML = '<p style="color:var(--muted);font-size:13px">Chargement…</p>';
+  if (statusEl) statusEl.textContent = '';
   try {
-    // Charger les projets du consultant et tous les projets du tenant en parallèle
-    const [consRes, allRes] = await Promise.all([
-      fetch(`${base()}/projects/by-consultant/${cons.id}`, { headers: authHeaders() }),
-      fetch(`${base()}/projects`, { headers: authHeaders() }),
-    ]);
-
-    const consProjects = consRes.ok ? await consRes.json() : [];
-    allProjects        = allRes.ok  ? await allRes.json()  : [];
-
-    setStatus(statusEl, '');
-
-    // Remplir le select avec les projets non encore assignés
-    const assignedIds = new Set(consProjects.map(p => p.id));
-    selectEl.innerHTML = '<option value="">-- Sélectionner un projet --</option>' +
-      allProjects
-        .filter(p => !assignedIds.has(p.id))
-        .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
-        .join('');
-
-    // Rendre la liste des projets assignés
-    if (!consProjects.length) {
-      listEl.innerHTML = `<p style="color:var(--muted);font-size:13px">Aucun projet assigné.</p>`;
-      return;
-    }
-
-    listEl.innerHTML = consProjects.map(p => `
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-        <span class="proj-tag">
-          <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/></svg>
-          ${escapeHtml(p.name)}
-        </span>
-        ${p.description ? `<span style="font-size:12px;color:var(--muted)">${escapeHtml(p.description)}</span>` : ''}
-        <button class="proj-remove-btn" title="Retirer" onclick="removeProjectFromConsultant('${escapeHtml(cons.id)}','${escapeHtml(p.id)}')">
-          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>`).join('');
-
+    const res = await fetch(`${base()}/consultants/${cons.id}/assignments`, { headers: adminHeaders() });
+    const assignments = res.ok ? await res.json() : [];
+    renderAssignmentsList(assignments);
   } catch {
-    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+    if (statusEl) statusEl.textContent = 'Impossible de joindre le serveur.';
+    if (listEl)   listEl.innerHTML = '';
   }
-
-  // Bouton "Assigner"
-  const assignBtn = document.getElementById('cons-proj-assign-btn');
-  assignBtn.onclick = () => assignProjectToConsultant(cons);
 }
 
-async function assignProjectToConsultant(cons) {
-  const selectEl = document.getElementById('cons-proj-select');
-  const projectId = selectEl.value;
-  if (!projectId) return;
-  const statusEl = document.getElementById('cons-proj-status');
+function renderAssignmentsList(assignments) {
+  const listEl = document.getElementById('cons-assignments-list');
+  if (!listEl) return;
+  if (!assignments.length) {
+    listEl.innerHTML = `<p style="color:var(--muted);font-size:13px">Aucun trio assigné.</p>`;
+    return;
+  }
+  listEl.innerHTML = `
+    <div class="data-list">
+      <div class="data-list-header dl-assign-grid">
+        <span>Projet</span>
+        <span>Client</span>
+        <span>TJM</span>
+        <span></span>
+      </div>
+      ${assignments.map(a => `
+        <div class="data-list-row dl-assign-grid">
+          <div class="cell-primary">
+            <div class="row-icon ${rowIconVariant(a.project?.name)}">${getInitials(a.project?.name)}</div>
+            <span>${escapeHtml(a.project?.name || '—')}</span>
+          </div>
+          <div>
+            <span class="dl-badge dl-badge-blue">${escapeHtml(a.client?.name || '—')}</span>
+          </div>
+          <div class="cell-amount">${a.tjm != null ? a.tjm + ' €/j' : '—'}</div>
+          <div class="cell-actions">
+            <button class="btn-row-edit"
+              onclick="openAssignmentModal(currentConsultant, ${JSON.stringify(a).replace(/"/g,'&quot;')})">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Modifier
+            </button>
+            <button class="btn-row-delete"
+              onclick="deleteAssignment(currentConsultant, '${escapeHtml(a.id)}', '${escapeHtml(a.project?.name || '')}', '${escapeHtml(a.client?.name || '')}')">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            </button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+async function openAssignmentModal(_cons, assignment) {
+  document.getElementById('assignment-modal-title').textContent = assignment ? 'Modifier le trio' : 'Ajouter un trio';
+  document.getElementById('assignment-modal-id').value  = assignment?.id  || '';
+  document.getElementById('assignment-tjm').value       = assignment?.tjm != null ? assignment.tjm : '';
+
+  // Load projects & clients in parallel
+  const [projRes, cliRes] = await Promise.all([
+    fetch(`${base()}/projects`, { headers: adminHeaders() }),
+    fetch(`${base()}/clients`,  { headers: adminHeaders() }),
+  ]);
+  const projects = projRes.ok ? await projRes.json() : [];
+  const clients  = cliRes.ok  ? await cliRes.json()  : [];
+
+  const pSel = document.getElementById('assignment-project-select');
+  pSel.innerHTML = '<option value="">-- Sélectionner un projet --</option>'
+    + projects.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join('');
+  if (assignment?.project?.id) pSel.value = assignment.project.id;
+
+  const cSel = document.getElementById('assignment-client-select');
+  cSel.innerHTML = '<option value="">-- Sélectionner un client --</option>'
+    + clients.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('');
+  if (assignment?.client?.id) cSel.value = assignment.client.id;
+
+  document.getElementById('assignment-status').textContent = '';
+  document.getElementById('assignment-overlay').classList.remove('hidden');
+  document.getElementById('assignment-modal').classList.remove('hidden');
+}
+
+function closeAssignmentModal() {
+  document.getElementById('assignment-overlay').classList.add('hidden');
+  document.getElementById('assignment-modal').classList.add('hidden');
+}
+
+async function saveAssignment(cons) {
+  const statusEl = document.getElementById('assignment-status');
+  if (!cons?.id) {
+    statusEl.textContent = 'Consultant non encore synchronisé — rechargez la page.';
+    return;
+  }
+  const id        = document.getElementById('assignment-modal-id').value;
+  const projectId = document.getElementById('assignment-project-select').value;
+  const clientId  = document.getElementById('assignment-client-select').value;
+  const tjm       = parseFloat(document.getElementById('assignment-tjm').value);
+
+  if (!projectId) { statusEl.textContent = 'Le projet est obligatoire.'; return; }
+  if (!clientId)  { statusEl.textContent = 'Le client est obligatoire.'; return; }
+  if (!tjm || isNaN(tjm) || tjm <= 0) { statusEl.textContent = 'Le TJM est obligatoire et doit être supérieur à 0.'; return; }
+
+  const url     = id ? `${base()}/consultants/${cons.id}/assignments/${id}` : `${base()}/consultants/${cons.id}/assignments`;
+  const method  = id ? 'PUT' : 'POST';
+  const restore = setBtnLoading('assignment-save');
   try {
-    const res = await fetch(`${base()}/projects/${projectId}/consultants/${cons.id}`, {
-      method: 'POST',
-      headers: authHeaders(),
+    const res = await fetch(url, {
+      method,
+      headers: adminHeaders(),
+      body: JSON.stringify({ projectId, clientId, tjm }),
     });
-    if (!res.ok) { setStatus(statusEl, 'Erreur lors de l\'assignation.', 'error'); return; }
-    showToast('Projet assigné.', 'ok');
-    loadConsultantProjects(cons);
+    restore();
+    if (!res.ok) { statusEl.textContent = 'Erreur lors de la sauvegarde.'; return; }
+    showToast(id ? 'Trio mis à jour.' : 'Trio ajouté.', 'ok');
+    closeAssignmentModal();
+    loadConsultantAssignments(cons);
   } catch {
-    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+    restore();
+    statusEl.textContent = 'Impossible de joindre le serveur.';
   }
 }
 
-async function removeProjectFromConsultant(consultantId, projectId) {
-  if (!confirm('Retirer ce projet du consultant ?')) return;
+async function deleteAssignment(cons, assignmentId, projectName = '', clientName = '') {
+  const label = [projectName, clientName].filter(Boolean).join(' / ');
+  if (!confirm(`Supprimer le trio ${label} ?`)) return;
   try {
-    const res = await fetch(`${base()}/projects/${projectId}/consultants/${consultantId}`, {
+    const res = await fetch(`${base()}/consultants/${cons.id}/assignments/${assignmentId}`, {
       method: 'DELETE',
-      headers: authHeaders(),
+      headers: adminHeaders(),
     });
-    if (!res.ok) { showToast('Erreur lors du retrait.', 'error'); return; }
-    showToast('Projet retiré.', 'ok');
-    if (currentConsultant?.id === consultantId) loadConsultantProjects(currentConsultant);
+    if (!res.ok) { showToast('Erreur lors de la suppression.', 'error'); return; }
+    showToast('Trio supprimé.', 'ok');
+    loadConsultantAssignments(cons);
   } catch {
     showToast('Impossible de joindre le serveur.', 'error');
   }
@@ -2024,44 +2195,43 @@ function renderClientsTable() {
   }
 
   wrap.innerHTML = `
-    <div class="card" style="padding:0;overflow:hidden">
-      <table class="proj-table">
-        <thead>
-          <tr>
-            <th>Nom</th>
-            <th>Adresse</th>
-            <th>RCS</th>
-            <th>Contact</th>
-            <th>Email contact</th>
-            <th style="width:100px"></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${filtered.map(c => `
-            <tr>
-              <td style="font-weight:500">${escapeHtml(c.name)}</td>
-              <td class="proj-desc">${escapeHtml(c.address || '—')}</td>
-              <td>${escapeHtml(c.rcs || '—')}</td>
-              <td>${escapeHtml(c.contactName || '—')}</td>
-              <td>${escapeHtml(c.contactEmail || '—')}</td>
-              <td>
-                <button class="btn-ghost" style="font-size:12px;padding:4px 10px"
-                  onclick="openEditClient('${escapeHtml(c.id)}','${escapeHtml(c.name)}','${escapeHtml(c.address||'')}','${escapeHtml(c.rcs||'')}','${escapeHtml(c.contactName||'')}','${escapeHtml(c.contactEmail||'')}')">
-                  Modifier
-                </button>
-                <button class="proj-remove-btn" title="Supprimer"
-                  onclick="deleteClient('${escapeHtml(c.id)}')">
-                  <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-                </button>
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+    <div class="data-list">
+      <div class="data-list-header dl-clients-grid">
+        <span>Client</span>
+        <span>Adresse</span>
+        <span>RCS / SIRET</span>
+        <span>Contact</span>
+        <span></span>
+      </div>
+      ${filtered.map(c => `
+        <div class="data-list-row dl-clients-grid">
+          <div class="cell-primary">
+            <div class="row-icon ${rowIconVariant(c.name)}">${getInitials(c.name)}</div>
+            <div>
+              <div>${escapeHtml(c.name)}</div>
+              ${c.contactEmail ? `<div class="cell-sub">${escapeHtml(c.contactEmail)}</div>` : ''}
+            </div>
+          </div>
+          <div class="cell-sub">${escapeHtml(c.address || '—')}</div>
+          <div>${c.rcs ? `<span class="dl-badge dl-badge-muted">${escapeHtml(c.rcs)}</span>` : '<span class="cell-sub">—</span>'}</div>
+          <div class="cell-sub">${escapeHtml(c.contactName || '—')}</div>
+          <div class="cell-actions">
+            <button class="btn-row-edit"
+              onclick="openEditClient('${escapeHtml(c.id)}','${escapeHtml(c.name)}','${escapeHtml(c.address||'')}','${escapeHtml(c.rcs||'')}','${escapeHtml(c.contactName||'')}','${escapeHtml(c.contactEmail||'')}')">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Modifier
+            </button>
+            <button class="btn-row-delete" title="Désactiver"
+              onclick="deleteClient('${escapeHtml(c.id)}')">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            </button>
+          </div>
+        </div>`).join('')}
     </div>`;
 }
 
 function initClients() {
-  document.getElementById('client-search').addEventListener('input', () => renderClientsTable());
+  document.getElementById('client-search').addEventListener('input', debounce(() => renderClientsTable(), 150));
 
   document.getElementById('client-add-btn').addEventListener('click', () => {
     document.getElementById('client-form-id').value           = '';
@@ -2107,9 +2277,10 @@ async function saveClient() {
 
   if (!name) { setStatus(statusEl, 'Le nom est obligatoire.', 'error'); return; }
 
-  const isEdit = !!id;
-  const url    = isEdit ? `${base()}/clients/${id}` : `${base()}/clients`;
-  const method = isEdit ? 'PUT' : 'POST';
+  const isEdit  = !!id;
+  const url     = isEdit ? `${base()}/clients/${id}` : `${base()}/clients`;
+  const method  = isEdit ? 'PUT' : 'POST';
+  const restore = setBtnLoading('client-form-save');
 
   try {
     const res = await fetch(url, {
@@ -2117,26 +2288,28 @@ async function saveClient() {
       headers: adminHeaders(),
       body: JSON.stringify({ name, address, rcs, contactName, contactEmail }),
     });
+    restore();
     if (!res.ok) { setStatus(statusEl, 'Erreur lors de la sauvegarde.', 'error'); return; }
     document.getElementById('client-form-wrap').style.display = 'none';
     allClients = [];  // force reload
     showToast(isEdit ? 'Client modifié.' : 'Client créé.', 'ok');
     loadClients();
   } catch {
+    restore();
     setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
   }
 }
 
 async function deleteClient(id) {
-  if (!confirm('Supprimer ce client ?')) return;
+  if (!confirm('Désactiver ce client ?')) return;
   try {
     const res = await fetch(`${base()}/clients/${id}`, {
       method: 'DELETE',
       headers: adminHeaders(),
     });
-    if (!res.ok) { showToast('Erreur lors de la suppression.', 'error'); return; }
+    if (!res.ok) { showToast('Erreur lors de la désactivation.', 'error'); return; }
     allClients = allClients.filter(c => c.id !== id);
-    showToast('Client supprimé.', 'ok');
+    showToast('Client désactivé.', 'ok');
     renderClientsTable();
   } catch {
     showToast('Impossible de joindre le serveur.', 'error');

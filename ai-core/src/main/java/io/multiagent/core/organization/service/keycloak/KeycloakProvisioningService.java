@@ -13,7 +13,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Provisions Keycloak realms for new tenants.
@@ -88,6 +90,35 @@ public class KeycloakProvisioningService {
      * @param tempPassword temporary password for internal users, null for external IdP users
      * @return the Keycloak user ID
      */
+    /**
+     * Returns the lowercase emails of all users assigned to the given realm role.
+     */
+    public Set<String> getUserEmailsWithRole(String realmName, String roleName) {
+        try (Keycloak kc = buildAdminClient()) {
+            List<UserRepresentation> users = kc.realm(realmName).users().list(0, 500);
+            log.info("[getUserEmailsWithRole] realm={} role={} totalUsers={}", realmName, roleName, users.size());
+            Set<String> result = new HashSet<>();
+            for (UserRepresentation u : users) {
+                if (u.getEmail() == null || u.getId() == null) continue;
+                try {
+                    boolean hasRole = kc.realm(realmName).users().get(u.getId())
+                            .roles().realmLevel().listEffective().stream()
+                            .anyMatch(r -> roleName.equalsIgnoreCase(r.getName()));
+                    if (hasRole) {
+                        result.add(u.getEmail().toLowerCase());
+                        log.info("[getUserEmailsWithRole] {} has role {}", u.getEmail(), roleName);
+                    }
+                } catch (Exception e) {
+                    log.warn("[getUserEmailsWithRole] role check failed for user={} role={}: {}", u.getEmail(), roleName, e.getMessage());
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("[getUserEmailsWithRole] failed role={} realm={}: {}", roleName, realmName, e.getMessage());
+            return Set.of();
+        }
+    }
+
     public String createConsultantUser(String realmName, String email, String firstName,
                                        String lastName, String tempPassword) {
         try (Keycloak kc = buildAdminClient()) {
