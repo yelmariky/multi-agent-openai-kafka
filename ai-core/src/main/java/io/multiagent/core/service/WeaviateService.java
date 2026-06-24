@@ -2,6 +2,7 @@ package io.multiagent.core.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.multiagent.core.client.LLMAIClient;
+import io.multiagent.core.governance.ExpenseGuard;
 import io.multiagent.core.cra.entity.CraEntity;
 import io.multiagent.core.cra.repository.CraJpaRepository;
 import io.multiagent.core.document.entity.DocumentChunkEntity;
@@ -47,6 +48,7 @@ public class WeaviateService {
     private final DocumentChunkJpaRepository documentChunkRepo;
     private final MissionRepository missionRepo;
     private final io.multiagent.core.organization.repository.ProjectRepository projectRepo;
+    private final ExpenseGuard expenseGuard;
 
     public WeaviateService(
             LLMAIClient llm,
@@ -57,7 +59,8 @@ public class WeaviateService {
             ConsultantProfileJpaRepository consultantProfileRepo,
             DocumentChunkJpaRepository documentChunkRepo,
             MissionRepository missionRepo,
-            io.multiagent.core.organization.repository.ProjectRepository projectRepo) {
+            io.multiagent.core.organization.repository.ProjectRepository projectRepo,
+            ExpenseGuard expenseGuard) {
         this.llm = llm;
         this.objectMapper = objectMapper;
         this.expenseRepo = expenseRepo;
@@ -67,6 +70,7 @@ public class WeaviateService {
         this.documentChunkRepo = documentChunkRepo;
         this.missionRepo = missionRepo;
         this.projectRepo = projectRepo;
+        this.expenseGuard = expenseGuard;
     }
 
     // -----------------------------------------------------------------------
@@ -156,8 +160,18 @@ public class WeaviateService {
                 }
             }
 
+            double confidence = 1.0; // LLM confidence not yet exposed in ExpenseItem; default to high
+            ExpenseGuard.GuardResult guard = expenseGuard.evaluate(
+                    entity.getAmount(), entity.getType(), entity.getExpenseDate(), entity.getKm(), confidence);
+            entity.setAiConfidenceScore(guard.confidenceScore());
+            entity.setAiFlags(guard.flagsAsJson());
+            entity.setAiReviewRequired(guard.requiresHumanReview());
+            if (guard.requiresHumanReview()) {
+                log.warn("ExpenseGuard: human review required (flags={}, expenseId={})", guard.flags(), item.getId());
+            }
+
             expenseRepo.save(entity);
-            log.info("Expense indexed (expenseId={})", item.getId());
+            log.info("Expense indexed (expenseId={}, aiReviewRequired={})", item.getId(), guard.requiresHumanReview());
         } catch (Exception e) {
             log.error("Exception indexExpense: {}", e.getMessage(), e);
         }

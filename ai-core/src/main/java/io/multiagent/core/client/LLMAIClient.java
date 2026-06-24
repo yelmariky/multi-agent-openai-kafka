@@ -17,6 +17,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import com.openai.errors.RateLimitException;
 import io.multiagent.core.exception.LLMClientException;
+import io.multiagent.core.governance.LlmAuditService;
+import io.multiagent.core.governance.LlmCallContext;
 import io.multiagent.core.model.ReRankScore;
 import io.multiagent.core.util.LLMUtils;
 import java.util.ArrayList;
@@ -45,6 +47,7 @@ public class LLMAIClient {
     private final int maxAttempts;
     private final long baseBackoffMs;
     private final long maxBackoffMs;
+    private final LlmAuditService auditService;
 
     public LLMAIClient(
             @Value("${openai.api-key}") String apiKey,
@@ -54,7 +57,8 @@ public class LLMAIClient {
             @Value("${openai.retry.max-attempts:4}") int maxAttempts,
             @Value("${openai.retry.base-backoff-ms:1500}") long baseBackoffMs,
             @Value("${openai.retry.max-backoff-ms:15000}") long maxBackoffMs,
-            MeterRegistry registry) {
+            MeterRegistry registry,
+            LlmAuditService auditService) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("openai.api-key must be provided (set OPENAI_API_KEY)");
         }
@@ -70,6 +74,7 @@ public class LLMAIClient {
         this.maxAttempts = Math.max(1, maxAttempts);
         this.baseBackoffMs = Math.max(100, baseBackoffMs);
         this.maxBackoffMs = Math.max(this.baseBackoffMs, maxBackoffMs);
+        this.auditService = auditService;
 
         log.info("LLMClient initialized — model={}, embedding={}", llmModel, embeddingModel);
     }
@@ -252,12 +257,21 @@ public class LLMAIClient {
 
     private <T> T safeCall(String operation, Supplier<T> supplier) {
         int attempt = 1;
+        long start = System.currentTimeMillis();
         while (true) {
             try {
-                return record(operation, supplier);
+                T result = record(operation, supplier);
+                int durationMs = (int) (System.currentTimeMillis() - start);
+                // Dériver le nom de feature depuis le nom d'opération (ex: "chat.json(model=...)" → "chat_json")
+                String feature = operation.replaceAll("\\(.*\\)", "").replace(".", "_");
+                auditService.recordSuccess(feature, llmModel, null, null, durationMs);
+                return result;
             } catch (Exception ex) {
                 boolean retryable = isRateLimited(ex) || is429(ex);
                 if (!retryable || attempt >= maxAttempts) {
+                    int durationMs = (int) (System.currentTimeMillis() - start);
+                    String feature = operation.replaceAll("\\(.*\\)", "").replace(".", "_");
+                    auditService.recordFailure(feature, llmModel, ex.getMessage(), durationMs);
                     throw new LLMClientException("OpenAI call failed for operation=" + operation, ex);
                 }
                 long sleepMs = computeBackoff(attempt);

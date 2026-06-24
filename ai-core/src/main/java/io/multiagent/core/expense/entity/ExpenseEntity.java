@@ -92,6 +92,16 @@ public class ExpenseEntity {
     @Column(name = "created_at")
     private Instant createdAt;
 
+    // --- Gouvernance IA ---
+    @Column(name = "ai_confidence_score")
+    private Double aiConfidenceScore;
+
+    @Column(name = "ai_flags", columnDefinition = "TEXT")
+    private String aiFlags;
+
+    @Column(name = "ai_review_required", nullable = false)
+    private boolean aiReviewRequired = false;
+
     @PrePersist
     void prePersist() {
         if (createdAt == null) createdAt = Instant.now();
