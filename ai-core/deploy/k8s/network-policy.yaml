@@ -66,6 +66,14 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # LLM Guard (même namespace multi-agent — sidecar de sécurité)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: llm-guard
+      ports:
+        - protocol: TCP
+          port: 8000
     # OpenAI API (internet — sortie vers n'importe quelle IP externe)
     - to:
         - ipBlock:

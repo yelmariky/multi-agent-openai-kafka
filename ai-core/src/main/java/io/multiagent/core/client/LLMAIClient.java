@@ -19,6 +19,7 @@ import com.openai.errors.RateLimitException;
 import io.multiagent.core.exception.LLMClientException;
 import io.multiagent.core.governance.LlmAuditService;
 import io.multiagent.core.governance.LlmCallContext;
+import io.multiagent.core.guard.LlmGuardClient;
 import io.multiagent.core.model.ReRankScore;
 import io.multiagent.core.util.LLMUtils;
 import java.util.ArrayList;
@@ -48,6 +49,7 @@ public class LLMAIClient {
     private final long baseBackoffMs;
     private final long maxBackoffMs;
     private final LlmAuditService auditService;
+    private final LlmGuardClient llmGuard;
 
     public LLMAIClient(
             @Value("${openai.api-key}") String apiKey,
@@ -58,7 +60,8 @@ public class LLMAIClient {
             @Value("${openai.retry.base-backoff-ms:1500}") long baseBackoffMs,
             @Value("${openai.retry.max-backoff-ms:15000}") long maxBackoffMs,
             MeterRegistry registry,
-            LlmAuditService auditService) {
+            LlmAuditService auditService,
+            LlmGuardClient llmGuard) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("openai.api-key must be provided (set OPENAI_API_KEY)");
         }
@@ -75,8 +78,10 @@ public class LLMAIClient {
         this.baseBackoffMs = Math.max(100, baseBackoffMs);
         this.maxBackoffMs = Math.max(this.baseBackoffMs, maxBackoffMs);
         this.auditService = auditService;
+        this.llmGuard = llmGuard;
 
-        log.info("LLMClient initialized — model={}, embedding={}", llmModel, embeddingModel);
+        log.info("LLMClient initialized — model={}, embedding={}, llmGuard={}",
+                llmModel, embeddingModel, llmGuard.isEnabled() ? "enabled" : "disabled");
     }
 
     // 🔹 Embedding
@@ -99,6 +104,9 @@ public class LLMAIClient {
     public ChatCompletion chatJson(String model, String system, String user) {
 
         String targetModel = resolveModel(model, this.llmModel);
+
+        // Scan du prompt utilisateur avant envoi (injection, secrets, PII)
+        llmGuard.scanPrompt(user);
 
         ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
                 .model(targetModel)
@@ -227,24 +235,25 @@ public class LLMAIClient {
                 "Tu réponds uniquement en JSON strict sans texte supplémentaire.",
                 prompt
         );
-        return extractContentOrThrow(completion);
+        return extractContentOrThrow(prompt, completion);
     }
 
     public String extractJSON(String systemPrompt, String userPrompt) {
         ChatCompletion completion = chatJson(
-                null,          // utilise le modèle par défaut (llmModel)
-                systemPrompt,  // system
-                userPrompt     // user
+                null,
+                systemPrompt,
+                userPrompt
         );
-        return extractContentOrThrow(completion);
+        return extractContentOrThrow(userPrompt, completion);
     }
 
-    private String extractContentOrThrow(ChatCompletion completion) {
+    private String extractContentOrThrow(String originalPrompt, ChatCompletion completion) {
         String content = LLMUtils.extractChatContent(completion).trim();
         if (content.isBlank()) {
             throw new LLMClientException("LLM returned an empty JSON payload");
         }
-        return content;
+        // Scan de la sortie LLM (non-bloquant — log seulement)
+        return llmGuard.scanOutput(originalPrompt, content);
     }
 
     public String getLlmModel() {

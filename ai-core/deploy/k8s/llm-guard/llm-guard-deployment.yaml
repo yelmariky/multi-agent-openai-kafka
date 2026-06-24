@@ -1,0 +1,77 @@
+---
+# Deployment — LLM Guard API (sidecar de sécurité LLM)
+# Namespace : multi-agent (même réseau que ai-core)
+# Image     : ghcr.io/protectai/llm-guard-api:latest
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-guard
+  namespace: multi-agent
+  labels:
+    app: llm-guard
+    component: ai-governance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llm-guard
+  template:
+    metadata:
+      labels:
+        app: llm-guard
+        component: ai-governance
+    spec:
+      containers:
+        - name: llm-guard
+          image: ghcr.io/protectai/llm-guard-api:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: LOG_LEVEL
+              value: "WARNING"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yml
+              subPath: config.yml
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"   # Les modèles transformer nécessitent de la mémoire
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 30   # Temps de chargement des modèles
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: llm-guard-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-guard
+  namespace: multi-agent
+  labels:
+    app: llm-guard
+spec:
+  selector:
+    app: llm-guard
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP

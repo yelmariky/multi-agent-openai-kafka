@@ -1,0 +1,44 @@
+---
+# ConfigMap — configuration YAML de LLM Guard API
+# Scanners actifs pour le projet multi-agent (notes de frais OCR, multi-tenant)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-guard-config
+  namespace: multi-agent
+data:
+  config.yml: |
+    # ── Scanners INPUT (prompt utilisateur / texte OCR) ──────────────────
+    input_scanners:
+      - type: PromptInjection
+        threshold: 0.5
+        # Détecte si un reçu forgé tente de détourner les instructions LLM
+
+      - type: Secrets
+        # Bloque si le texte OCR contient des clés API, tokens, mots de passe
+
+      - type: TokenLimit
+        limit: 4096
+        # Empêche les attaques par prompt surdimensionné
+
+      - type: Language
+        valid_languages: [fr, en]
+        threshold: 0.6
+        # Rejet des textes dans des langues inattendues (encodage malveillant)
+
+    # ── Scanners OUTPUT (réponse LLM) ─────────────────────────────────────
+    output_scanners:
+      - type: Relevance
+        threshold: 0.1
+        # Détecte une réponse hors-sujet (hallucination grossière)
+
+      - type: Sensitive
+        # Bloque si la réponse LLM contient des données sensibles d'un autre tenant
+
+      - type: NoRefusal
+        threshold: 0.5
+        # Alerte si le LLM refuse de répondre silencieusement (extraction ratée)
+
+    app:
+      log_level: WARNING
+      scan_fail_fast: false   # Accumule tous les flags avant de décider

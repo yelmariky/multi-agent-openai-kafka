@@ -1,0 +1,230 @@
+name: LLM Guard — Sécurité & Gouvernance IA
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      # Déclenché uniquement si ces fichiers changent (pas à chaque commit JS/CSS)
+      - "ai-core/src/main/java/io/multiagent/core/guard/**"
+      - "ai-core/src/main/java/io/multiagent/core/client/LLMAIClient.java"
+      - "ai-core/deploy/k8s/llm-guard/**"
+      - ".github/ci/**"
+      - ".github/workflows/llm-guard-ci.yml"
+  pull_request:
+    branches: [main, master]
+  # Scan complet programmé chaque lundi matin (détecte les régressions silencieuses)
+  schedule:
+    - cron: "0 7 * * 1"
+  # Déclenchement manuel (prod delivery, audit ponctuel)
+  workflow_dispatch:
+    inputs:
+      llmguard_url:
+        description: "URL LLM Guard API (laisser vide pour mode simulation)"
+        required: false
+        default: ""
+      fail_on_unavailable:
+        description: "Bloquer le build si LLM Guard est inaccessible ?"
+        type: boolean
+        default: false
+
+env:
+  JAVA_VERSION: "21"
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Job 1 : Tests unitaires guard (Java — rapide, 0 dépendance externe)
+  # ─────────────────────────────────────────────────────────────
+  guard-unit-tests:
+    name: Guard Unit Tests (Java)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Run LlmGuardClient tests
+        working-directory: ai-core
+        run: |
+          mvn test \
+            -Dtest="io.multiagent.core.guard.*" \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            --no-transfer-progress
+
+      - name: Publish guard test report
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: "ai-core/target/surefire-reports/TEST-*.xml"
+          check_name: "LLM Guard Unit Tests"
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 2 : Scan golden dataset via LLM Guard API
+  #          Soft par défaut sur PR (LLM Guard non déployé en CI)
+  #          Hard sur workflow_dispatch (livraison production)
+  # ─────────────────────────────────────────────────────────────
+  golden-dataset-scan:
+    name: Golden Dataset Scan (LLM Guard API)
+    runs-on: ubuntu-latest
+    needs: guard-unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Démarrer LLM Guard API (Docker)
+        id: start_llmguard
+        continue-on-error: true   # Ne bloque pas si Docker pull échoue
+        run: |
+          docker pull ghcr.io/protectai/llm-guard-api:latest --quiet
+          docker run -d \
+            --name llm-guard \
+            -p 8000:8000 \
+            -v ${{ github.workspace }}/ai-core/deploy/k8s/llm-guard/llm-guard-config.yaml:/app/config.yml \
+            ghcr.io/protectai/llm-guard-api:latest
+
+          # Attendre que l'API soit prête (max 90s — chargement des modèles transformer)
+          echo "Waiting for LLM Guard to start..."
+          for i in $(seq 1 18); do
+            if curl -sf http://localhost:8000/healthz > /dev/null 2>&1; then
+              echo "LLM Guard ready after $((i * 5))s"
+              echo "available=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "LLM Guard not ready after 90s"
+          echo "available=false" >> $GITHUB_OUTPUT
+
+      - name: Scan du golden dataset
+        env:
+          LLMGUARD_AVAILABLE: ${{ steps.start_llmguard.outputs.available }}
+          LLMGUARD_URL: ${{ github.event.inputs.llmguard_url || 'http://localhost:8000' }}
+          FAIL_ON_UNAVAILABLE: ${{ github.event.inputs.fail_on_unavailable || 'false' }}
+        run: |
+          SOFT_FLAG=""
+          if [ "$FAIL_ON_UNAVAILABLE" != "true" ]; then
+            SOFT_FLAG="--soft"
+          fi
+
+          python .github/ci/llm_guard_scan.py \
+            --url "$LLMGUARD_URL" \
+            --dataset .github/ci/golden-dataset.json \
+            $SOFT_FLAG
+
+      - name: Arrêter LLM Guard
+        if: always()
+        run: docker rm -f llm-guard 2>/dev/null || true
+
+      - name: Upload rapport de scan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-guard-scan-report
+          path: .github/ci/golden-dataset.json
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────
+  # Job 3 : Vérifications statiques de sécurité (anti-régression)
+  # ─────────────────────────────────────────────────────────────
+  security-static-checks:
+    name: Security Static Checks
+    runs-on: ubuntu-latest
+    needs: guard-unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "LlmGuardClient intégré dans LLMAIClient"
+        run: |
+          FILE="ai-core/src/main/java/io/multiagent/core/client/LLMAIClient.java"
+          if ! grep -q "LlmGuardClient" "$FILE"; then
+            echo "FAIL: LlmGuardClient manquant dans LLMAIClient"
+            exit 1
+          fi
+          if ! grep -q "llmGuard.scanPrompt" "$FILE"; then
+            echo "FAIL: llmGuard.scanPrompt() non appelé — les prompts ne sont pas scannés"
+            exit 1
+          fi
+          if ! grep -q "llmGuard.scanOutput" "$FILE"; then
+            echo "FAIL: llmGuard.scanOutput() non appelé — les réponses LLM ne sont pas scannées"
+            exit 1
+          fi
+          echo "OK: LlmGuardClient wired correctement (prompt + output)"
+
+      - name: "Comportement dégradé — LLM Guard ne bloque pas en cas d'indisponibilité"
+        run: |
+          FILE="ai-core/src/main/java/io/multiagent/core/guard/LlmGuardClient.java"
+          if ! grep -q "continue-on-error\|skipped\|unavailable\|degraded\|warn" "$FILE"; then
+            echo "WARN: Vérifier manuellement que LlmGuardClient est non-bloquant si l'API est down"
+          fi
+          # Vérifie le catch générique
+          if ! grep -q "catch (Exception" "$FILE"; then
+            echo "FAIL: LlmGuardClient doit avoir un catch générique pour le mode dégradé"
+            exit 1
+          fi
+          echo "OK: Mode dégradé présent"
+
+      - name: "llmguard.enabled désactivé par défaut (dev safe)"
+        run: |
+          FILE="ai-core/src/main/resources/application.yml"
+          # Doit avoir enabled: false comme défaut
+          if grep -q "LLMGUARD_ENABLED:false" "$FILE"; then
+            echo "OK: llmguard.enabled désactivé par défaut"
+          else
+            echo "FAIL: llmguard.enabled doit être false par défaut dans application.yml"
+            exit 1
+          fi
+
+      - name: "K8s deployment LLM Guard présent"
+        run: |
+          for f in \
+            "ai-core/deploy/k8s/llm-guard/llm-guard-deployment.yaml" \
+            "ai-core/deploy/k8s/llm-guard/llm-guard-config.yaml"; do
+            if [ ! -f "$f" ]; then
+              echo "FAIL: Fichier K8s manquant: $f"
+              exit 1
+            fi
+          done
+          # Vérifier les scanners critiques dans la config
+          CONFIG="ai-core/deploy/k8s/llm-guard/llm-guard-config.yaml"
+          for scanner in PromptInjection Secrets Sensitive; do
+            if ! grep -q "$scanner" "$CONFIG"; then
+              echo "FAIL: Scanner $scanner absent de la config LLM Guard"
+              exit 1
+            fi
+          done
+          echo "OK: Déploiement K8s LLM Guard complet avec scanners critiques"
+
+      - name: "LlmGuardBlockedException non-swallowed dans le flux métier"
+        run: |
+          CLIENT="ai-core/src/main/java/io/multiagent/core/client/LLMAIClient.java"
+          GUARD="ai-core/src/main/java/io/multiagent/core/guard/LlmGuardClient.java"
+          # La BlockedException ne doit PAS être catchée dans LlmGuardClient (elle doit remonter)
+          if grep -A5 "throw new LlmGuardBlockedException" "$GUARD" | grep -q "catch"; then
+            echo "FAIL: LlmGuardBlockedException attrapée dans LlmGuardClient — ne remonte pas"
+            exit 1
+          fi
+          echo "OK: LlmGuardBlockedException se propage correctement vers l'appelant"
+
+      - name: Résumé sécurité
+        if: success()
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║   LLM Guard Security Checks — ALL PASSED         ║"
+          echo "╠══════════════════════════════════════════════════╣"
+          echo "║  ✓ Guard wired (scanPrompt + scanOutput)         ║"
+          echo "║  ✓ Degraded mode — never blocks on unavailable   ║"
+          echo "║  ✓ Disabled by default in dev                    ║"
+          echo "║  ✓ K8s deployment + critical scanners present    ║"
+          echo "║  ✓ BlockedException propagates correctly         ║"
+          echo "╚══════════════════════════════════════════════════╝"

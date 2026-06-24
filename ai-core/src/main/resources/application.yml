@@ -89,6 +89,11 @@ invoice:
 caffeine:
   spec: maximumSize=3000,expireAfterWrite=10m
 
+llmguard:
+  enabled: ${LLMGUARD_ENABLED:false}
+  url: ${LLMGUARD_URL:http://llm-guard:8000}
+  timeout-ms: ${LLMGUARD_TIMEOUT_MS:2000}
+
 logging:
   level:
     "[io.multiagent.core.service]": DEBUG
