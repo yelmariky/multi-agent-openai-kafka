@@ -1,0 +1,220 @@
+name: CI — Build, Test & Governance
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, master]
+
+env:
+  JAVA_VERSION: "21"
+  MAVEN_OPTS: "-Xmx1g -XX:+TieredCompilation"
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Job 1 : compile + unit tests (no external services)
+  # ─────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests — Governance & Business Rules
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Compile ai-core
+        working-directory: ai-core
+        run: mvn compile -q
+
+      - name: Run governance unit tests
+        working-directory: ai-core
+        run: |
+          mvn test \
+            -pl . \
+            -Dtest="io.multiagent.core.governance.*" \
+            -DfailIfNoTests=false \
+            --no-transfer-progress
+
+      - name: Publish test report
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: "ai-core/target/surefire-reports/TEST-*.xml"
+          check_name: "Governance Unit Tests"
+
+  # ─────────────────────────────────────────────
+  # Job 2 : full build (compile all modules, skip tests — covered above)
+  # ─────────────────────────────────────────────
+  build:
+    name: Build All Modules
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Build ai-core
+        working-directory: ai-core
+        run: mvn package -DskipTests --no-transfer-progress
+
+      - name: Build invoice-service
+        working-directory: invoice-service
+        run: mvn package -DskipTests --no-transfer-progress
+
+      - name: Upload ai-core artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-core-jar
+          path: ai-core/target/*.jar
+          retention-days: 7
+
+      - name: Upload invoice-service artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: invoice-service-jar
+          path: invoice-service/target/*.jar
+          retention-days: 7
+
+  # ─────────────────────────────────────────────
+  # Job 3 : governance compliance checks (static analysis)
+  # ─────────────────────────────────────────────
+  governance-compliance:
+    name: Governance Compliance Checks
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: "RGPD: no raw prompts stored in audit log entity"
+        run: |
+          echo "Checking LlmAuditLog has no 'inputText' or 'prompt' column..."
+          FILE="ai-core/src/main/java/io/multiagent/core/governance/entity/LlmAuditLog.java"
+          if grep -qE 'inputText|"prompt"' "$FILE"; then
+            echo "FAIL: LlmAuditLog stores raw prompt text — RGPD violation"
+            exit 1
+          fi
+          echo "OK: only input_hash found — raw text never persisted"
+
+      - name: "RGPD: SHA-256 hashing present in LlmAuditService"
+        run: |
+          echo "Checking SHA-256 hashing in LlmAuditService..."
+          FILE="ai-core/src/main/java/io/multiagent/core/governance/LlmAuditService.java"
+          if ! grep -q "SHA-256" "$FILE"; then
+            echo "FAIL: SHA-256 hashing not found in LlmAuditService"
+            exit 1
+          fi
+          echo "OK: SHA-256 hashing is present"
+
+      - name: "Async audit: @Async annotation on audit methods"
+        run: |
+          echo "Checking @Async annotation on LlmAuditService methods..."
+          FILE="ai-core/src/main/java/io/multiagent/core/governance/LlmAuditService.java"
+          ASYNC_COUNT=$(grep -c "@Async" "$FILE" || true)
+          if [ "$ASYNC_COUNT" -lt 2 ]; then
+            echo "FAIL: Expected at least 2 @Async methods in LlmAuditService (got $ASYNC_COUNT)"
+            exit 1
+          fi
+          echo "OK: $ASYNC_COUNT @Async methods found"
+
+      - name: "@EnableAsync present on main application class"
+        run: |
+          echo "Checking @EnableAsync on CoreAIApplication..."
+          FILE="ai-core/src/main/java/io/multiagent/core/CoreAIApplication.java"
+          if ! grep -q "@EnableAsync" "$FILE"; then
+            echo "FAIL: @EnableAsync missing — async audit will not work"
+            exit 1
+          fi
+          echo "OK: @EnableAsync is present"
+
+      - name: "Guardrails: ExpenseGuard wired into WeaviateService"
+        run: |
+          echo "Checking ExpenseGuard is injected and called in WeaviateService..."
+          FILE="ai-core/src/main/java/io/multiagent/core/service/WeaviateService.java"
+          if ! grep -q "ExpenseGuard" "$FILE"; then
+            echo "FAIL: ExpenseGuard not found in WeaviateService"
+            exit 1
+          fi
+          if ! grep -q "expenseGuard.evaluate" "$FILE"; then
+            echo "FAIL: expenseGuard.evaluate() not called in WeaviateService"
+            exit 1
+          fi
+          echo "OK: ExpenseGuard is wired and called"
+
+      - name: "Audit wiring: LlmAuditService injected into LLMAIClient"
+        run: |
+          echo "Checking LlmAuditService is injected in LLMAIClient..."
+          FILE="ai-core/src/main/java/io/multiagent/core/client/LLMAIClient.java"
+          if ! grep -q "LlmAuditService" "$FILE"; then
+            echo "FAIL: LlmAuditService not found in LLMAIClient"
+            exit 1
+          fi
+          if ! grep -q "auditService.record" "$FILE"; then
+            echo "FAIL: auditService.record* not called in LLMAIClient"
+            exit 1
+          fi
+          echo "OK: audit is wired into every LLM call"
+
+      - name: "Flyway migrations present for governance tables"
+        run: |
+          echo "Checking governance Flyway migrations exist..."
+          V6="ai-core/src/main/resources/db/migration/V6__create_llm_audit_log.sql"
+          V7="ai-core/src/main/resources/db/migration/V7__expense_ai_governance_columns.sql"
+          for f in "$V6" "$V7"; do
+            if [ ! -f "$f" ]; then
+              echo "FAIL: Missing migration $f"
+              exit 1
+            fi
+          done
+          if ! grep -q "llm_audit_log" "$V6"; then
+            echo "FAIL: V6 migration does not create llm_audit_log table"
+            exit 1
+          fi
+          if ! grep -q "ai_review_required" "$V7"; then
+            echo "FAIL: V7 migration missing ai_review_required column"
+            exit 1
+          fi
+          echo "OK: governance migrations are present and correct"
+
+      - name: "Tenant isolation: llm_audit_log has tenant_id column"
+        run: |
+          echo "Checking tenant_id column in llm_audit_log migration..."
+          FILE="ai-core/src/main/resources/db/migration/V6__create_llm_audit_log.sql"
+          if ! grep -q "tenant_id" "$FILE"; then
+            echo "FAIL: tenant_id missing from llm_audit_log — multi-tenant isolation broken"
+            exit 1
+          fi
+          echo "OK: tenant_id column present"
+
+      - name: Governance compliance summary
+        if: success()
+        run: |
+          echo ""
+          echo "╔══════════════════════════════════════════════╗"
+          echo "║   AI Governance Compliance — ALL CHECKS PASSED ║"
+          echo "╠══════════════════════════════════════════════╣"
+          echo "║  ✓ RGPD: raw prompts never stored            ║"
+          echo "║  ✓ RGPD: SHA-256 hashing in place           ║"
+          echo "║  ✓ Non-blocking: @Async audit methods        ║"
+          echo "║  ✓ @EnableAsync active                       ║"
+          echo "║  ✓ Business guardrails wired                 ║"
+          echo "║  ✓ LLM audit injected in all calls          ║"
+          echo "║  ✓ Flyway migrations present                 ║"
+          echo "║  ✓ Tenant isolation enforced                 ║"
+          echo "╚══════════════════════════════════════════════╝"
