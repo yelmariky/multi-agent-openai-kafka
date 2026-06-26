@@ -272,6 +272,12 @@ public class LLMAIClient {
         return extractContentOrThrow(completion);
     }
 
+    /** Extraction JSON avec un modèle explicitement spécifié (ex: llama-3.3-70b-versatile pour les tâches complexes). */
+    public String extractJSONWithModel(String model, String systemPrompt, String userPrompt) {
+        ChatCompletion completion = chatJson(model, systemPrompt, userPrompt);
+        return extractContentOrThrow(completion);
+    }
+
     private String extractContentOrThrow(ChatCompletion completion) {
         String content = LLMUtils.extractChatContent(completion).trim();
         if (content.isBlank()) {

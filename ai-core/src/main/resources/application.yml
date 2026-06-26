@@ -123,3 +123,4 @@ logging:
     # SSE broken pipe: connexion navigateur fermée — géré proprement, bruit inutile
     "[org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitterReturnValueHandler]": WARN
     "[org.apache.catalina.connector.ClientAbortException]": WARN
+    "[org.apache.catalina.core.ContainerBase]": WARN

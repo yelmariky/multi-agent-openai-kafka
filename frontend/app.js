@@ -261,6 +261,32 @@ function startApp() {
   document.getElementById('assignment-save').addEventListener('click', () => {
     if (currentConsultant) saveAssignment(currentConsultant);
   });
+
+  document.getElementById('cons-vehicle-save').addEventListener('click', async () => {
+    if (!currentConsultant) return;
+    const vt  = document.getElementById('cons-vehicle-type').value;
+    const fp  = parseInt(document.getElementById('cons-fiscal-power').value, 10) || 7;
+    const km  = parseInt(document.getElementById('cons-km-annual').value, 10)    || 4999;
+    const status = document.getElementById('cons-vehicle-status');
+    currentConsultant.vehicleType  = vt;
+    currentConsultant.fiscalPower  = fp;
+    currentConsultant.kmAnnual     = km;
+    const idx = allConsultants.findIndex(c => c.email === currentConsultant.email);
+    if (idx >= 0) {
+      allConsultants[idx].vehicleType = vt;
+      allConsultants[idx].fiscalPower = fp;
+      allConsultants[idx].kmAnnual    = km;
+      saveConsultants(allConsultants);
+    }
+    try {
+      await saveConsultantToBackend(currentConsultant);
+      if (status) { status.textContent = '✓ Profil véhicule enregistré'; status.style.color = 'var(--accent)'; }
+    } catch {
+      if (status) { status.textContent = 'Erreur lors de l\'enregistrement'; status.style.color = '#f87171'; }
+    }
+    setTimeout(() => { if (status) status.textContent = ''; }, 3000);
+  });
+
   loadSellerSettings();
   loadTenantInfo();
 }
@@ -419,9 +445,14 @@ function connectSSE() {
         const n = JSON.parse(e.data);
         notifCount++;
         updateBadge();
-        showToast(n.message, n.type === 'CRA_SUBMITTED' ? 'info' : 'ok');
+        showToast(n.message, 'info');
         const dropdown = document.getElementById('notif-dropdown');
         if (!dropdown.classList.contains('hidden')) loadNotifications();
+        // Rafraîchir les congés si le panel consultant est ouvert sur l'onglet congés
+        if (n.type === 'LEAVE_REQUESTED' && currentConsultant) {
+          const panel = document.getElementById('cons-panel-conges');
+          if (panel && panel.style.display !== 'none') loadConsLeaves(currentConsultant);
+        }
       } catch { /* ignore malformed */ }
     });
     es.onerror = () => setTimeout(connectSSE, 5000);
@@ -451,10 +482,9 @@ async function loadNotifications() {
     }
     list.innerHTML = items.map(n => `
       <div class="notif-item" data-id="${escapeHtml(n.id)}">
-        <span class="notif-icon">${n.type === 'CRA_SUBMITTED' ? '📋' : '💶'}</span>
+        <span class="notif-icon">${n.type === 'CRA_SUBMITTED' ? '📋' : n.type === 'LEAVE_REQUESTED' ? '🏖️' : '💶'}</span>
         <div class="notif-body">
           <p class="notif-msg">${escapeHtml(n.message)}</p>
-          ${n.consultantEmail ? `<p class="notif-email">${escapeHtml(n.consultantEmail)}</p>` : ''}
           <p class="notif-ts">${formatTs(n.timestamp)}</p>
         </div>
       </div>`).join('');
@@ -530,9 +560,6 @@ function loadConsultants() {
       if (c.clientContactEmail === undefined) c.clientContactEmail = '';
       if (c.active        === undefined) c.active        = true;
       if (c.tjm           === undefined || c.tjm === null) c.tjm = 0;
-      if (c.vehicleType   === undefined) c.vehicleType   = 'CAR';
-      if (c.fiscalPower   === undefined) c.fiscalPower   = 7;
-      if (c.kmAnnual      === undefined) c.kmAnnual      = 4999;
     });
     return list;
   } catch {
@@ -540,12 +567,20 @@ function loadConsultants() {
   }
 }
 
+/** Rôles internes (non facturables) — exclus du dashboard. */
+function isBillableRole(role) {
+  const r = (role || '').toLowerCase();
+  return r !== 'admin' && r !== 'manager' && r !== 'gestionnaire';
+}
+
 async function saveConsultantToBackend(cons) {
   try {
+    // Dériver isConsultant depuis le rôle pour que le backend filtre correctement le dashboard
+    const payload = { ...cons, isConsultant: isBillableRole(cons.role) };
     const res = await fetch(`${base()}/consultants/profiles`, {
       method: 'POST',
       headers: adminHeaders(),
-      body: JSON.stringify(cons),
+      body: JSON.stringify(payload),
     });
     if (res.ok) {
       const saved = await res.json();
@@ -583,9 +618,6 @@ async function initConsultantsData() {
         if (c.clientRcs     === undefined) c.clientRcs     = '';
         if (c.active        === undefined) c.active        = true;
         if (c.tjm           === undefined || c.tjm === null) c.tjm = 0;
-        if (c.vehicleType   === undefined) c.vehicleType   = 'CAR';
-        if (c.fiscalPower   === undefined) c.fiscalPower   = 7;
-        if (c.kmAnnual      === undefined) c.kmAnnual      = 4999;
       });
       saveConsultants(allConsultants);
       setCacheTimestamp();
@@ -803,27 +835,8 @@ function initConsultants(user) {
       if (!currentConsultant) return;
       if (btn.dataset.consTab === 'notes')    loadConsNotes(currentConsultant);
       if (btn.dataset.consTab === 'factures') loadConsInvoices(currentConsultant);
+      if (btn.dataset.consTab === 'conges')   loadConsLeaves(currentConsultant);
     });
-  });
-
-  // Vehicle profile save
-  document.getElementById('cons-vehicle-save').addEventListener('click', async () => {
-    if (!currentConsultant) return;
-    const statusEl = document.getElementById('cons-vehicle-status');
-    currentConsultant.vehicleType = document.getElementById('cons-vehicle-type').value;
-    currentConsultant.fiscalPower = parseInt(document.getElementById('cons-fiscal-power').value, 10) || 7;
-    currentConsultant.kmAnnual    = parseInt(document.getElementById('cons-km-annual').value,    10) || 4999;
-    const idx = allConsultants.findIndex(c => c.email === currentConsultant.email);
-    if (idx >= 0) {
-      allConsultants[idx].vehicleType = currentConsultant.vehicleType;
-      allConsultants[idx].fiscalPower = currentConsultant.fiscalPower;
-      allConsultants[idx].kmAnnual    = currentConsultant.kmAnnual;
-      saveConsultants(allConsultants);
-    }
-    await saveConsultantToBackend(currentConsultant);
-    statusEl.textContent = '✓ Profil véhicule enregistré';
-    statusEl.className = 'status ok';
-    setTimeout(() => { statusEl.textContent = ''; }, 3000);
   });
 
   // CRA panel
@@ -973,8 +986,8 @@ async function loadCardKpis(cons) {
   const now    = new Date();
   const month  = toMonthStr(now.getFullYear(), now.getMonth());
 
-  let craPending     = 0;
-  let expensePending = 0;
+  let craPending   = 0;
+  let expenseCount = 0;
 
   try {
     const p = new URLSearchParams({ start: month, end: month, consultant: cons.email });
@@ -992,9 +1005,8 @@ async function loadCardKpis(cons) {
     const p   = new URLSearchParams({ start: s, end: e, consultantEmail: cons.email });
     const res = await fetch(`${base()}/expenses/report?${p}`, { headers: authHeaders() });
     if (res.ok) {
-      const data     = await res.json();
-      const expenses = Array.isArray(data) ? data : (data.expenses || []);
-      expensePending = expenses.filter(x => !x.approvalStatus || x.approvalStatus === 'PENDING').length;
+      const data = await res.json();
+      expenseCount = Array.isArray(data) ? data.length : (data.expenses ? data.expenses.length : 0);
     }
   } catch { /* ignore */ }
 
@@ -1003,38 +1015,22 @@ async function loadCardKpis(cons) {
       <span class="kpi-v" style="color:${craPending>0?'#fde68a':'var(--accent)'}">${craPending}</span>
       <span class="kpi-l">CRA soumis</span>
     </div>
-    <div class="cons-kpi-chip${expensePending > 0 ? ' kpi-alert' : ''}">
-      <span class="kpi-v" style="color:${expensePending>0?'#fde68a':'var(--accent)'}">${expensePending}</span>
-      <span class="kpi-l">Frais en attente</span>
-    </div>`;
+    <div class="cons-kpi-chip"><span class="kpi-v">${expenseCount}</span><span class="kpi-l">Frais ce mois</span></div>`;
 
-  // Show/hide alert dots on the card header
+  // Show/hide the alert dot on the card header
   const card = kpiEl.closest('.consultant-card');
   if (card) {
-    let craDot = card.querySelector('.cons-alert-dot-cra');
+    let dot = card.querySelector('.cons-alert-dot');
     if (craPending > 0) {
-      if (!craDot) {
-        craDot = document.createElement('span');
-        craDot.className = 'cons-alert-dot cons-alert-dot-cra';
-        card.querySelector('.cons-avatar')?.after(craDot);
+      if (!dot) {
+        dot = document.createElement('span');
+        dot.className = 'cons-alert-dot';
+        dot.title = `${craPending} CRA en attente de validation`;
+        card.querySelector('.cons-avatar')?.after(dot);
       }
-      craDot.title = `${craPending} CRA en attente de validation`;
-      craDot.textContent = craPending;
-    } else if (craDot) {
-      craDot.remove();
-    }
-
-    let expDot = card.querySelector('.cons-alert-dot-exp');
-    if (expensePending > 0) {
-      if (!expDot) {
-        expDot = document.createElement('span');
-        expDot.className = 'cons-alert-dot cons-alert-dot-exp';
-        card.querySelector('.cons-avatar')?.after(expDot);
-      }
-      expDot.title = `${expensePending} frais en attente de validation`;
-      expDot.textContent = expensePending;
-    } else if (expDot) {
-      expDot.remove();
+      dot.textContent = craPending;
+    } else if (dot) {
+      dot.remove();
     }
   }
 }
@@ -1063,12 +1059,6 @@ function openConsultantDetail(cons) {
   document.getElementById('cons-detail-role').className      = `cons-role-badge ${cons.role.toLowerCase()}`;
   document.getElementById('cons-detail-company').textContent = cons.company;
 
-  // Vehicle profile fields
-  document.getElementById('cons-vehicle-type').value  = cons.vehicleType  || 'CAR';
-  document.getElementById('cons-fiscal-power').value  = cons.fiscalPower  ?? 7;
-  document.getElementById('cons-km-annual').value     = cons.kmAnnual     ?? 4999;
-  document.getElementById('cons-vehicle-status').textContent = '';
-
   document.getElementById('kpi-cra-pending').textContent     = '…';
   document.getElementById('kpi-expense-pending').textContent = '…';
 
@@ -1081,6 +1071,16 @@ function openConsultantDetail(cons) {
   document.getElementById('cons-notes-approve-all').style.display = 'none';
   document.getElementById('cons-notes-pdf').style.display         = 'none';
   document.getElementById('cons-notes-excel').style.display       = 'none';
+
+  // Populate vehicle profile form
+  const vtSel = document.getElementById('cons-vehicle-type');
+  const fpInp = document.getElementById('cons-fiscal-power');
+  const kmInp = document.getElementById('cons-km-annual');
+  if (vtSel) vtSel.value = cons.vehicleType || 'CAR';
+  if (fpInp) fpInp.value = cons.fiscalPower  ?? 7;
+  if (kmInp) kmInp.value = cons.kmAnnual     ?? 4999;
+  const vStatus = document.getElementById('cons-vehicle-status');
+  if (vStatus) vStatus.textContent = '';
 
   loadDetailKpis(cons);
   loadConsCra(cons);
@@ -1164,8 +1164,10 @@ function _craDaysSummary(cra) {
       : '—';
     return `${d}j`;
   }
+  // Use projects embedded in CRA response first, fallback to allProjects store
+  const craProjects = Array.isArray(cra.projects) ? cra.projects : [];
   const parts = projectIds.map(pid => {
-    const proj = allProjects.find(p => p.id === pid);
+    const proj = craProjects.find(p => p.id === pid) || allProjects.find(p => p.id === pid);
     const name = proj?.name || (pid.slice(0,6) + '…');
     const d = projectDays[pid] % 1 === 0 ? String(projectDays[pid]) : Number(projectDays[pid]).toFixed(1);
     return `${escapeHtml(name)} : ${d}j`;
@@ -1196,9 +1198,25 @@ function renderCraList(items) {
     const craJson = escapeHtml(JSON.stringify(cra));
 
     let actions = '';
-    if (status === 'SOUMIS') {
+    if (status === 'BROUILLON') {
       actions = `
         <div class="cra-action-row">
+          <p class="muted-sm" style="margin:0;font-size:12px">En cours de saisie — en attente de soumission par le consultant.</p>
+        </div>`;
+    } else if (status === 'SOUMIS') {
+      // Détecter les congés en attente (⏳) dans les entrées du CRA
+      const pendingLeaves = (() => {
+        try {
+          const entries = cra.entries || (cra.entriesJson ? JSON.parse(cra.entriesJson) : []);
+          return entries.filter(e => e.projectId === '__LEAVE_PENDING__' && e.type === 'ABSENT').length;
+        } catch { return 0; }
+      })();
+      const pendingBadge = pendingLeaves > 0
+        ? `<span class="leave-pending-badge" title="${pendingLeaves} congé${pendingLeaves > 1 ? 's' : ''} en attente de validation RH">⚠️ ${pendingLeaves} congé${pendingLeaves > 1 ? 's' : ''} ⏳ en attente</span>`
+        : '';
+      actions = `
+        <div class="cra-action-row">
+          ${pendingBadge}
           <button class="btn-approve" data-cra='${craJson}'>✓ Valider</button>
           <div class="refuse-inline">
             <input type="text" class="refuse-reason-input" placeholder="Motif de refus…">
@@ -1208,7 +1226,7 @@ function renderCraList(items) {
     } else if (status === 'VALIDE') {
       actions = `
         <div class="cra-action-row">
-          <p class="validated-info" style="margin:0">Valide par <strong>${escapeHtml(cra.validatedBy || '—')}</strong>${cra.validatedAt ? ` le ${formatTs(cra.validatedAt)}` : ''}</p>
+          <p class="validated-info" style="margin:0">Validé par <strong>${escapeHtml(cra.validatedBy || '—')}</strong>${cra.validatedAt ? ` le ${formatTs(cra.validatedAt)}` : ''}${cra.clientValidationRef ? ` · Réf client : <em>${escapeHtml(cra.clientValidationRef)}</em>` : ''}${cra.clientValidationDate ? ` (${escapeHtml(cra.clientValidationDate)})` : ''}</p>
           <button class="btn-gen-invoice" data-cra='${craJson}'>📄 Generer la facture</button>
           <button class="btn-reopen-cra" data-cra='${craJson}' title="Remettre en SOUMIS pour re-traitement">↩ Annuler validation</button>
         </div>`;
@@ -1227,14 +1245,24 @@ function renderCraList(items) {
     }
 
     const missionLabel = cra.missionTitle ? ' — ' + escapeHtml(cra.missionTitle) : '';
-    const pdfBtn = cra.id
-      ? `<button class="btn-secondary btn-pdf-cra" data-cra-id="${escapeHtml(cra.id)}" style="padding:4px 10px;font-size:11px" title="Telecharger PDF">PDF</button>`
-      : '';
+    const projs = Array.isArray(cra.projects) ? cra.projects.filter(p => p.id) : [];
+    let pdfBtn = '';
+    if (cra.id && status !== 'BROUILLON') {
+      if (projs.length > 1) {
+        const projsJson = escapeHtml(JSON.stringify(projs));
+        pdfBtn = `<button class="btn-secondary btn-pdf-cra-multi" data-cra-id="${escapeHtml(cra.id)}" data-projects="${projsJson}" style="padding:4px 10px;font-size:11px;white-space:nowrap" title="Choisir le PDF à télécharger">PDF ▾</button>`;
+      } else {
+        const pid   = projs[0]?.id   ? `data-pid="${escapeHtml(projs[0].id)}"` : '';
+        const pname = projs[0]?.name ? `data-pname="${escapeHtml(projs[0].name)}"` : '';
+        pdfBtn = `<button class="btn-secondary btn-pdf-cra" data-cra-id="${escapeHtml(cra.id)}" ${pid} ${pname} style="padding:4px 10px;font-size:11px" title="Telecharger PDF">PDF</button>`;
+      }
+    }
 
+    const consultantLabel = cra.consultant ? `<span class="approval-consultant">${escapeHtml(cra.consultant)}</span>` : '';
     return `
       <div class="approval-row">
         <div class="approval-meta">
-          <span class="approval-name">${escapeHtml(cra.billingMonth || '—')}</span>
+          <span class="approval-name">${escapeHtml(cra.billingMonth || '—')}${consultantLabel}</span>
           <span class="approval-detail">${escapeHtml(cra.clientCompany || '—')}${missionLabel} — ${days}</span>
         </div>
         <div class="approval-right">
@@ -1251,22 +1279,17 @@ function renderCraList(items) {
  * opts: { clientName, clientAddress, clientRcs, projectName, tjm, days }
  */
 async function generateOneInvoice(cra, cons, { clientName, clientAddress, clientRcs, projectName, tjm, days }) {
-  const [y, m] = cra.billingMonth.split('-').map(Number);
-  let iy = y, im = m + 2;
-  if (im > 12) { im -= 12; iy += 1; }
-  const imPad          = String(im).padStart(2,'0');
-  const invoiceDateStr = `${iy}-${imPad}-01`;
-  const dueStr         = `${iy}-${imPad}-${new Date(iy, im, 0).getDate()}`;
-  const totalHt        = Math.round(tjm * days * 100) / 100;
-  const vatRate        = 0.20;
-  const totalTtc       = Math.round(totalHt * (1 + vatRate) * 100) / 100;
+  const totalHt  = Math.round(tjm * days * 100) / 100;
+  const vatRate  = 0.20;
+  const totalTtc = Math.round(totalHt * (1 + vatRate) * 100) / 100;
 
   try {
     const res = await fetch(`${invoiceBase()}/invoices/generate`, {
       method:  'POST',
       headers: adminHeaders(),
       body: JSON.stringify({
-        invoiceDate:       invoiceDateStr,
+        // invoiceDate et paymentDueDate omis : le backend les calcule
+        // depuis billingMonth (+1 mois) et consultant_assignment.payment_terms_days
         billingMonth:      cra.billingMonth,
         sellerCompanyName: tenantName(),
         sellerAddress:     sellerSettings.address || '',
@@ -1282,7 +1305,6 @@ async function generateOneInvoice(cra, cons, { clientName, clientAddress, client
         vatRate,
         totalTtc,
         currency:          'EUR',
-        paymentDueDate:    dueStr,
         latePaymentClause: '',
         notes:             null,
         absencePeriods:    null,
@@ -1394,29 +1416,47 @@ async function deleteInvoiceForCra(cra, cons) {
 
 function wireCraActions(container, cons) {
   container.querySelectorAll('.btn-approve').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const cra = JSON.parse(btn.dataset.cra);
-      btn.disabled = true;
-      btn.textContent = '…';
-      try {
-        const p = new URLSearchParams({ validatedBy: adminUser?.email || adminUser?.name || 'Admin' });
-        const res = await fetch(`${base()}/cra/validate?${p}`, {
-          method: 'POST',
-          headers: adminHeaders(),
-          body: JSON.stringify(cra),
-        });
-        if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
-        showToast(`CRA ${cra.billingMonth} valide.`, 'ok');
-        await generateInvoiceOnValidation(cra, cons);
-        loadConsCra(cons);
-        loadDetailKpis(cons);
-        // Expand Factures date range to include this CRA's billing month, then refresh
-        const invStart = document.getElementById('cons-inv-start');
-        if (cra.billingMonth && (!invStart.value || cra.billingMonth < invStart.value)) {
-          invStart.value = cra.billingMonth;
-        }
-        loadConsInvoices(cons);
-      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✓ Valider'; }
+    btn.addEventListener('click', () => {
+      // Afficher un mini-formulaire inline pour le retour client (optionnel)
+      const existingForm = btn.parentElement.querySelector('.client-validation-form');
+      if (existingForm) { existingForm.remove(); return; }
+
+      const form = document.createElement('div');
+      form.className = 'client-validation-form';
+      form.innerHTML = `
+        <div style="margin-top:10px;padding:12px;background:rgba(44,229,167,.06);border:1px solid rgba(44,229,167,.2);border-radius:10px;display:flex;flex-direction:column;gap:8px">
+          <p style="margin:0;font-size:12px;color:var(--accent);font-weight:600">Retour client (optionnel)</p>
+          <input class="cv-ref"  type="text"  placeholder="Référence client (BC, email…)" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:#0f1421;color:var(--text);font-size:12px;font-family:inherit;width:100%">
+          <input class="cv-date" type="date"  placeholder="Date de validation client"      style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:#0f1421;color:var(--text);font-size:12px;font-family:inherit;width:100%">
+          <div style="display:flex;gap:8px">
+            <button class="cv-confirm btn-primary" style="padding:6px 14px;font-size:12px">✓ Confirmer la validation</button>
+            <button class="cv-cancel  btn-secondary" style="padding:6px 14px;font-size:12px">Annuler</button>
+          </div>
+        </div>`;
+      btn.parentElement.appendChild(form);
+
+      form.querySelector('.cv-cancel').addEventListener('click', () => form.remove());
+      form.querySelector('.cv-confirm').addEventListener('click', async () => {
+        const cra     = JSON.parse(btn.dataset.cra);
+        const ref     = form.querySelector('.cv-ref').value.trim();
+        const dateVal = form.querySelector('.cv-date').value;
+        const craBody = { ...cra, clientValidationRef: ref || null, clientValidationDate: dateVal || null };
+        form.remove();
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          const p = new URLSearchParams({ validatedBy: adminUser?.email || adminUser?.name || 'Admin' });
+          const res = await fetch(`${base()}/cra/validate?${p}`, {
+            method: 'POST', headers: adminHeaders(), body: JSON.stringify(craBody),
+          });
+          if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
+          showToast(`CRA ${cra.billingMonth} validé${ref ? ' · Réf: ' + ref : ''}.`, 'ok');
+          await generateInvoiceOnValidation(cra, cons);
+          loadConsCra(cons); loadDetailKpis(cons);
+          const invStart = document.getElementById('cons-inv-start');
+          if (cra.billingMonth && (!invStart.value || cra.billingMonth < invStart.value)) invStart.value = cra.billingMonth;
+          loadConsInvoices(cons);
+        } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✓ Valider'; }
+      });
     });
   });
 
@@ -1484,26 +1524,74 @@ function wireCraActions(container, cons) {
 
   container.querySelectorAll('.btn-pdf-cra').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const id = btn.dataset.craId;
-      btn.disabled = true;
-      btn.textContent = '…';
+      const id    = btn.dataset.craId;
+      const pid   = btn.dataset.pid   || '';
+      const pname = btn.dataset.pname || '';
+      btn.disabled = true; btn.textContent = '…';
       try {
-        const res = await fetch(`${base()}/cra/pdf/${id}`, { headers: authHeaders() });
+        const url = pid ? `${base()}/cra/pdf/${id}?projectId=${pid}` : `${base()}/cra/pdf/${id}`;
+        const res = await fetch(url, { headers: authHeaders() });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
+        const objUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = 'CRA-' + id.substring(0, 8) + '.pdf';
+        a.href = objUrl;
+        a.download = 'CRA-' + id.substring(0, 8) + (pname ? `-${pname.replace(/\s+/g,'_')}` : '') + '.pdf';
         a.click();
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        showToast('Erreur PDF : ' + e.message, 'err');
-      }
-      btn.disabled = false;
-      btn.textContent = 'PDF';
+        URL.revokeObjectURL(objUrl);
+      } catch (e) { showToast('Erreur PDF : ' + e.message, 'err'); }
+      btn.disabled = false; btn.textContent = 'PDF';
     });
   });
+
+  container.querySelectorAll('.btn-pdf-cra-multi').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.getElementById('admin-pdf-menu')?.remove();
+      const craId = btn.dataset.craId;
+      const projs = JSON.parse(btn.dataset.projects || '[]');
+      const menu  = document.createElement('div');
+      menu.id = 'admin-pdf-menu'; menu.className = 'cra-pdf-menu';
+
+      const allOpt = document.createElement('button');
+      allOpt.textContent = 'Tout le CRA (tous clients)';
+      allOpt.addEventListener('click', () => { menu.remove(); downloadAdminPdf(craId); });
+      menu.appendChild(allOpt);
+
+      projs.forEach(proj => {
+        const opt = document.createElement('button');
+        opt.textContent = proj.name;
+        opt.addEventListener('click', () => { menu.remove(); downloadAdminPdf(craId, proj.id, proj.name); });
+        menu.appendChild(opt);
+      });
+
+      // Fixed positioning to escape any overflow:hidden parent
+      const rect = btn.getBoundingClientRect();
+      menu.style.position = 'fixed';
+      menu.style.top  = (rect.bottom + 4) + 'px';
+      menu.style.left = (rect.right - 240) + 'px';
+      menu.style.right = 'auto';
+
+      const close = (ev) => { if (!menu.contains(ev.target) && ev.target !== btn) { menu.remove(); document.removeEventListener('click', close); } };
+      document.addEventListener('click', close);
+      document.body.appendChild(menu);
+    });
+  });
+}
+
+async function downloadAdminPdf(craId, projectId, projectName) {
+  try {
+    const url = projectId ? `${base()}/cra/pdf/${craId}?projectId=${projectId}` : `${base()}/cra/pdf/${craId}`;
+    const res = await fetch(url, { headers: authHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = 'CRA-' + craId.substring(0, 8) + (projectName ? `-${projectName.replace(/\s+/g,'_')}` : '') + '.pdf';
+    a.click();
+    URL.revokeObjectURL(objUrl);
+  } catch (e) { showToast('Erreur PDF : ' + e.message, 'err'); }
 }
 
 // ============================================================
@@ -1517,7 +1605,7 @@ async function loadConsNotes(cons) {
   const resultEl = document.getElementById('cons-notes-result');
   const approveAllBtn = document.getElementById('cons-notes-approve-all');
 
-  if (!month) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
+  if (!month) { setStatus(statusEl, 'Selectionnez un mois.', 'err'); return; }
   setStatus(statusEl, 'Chargement…');
   resultEl.style.display = 'none';
   approveAllBtn.style.display = 'none';
@@ -1528,7 +1616,7 @@ async function loadConsNotes(cons) {
     const start = `${month}-01`;
     const end   = `${month}-${new Date(ny, nm, 0).getDate()}`;
     const p     = new URLSearchParams({ start, end, consultantEmail: cons.email });
-    const res   = await fetch(`${base()}/expenses/report?${p}`, { headers: adminHeaders() });
+    const res   = await fetch(`${base()}/expenses/report?${p}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data  = await res.json();
     const expenses = Array.isArray(data) ? data : (data.expenses || []);
@@ -1539,21 +1627,15 @@ async function loadConsNotes(cons) {
       return;
     }
 
-    // Compteurs et total pour la synthèse
-    const nbPending  = expenses.filter(x => !x.approvalStatus || x.approvalStatus === 'PENDING').length;
-    const nbApproved = expenses.filter(x => x.approvalStatus === 'APPROVED').length;
-    const nbRefused  = expenses.filter(x => x.approvalStatus === 'REFUSED').length;
-    const total      = expenses.reduce((s, x) => s + (x.amount || 0), 0);
-    const currency   = expenses.find(x => x.currency)?.currency || 'EUR';
-
-    setStatus(statusEl, `${expenses.length} dépense${expenses.length > 1 ? 's' : ''} — ${nbPending} en attente · ${nbApproved} approuvée${nbApproved > 1 ? 's' : ''} · ${nbRefused} refusée${nbRefused > 1 ? 's' : ''} · Total : ${total.toFixed(2)} ${currency}`, 'ok');
+    setStatus(statusEl, `${expenses.length} depense${expenses.length > 1 ? 's' : ''} trouvee${expenses.length > 1 ? 's' : ''}.`, 'ok');
     resultEl.innerHTML = renderExpenseList(expenses);
     resultEl.style.display = '';
 
-    // "Tout approuver" uniquement si des dépenses sont encore en attente
-    approveAllBtn.style.display = nbPending > 0 ? '' : 'none';
+    // "Tout approuver" uniquement si des depenses sont encore PENDING
+    const hasPending = expenses.some(x => !x.approvalStatus || x.approvalStatus === 'PENDING');
+    approveAllBtn.style.display = hasPending ? '' : 'none';
 
-    // PDF / Excel uniquement quand toutes les dépenses ont un statut final
+    // PDF / Excel uniquement quand toutes les depenses ont un statut final
     const allSettled = expenses.every(x => x.approvalStatus === 'APPROVED' || x.approvalStatus === 'REFUSED');
     document.getElementById('cons-notes-pdf').style.display   = allSettled ? '' : 'none';
     document.getElementById('cons-notes-excel').style.display = allSettled ? '' : 'none';
@@ -1566,8 +1648,8 @@ async function loadConsNotes(cons) {
 
 function renderExpenseList(expenses) {
   const APPROVAL_BADGE = {
-    APPROVED: '<span class="status-badge green">Approuvé</span>',
-    REFUSED:  '<span class="status-badge red">Refusé</span>',
+    APPROVED: '<span class="status-badge green">Approuve</span>',
+    REFUSED:  '<span class="status-badge red">Refuse</span>',
     PENDING:  '<span class="status-badge orange">En attente</span>',
   };
 
@@ -1575,28 +1657,21 @@ function renderExpenseList(expenses) {
     const approvalStatus = exp.approvalStatus || null;
     const badge = approvalStatus
       ? (APPROVAL_BADGE[approvalStatus] || '<span class="status-badge grey">—</span>')
-      : '<span class="status-badge grey">En attente</span>';
+      : '<span class="status-badge grey">Non soumis</span>';
 
-    // Utiliser weaviateId (UUID) — le backend attend un UUID pour approve/refuse
-    const expenseId = exp.weaviateId || '';
+    const expenseId = exp.weaviateId || (exp.id ? String(exp.id) : '') || '';
 
-    const isPending = !approvalStatus || approvalStatus === 'PENDING';
     let actions = '';
-    if (expenseId && isPending) {
+    if (expenseId) {
       actions = `
         <div class="cra-action-row">
-          <button class="btn-approve" data-id="${escapeHtml(expenseId)}">✓ Approuver</button>
+          <button class="btn-approve" data-id="${escapeHtml(expenseId)}">✓</button>
           <div class="refuse-inline">
-            <input type="text" class="refuse-reason-input" placeholder="Motif de refus…">
-            <button class="btn-refuse" data-id="${escapeHtml(expenseId)}">✗ Refuser</button>
+            <input type="text" class="refuse-reason-input" placeholder="Motif…">
+            <button class="btn-refuse" data-id="${escapeHtml(expenseId)}">✗</button>
           </div>
         </div>`;
     }
-
-    const modeLabel = exp.paymentMode === 'Business' ? 'Business' : (exp.paymentMode === 'Personnel' ? 'Personnel' : (exp.paymentMode || ''));
-    const modeBadge = modeLabel
-      ? `<span class="badge-mode ${modeLabel === 'Business' ? 'badge-mode-pro' : 'badge-mode-perso'}">${escapeHtml(modeLabel)}</span>`
-      : '';
 
     return `
       <div class="approval-row">
@@ -1605,8 +1680,8 @@ function renderExpenseList(expenses) {
           <span class="approval-detail">${escapeHtml(exp.description || '—')}</span>
         </div>
         <div class="approval-right">
-          <span class="approval-amount">${exp.amount != null ? Number(exp.amount).toFixed(2) + '\u00a0' + (exp.currency || 'EUR') : '—'}</span>
-          ${modeBadge}
+          <span class="approval-amount">${exp.amount != null ? Number(exp.amount).toFixed(2) + ' ' + (exp.currency || 'EUR') : '—'}</span>
+          <span class="approval-mode">${escapeHtml(exp.paymentMode || '')}</span>
           ${badge}
           ${approvalStatus === 'REFUSED' && exp.approvalNote ? `<p class="refused-reason">${escapeHtml(exp.approvalNote)}</p>` : ''}
           ${actions}
@@ -1619,7 +1694,7 @@ function wireExpenseActions(container, cons) {
   container.querySelectorAll('.btn-approve').forEach(btn => {
     btn.addEventListener('click', async () => {
       const expenseId = btn.dataset.id;
-      if (!expenseId) { showToast('Identifiant manquant pour cette dépense.', 'err'); return; }
+      if (!expenseId) { showToast('ID manquant pour cet enregistrement.', 'err'); return; }
       btn.disabled = true; btn.textContent = '…';
       try {
         const res = await fetch(`${base()}/expenses/approve`, {
@@ -1628,18 +1703,17 @@ function wireExpenseActions(container, cons) {
           body: JSON.stringify({ weaviateId: expenseId }),
         });
         if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
-        showToast('Dépense approuvée.', 'ok');
+        showToast('Depense approuvee.', 'ok');
         loadConsNotes(cons);
         loadDetailKpis(cons);
-        loadCardKpis(cons);
-      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✓ Approuver'; }
+      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✓'; }
     });
   });
 
   container.querySelectorAll('.btn-refuse').forEach(btn => {
     btn.addEventListener('click', async () => {
       const expenseId = btn.dataset.id;
-      if (!expenseId) { showToast('Identifiant manquant pour cette dépense.', 'err'); return; }
+      if (!expenseId) { showToast('ID manquant pour cet enregistrement.', 'err'); return; }
       const input = btn.closest('.refuse-inline')?.querySelector('.refuse-reason-input');
       const note  = input?.value?.trim() || '';
       btn.disabled = true; btn.textContent = '…';
@@ -1650,20 +1724,19 @@ function wireExpenseActions(container, cons) {
           body: JSON.stringify({ weaviateId: expenseId, note }),
         });
         if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
-        showToast('Dépense refusée.', 'ok');
+        showToast('Depense refusee.', 'ok');
         loadConsNotes(cons);
         loadDetailKpis(cons);
-        loadCardKpis(cons);
-      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✗ Refuser'; }
+      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✗'; }
     });
   });
 }
 
 async function approveAllNotes(cons) {
   if (!loadedExpenses.length) return;
-  const toApprove = loadedExpenses.filter(e => e.weaviateId && e.approvalStatus !== 'APPROVED');
-  if (!toApprove.length) { showToast('Toutes les dépenses sont déjà approuvées.'); return; }
-  if (!confirm(`Approuver les ${toApprove.length} dépense${toApprove.length > 1 ? 's' : ''} de ${cons.name} ?`)) return;
+  const toApprove = loadedExpenses.filter(e => (e.weaviateId || e.id) && e.approvalStatus !== 'APPROVED');
+  if (!toApprove.length) { showToast('Toutes les depenses sont deja approuvees.'); return; }
+  if (!confirm(`Approuver les ${toApprove.length} depenses de ${cons.name} ?`)) return;
 
   let ok = 0, err = 0;
   for (const exp of toApprove) {
@@ -1671,50 +1744,28 @@ async function approveAllNotes(cons) {
       const res = await fetch(`${base()}/expenses/approve`, {
         method: 'POST',
         headers: adminHeaders(),
-        body: JSON.stringify({ weaviateId: exp.weaviateId }),
+        body: JSON.stringify({ weaviateId: exp.weaviateId || String(exp.id || '') }),
       });
       if (res.ok) ok++; else err++;
     } catch { err++; }
   }
-  showToast(`${ok} approuvée${ok > 1 ? 's' : ''}${err ? ` · ${err} erreur${err > 1 ? 's' : ''}` : ''}.`, err ? '' : 'ok');
+  showToast(`${ok} approuvee(s)${err ? `, ${err} erreur(s)` : ''}.`, err ? '' : 'ok');
   loadConsNotes(cons);
   loadDetailKpis(cons);
-  loadCardKpis(cons);
 }
 
-async function downloadNotesPdf(cons) {
+function downloadNotesPdf(cons) {
   const month = document.getElementById('cons-notes-month').value;
-  if (!month) { showToast('Sélectionnez un mois.', 'err'); return; }
-  try {
-    const p   = new URLSearchParams({ month, consultantEmail: cons.email });
-    const res = await fetch(`${base()}/expenses/report/pdf/month?${p}`, { headers: adminHeaders() });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    const link = document.createElement('a');
-    link.href     = URL.createObjectURL(blob);
-    link.download = `notes-${cons.name || cons.email}-${month}.pdf`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  } catch (e) { showToast('Erreur téléchargement PDF : ' + e.message, 'err'); }
+  if (!month) { showToast('Selectionnez un mois.', 'err'); return; }
+  const p = new URLSearchParams({ month, consultantEmail: cons.email });
+  window.open(`${base()}/expenses/report/pdf/month?${p}`, '_blank');
 }
 
-async function downloadNotesExcel(cons) {
+function downloadNotesExcel(cons) {
   const month = document.getElementById('cons-notes-month').value;
-  if (!month) { showToast('Sélectionnez un mois.', 'err'); return; }
-  try {
-    const [ny, nm] = month.split('-').map(Number);
-    const start    = `${month}-01`;
-    const end      = `${month}-${new Date(ny, nm, 0).getDate()}`;
-    const p   = new URLSearchParams({ start, end, consultantEmail: cons.email });
-    const res = await fetch(`${base()}/expenses/report/excel?${p}`, { headers: adminHeaders() });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    const link = document.createElement('a');
-    link.href     = URL.createObjectURL(blob);
-    link.download = `notes-${cons.name || cons.email}-${month}.xlsx`;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  } catch (e) { showToast('Erreur téléchargement Excel : ' + e.message, 'err'); }
+  if (!month) { showToast('Selectionnez un mois.', 'err'); return; }
+  const p = new URLSearchParams({ month, consultantEmail: cons.email });
+  window.open(`${base()}/expenses/report/excel?${p}`, '_blank');
 }
 
 // ============================================================
@@ -1784,22 +1835,39 @@ async function downloadInvoiceFile(inv, format) {
   }
 }
 
+const INV_STATUS_LABEL = { EN_ATTENTE: 'En attente', ENVOYEE: 'Envoyée', PAYEE: 'Payée', EN_RETARD: 'En retard' };
+const INV_STATUS_COLOR = { EN_ATTENTE: 'grey', ENVOYEE: 'orange', PAYEE: 'green', EN_RETARD: 'red' };
+
 function renderInvoiceList(items, cons) {
   const rows = items.map((inv, idx) => {
-    const name   = inv.invoiceName || '—';
-    const bm     = inv.billingMonth || '—';
-    const client = inv.clientCompanyName || '—';
-    const total  = inv.totalTtc != null ? Number(inv.totalTtc).toFixed(2) + ' ' + (inv.currency || 'EUR') : '—';
+    const name    = inv.invoiceName || '—';
+    const bm      = inv.billingMonth || '—';
+    const client  = inv.clientCompanyName || '—';
+    const total   = inv.totalTtc != null ? Number(inv.totalTtc).toFixed(2) + ' ' + (inv.currency || 'EUR') : '—';
+    const status  = inv.paymentStatus || 'EN_ATTENTE';
+    const slabel  = INV_STATUS_LABEL[status] || status;
+    const scolor  = INV_STATUS_COLOR[status] || 'grey';
+    const due     = inv.paymentDueDate ? ` · Éch. ${escapeHtml(inv.paymentDueDate)}` : '';
+    const invId   = inv.id || '';
+
+    const actionSent = status === 'EN_ATTENTE'
+      ? `<button class="btn-secondary inv-mark-sent" data-id="${escapeHtml(invId)}" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px" title="Marquer comme envoyée">Envoyée</button>` : '';
+    const actionPaid = (status === 'ENVOYEE' || status === 'EN_RETARD')
+      ? `<button class="btn-primary inv-mark-paid" data-id="${escapeHtml(invId)}" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px;background:linear-gradient(120deg,#16a34a,#15803d)" title="Marquer comme payée">Payée ✓</button>` : '';
+
     return `
       <div class="approval-row" data-inv-idx="${idx}">
         <div class="approval-meta">
           <span class="approval-name">${escapeHtml(name)}</span>
-          <span class="approval-detail">${escapeHtml(bm)} — ${escapeHtml(client)}</span>
+          <span class="approval-detail">${escapeHtml(bm)} — ${escapeHtml(client)}${due}</span>
         </div>
         <div class="approval-right">
+          <span class="status-badge ${scolor}">${escapeHtml(slabel)}</span>
           <span class="approval-amount">${escapeHtml(total)}</span>
-          <button class="btn-secondary inv-dl-pdf" data-inv-idx="${idx}" style="padding:6px 12px;font-size:12px">PDF</button>
-          <button class="btn-inv-delete inv-delete" data-inv-idx="${idx}" title="Supprimer cette facture">
+          ${actionSent}
+          ${actionPaid}
+          <button class="btn-secondary inv-dl-pdf" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px">PDF</button>
+          <button class="btn-inv-delete inv-delete" data-inv-idx="${idx}" title="Supprimer">
             <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
           </button>
         </div>
@@ -1815,6 +1883,30 @@ function renderInvoiceList(items, cons) {
   });
   wrap.querySelectorAll('.inv-delete').forEach(btn => {
     btn.addEventListener('click', () => deleteInvoice(items[+btn.dataset.invIdx], cons));
+  });
+  wrap.querySelectorAll('.inv-mark-sent').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await fetch(`${invoiceBase()}/invoices/${btn.dataset.id}/mark-sent`, { method: 'PUT', headers: adminHeaders() });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        showToast('Facture marquée comme envoyée.', 'ok');
+        loadConsInvoices(cons);
+      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = 'Envoyée'; }
+    });
+  });
+  wrap.querySelectorAll('.inv-mark-paid').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await fetch(`${invoiceBase()}/invoices/${btn.dataset.id}/mark-paid`, {
+          method: 'PUT', headers: adminHeaders(), body: JSON.stringify({})
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        showToast('Facture marquée comme payée ✓', 'ok');
+        loadConsInvoices(cons);
+      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = 'Payée ✓'; }
+    });
   });
 
   return wrap;
@@ -1849,14 +1941,182 @@ function initMainNavTabs() {
       document.querySelectorAll('.main-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const view = btn.dataset.view;
+      document.getElementById('dashboard-view').style.display   = view === 'dashboard'    ? '' : 'none';
       document.getElementById('cons-grid-view').style.display   = view === 'consultants' ? '' : 'none';
       document.getElementById('cons-detail-view').style.display = 'none';
       document.getElementById('projects-view').style.display    = view === 'projects'    ? '' : 'none';
       document.getElementById('clients-view').style.display     = view === 'clients'     ? '' : 'none';
-      if (view === 'projects') loadProjects();
-      if (view === 'clients')  loadClients();
+      if (view === 'dashboard') loadDashboard();
+      if (view === 'projects')  loadProjects();
+      if (view === 'clients')   loadClients();
     });
   });
+}
+
+// ============================================================
+// DASHBOARD MANAGER
+// ============================================================
+
+(function initDashboard() {
+  const curMonth = new Date().toISOString().substring(0, 7);
+  const monthEl  = document.getElementById('dash-month');
+  if (monthEl) monthEl.value = curMonth;
+  document.getElementById('dash-load-btn')?.addEventListener('click', loadDashboard);
+})();
+
+async function loadDashboard() {
+  const month    = document.getElementById('dash-month')?.value || new Date().toISOString().substring(0, 7);
+  const statusEl = document.getElementById('dash-status');
+  const kpisEl   = document.getElementById('dash-kpis');
+  const tableEl  = document.getElementById('dash-table-wrap');
+
+  setStatus(statusEl, 'Chargement…');
+  kpisEl.style.display  = 'none';
+  tableEl.style.display = 'none';
+
+  try {
+    const res = await fetch(`${base()}/dashboard/summary?month=${encodeURIComponent(month)}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+
+    kpisEl.innerHTML = renderDashKpis(d);
+    kpisEl.style.display = '';
+
+    tableEl.innerHTML = renderDashTable(d.consultants || []);
+    tableEl.style.display = '';
+
+    setStatus(statusEl, '');
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+function renderDashKpis(d) {
+  const fmtK = v => {
+    if (v >= 1000000) return (v/1000000).toFixed(1).replace('.0','') + ' M€';
+    if (v >= 1000)    return Math.round(v/1000) + ' k€';
+    return new Intl.NumberFormat('fr-FR',{maximumFractionDigits:0}).format(v) + ' €';
+  };
+  const hasMarge   = d.margeNette > 0 || d.coutTotal > 0;
+  const totalConts = (d.consultants || []).length;
+  const valide     = (d.consultants || []).filter(c => c.craStatus === 'VALIDE').length;
+  const soumis     = (d.consultants || []).filter(c => c.craStatus === 'SOUMIS').length;
+  const absent     = (d.consultants || []).filter(c => c.craStatus === 'ABSENT').length;
+  const actColor   = d.tauxActiviteMoyen >= 80 ? '#4ade80' : d.tauxActiviteMoyen >= 60 ? '#fb923c' : '#f87171';
+  const mrgColor   = d.tauxMargeGlobal  >= 30 ? '#4ade80' : d.tauxMargeGlobal  >= 15 ? '#fb923c' : '#f87171';
+
+  const kpiCard = (eyebrow, big, bigColor, sub, subColor='var(--text-muted)', accent='') => `
+    <div class="dkpi-card${accent ? ' dkpi-accent' : ''}">
+      <div class="dkpi-eyebrow">${eyebrow}</div>
+      <div class="dkpi-big" style="color:${bigColor}">${big}</div>
+      <div class="dkpi-sub" style="color:${subColor}">${sub}</div>
+    </div>`;
+
+  const bar = (pct, color) => {
+    const c = 2*Math.PI*28, off = c*(1-Math.min(pct,100)/100);
+    return `<svg width="72" height="72" viewBox="0 0 72 72" style="flex-shrink:0">
+      <circle cx="36" cy="36" r="28" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="6"/>
+      <circle cx="36" cy="36" r="28" fill="none" stroke="${color}" stroke-width="6"
+        stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"
+        stroke-linecap="round" transform="rotate(-90 36 36)"/>
+      <text x="36" y="40" text-anchor="middle" font-size="13" font-weight="700" fill="${color}">${pct.toFixed(0)}%</text>
+    </svg>`;
+  };
+
+  const alertRow = d.facturesEnRetard > 0 || d.fraisEnAttenteCount > 0 ? `
+    <div class="dkpi-alerts">
+      ${d.facturesEnRetard > 0    ? `<span class="dkpi-pill red">⚠️ ${d.facturesEnRetard} facture${d.facturesEnRetard>1?'s':''} en retard · ${fmtK(d.montantFacturesEnRetard)}</span>` : ''}
+      ${d.fraisEnAttenteCount > 0 ? `<span class="dkpi-pill orange">🧾 ${d.fraisEnAttenteCount} frais à approuver · ${fmtK(d.fraisEnAttente)}</span>` : ''}
+    </div>` : '';
+
+  return `
+  <div class="dkpi-grid">
+    ${kpiCard('CA FACTURABLE', fmtK(d.caFacturable), 'var(--accent)',
+      hasMarge ? `Coût : ${fmtK(d.coutTotal)}` : `${totalConts} consultant${totalConts>1?'s':''}`, '', 'yes')}
+
+    ${hasMarge
+      ? kpiCard('MARGE NETTE', fmtK(d.margeNette), mrgColor,
+          d.nbConsultantsAvecCout < totalConts
+            ? `Taux ${d.tauxMargeGlobal.toFixed(0)}% · ${d.nbConsultantsAvecCout}/${totalConts} consultants`
+            : `Taux de marge ${d.tauxMargeGlobal.toFixed(0)}%`, mrgColor)
+      : kpiCard('MARGE NETTE', '—', 'var(--text-muted)', 'Prix d\'achat non renseigné')}
+
+    <div class="dkpi-card dkpi-gauges">
+      <div class="dkpi-eyebrow">TAUX D'ACTIVITÉ</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
+        ${bar(d.tauxActiviteMoyen, actColor)}
+        <div>
+          <div style="font-size:22px;font-weight:800;color:${actColor}">${d.tauxActiviteMoyen.toFixed(0)}%</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${totalConts} consultant${totalConts>1?'s':''}</div>
+          <div style="font-size:11px;color:var(--text-muted)">Objectif ≥ 80%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dkpi-card">
+      <div class="dkpi-eyebrow">PIPELINE CRA</div>
+      <div class="dkpi-pipeline">
+        <div><span style="color:#4ade80;font-size:26px;font-weight:800">${valide}</span><br><small>Validés</small></div>
+        <div><span style="color:#fb923c;font-size:26px;font-weight:800">${soumis}</span><br><small>En attente</small></div>
+        <div><span style="color:#6b7280;font-size:26px;font-weight:800">${absent}</span><br><small>Absents</small></div>
+      </div>
+    </div>
+  </div>
+  ${alertRow}`;
+}
+
+function renderDashTable(consultants) {
+  if (!consultants.length) return '<p style="padding:24px;color:var(--text-muted);font-size:13px">Aucun consultant actif ce mois.</p>';
+  const hasMarge = consultants.some(c => c.dailyCost != null);
+  const maxCA    = Math.max(...consultants.map(c => c.caFacturable || 0), 1);
+  const fmtE     = v => v != null && v > 0 ? new Intl.NumberFormat('fr-FR',{maximumFractionDigits:0}).format(v) + ' €' : '—';
+  const DOT  = { VALIDE:'#4ade80', SOUMIS:'#fb923c', BROUILLON:'#6b7280', REFUSE:'#f87171', ABSENT:'#374151' };
+  const LBLS = { VALIDE:'Validé', SOUMIS:'Soumis', BROUILLON:'Brouillon', REFUSE:'Refusé', ABSENT:'Absent' };
+
+  let html = `<div class="dconsult-table">
+    <div class="dconsult-header">
+      <span>Consultant</span><span>Jours</span><span>Activité</span>
+      <span>CA${hasMarge?' / Marge':''}</span><span>Barre CA</span>
+    </div>`;
+
+  consultants.forEach(c => {
+    const taux    = c.tauxActivite || 0;
+    const tColor  = taux >= 80 ? '#4ade80' : taux >= 60 ? '#fb923c' : '#f87171';
+    const caW     = Math.round((c.caFacturable / maxCA) * 100);
+    const coutW   = c.coutTotal != null ? Math.round((c.coutTotal / maxCA) * 100) : 0;
+    const tm      = c.tauxMarge;
+    const tmColor = tm != null ? (tm >= 30 ? '#4ade80' : tm >= 15 ? '#fb923c' : '#f87171') : '#6b7280';
+    const dot     = DOT[c.craStatus] || '#6b7280';
+    const lbl     = LBLS[c.craStatus] || c.craStatus;
+    const ini     = (c.name || c.email).split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+
+    html += `<div class="dconsult-row">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="dash-avatar-sm">${ini}</div>
+        <div>
+          <div style="font-weight:600;font-size:13px">${escapeHtml(c.name||c.email)}</div>
+          <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+            <span style="width:6px;height:6px;border-radius:50%;background:${dot};flex-shrink:0;display:inline-block"></span>
+            <span style="font-size:11px;color:var(--text-muted)">${lbl}</span>
+          </div>
+        </div>
+      </div>
+      <span style="font-weight:700">${c.joursValides%1===0?c.joursValides:c.joursValides.toFixed(1)}j / ${c.joursOuvres}j</span>
+      <span style="font-weight:700;color:${tColor}">${taux.toFixed(0)}%</span>
+      <div>
+        <div style="font-weight:700;font-size:14px">${fmtE(c.caFacturable)}</div>
+        ${hasMarge ? `<div style="font-size:11px;color:${tmColor};margin-top:1px">${tm!=null?`${tm.toFixed(0)}% · ${fmtE(c.margeNette)}`:'Prix achat non renseigné'}</div>` : ''}
+      </div>
+      <div style="padding-right:8px">
+        <div style="height:8px;background:rgba(255,255,255,.06);border-radius:4px;position:relative;overflow:hidden">
+          <div style="position:absolute;inset:0;width:${caW}%;background:linear-gradient(90deg,#2ce5a7,#14b88a);border-radius:4px"></div>
+          ${coutW>0?`<div style="position:absolute;inset:0;width:${coutW}%;background:rgba(251,146,60,.45);border-radius:4px"></div>`:''}
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:3px">${fmtE(c.caFacturable)}${c.coutTotal!=null?' · coût '+fmtE(c.coutTotal):''}</div>
+      </div>
+    </div>`;
+  });
+  return html + '</div>';
 }
 
 // ============================================================
@@ -2027,6 +2287,7 @@ function renderAssignmentsList(assignments) {
         <span>Projet</span>
         <span>Client</span>
         <span>TJM</span>
+        <span>Délai</span>
         <span></span>
       </div>
       ${assignments.map(a => `
@@ -2039,6 +2300,7 @@ function renderAssignmentsList(assignments) {
             <span class="dl-badge dl-badge-blue">${escapeHtml(a.client?.name || '—')}</span>
           </div>
           <div class="cell-amount">${a.tjm != null ? a.tjm + ' €/j' : '—'}</div>
+          <div><span class="dl-badge dl-badge-muted">${a.paymentTermsDays === 45 ? '45j' : a.paymentTermsDays === 60 ? '2 mois' : '1 mois'}</span></div>
           <div class="cell-actions">
             <button class="btn-row-edit"
               onclick="openAssignmentModal(currentConsultant, ${JSON.stringify(a).replace(/"/g,'&quot;')})">
@@ -2058,6 +2320,8 @@ async function openAssignmentModal(_cons, assignment) {
   document.getElementById('assignment-modal-title').textContent = assignment ? 'Modifier le trio' : 'Ajouter un trio';
   document.getElementById('assignment-modal-id').value  = assignment?.id  || '';
   document.getElementById('assignment-tjm').value       = assignment?.tjm != null ? assignment.tjm : '';
+  document.getElementById('assignment-daily-cost').value = currentConsultant?.dailyCost != null ? currentConsultant.dailyCost : '';
+  document.getElementById('assignment-payment-terms').value = assignment?.paymentTermsDays ?? 30;
 
   // Load projects & clients in parallel
   const [projRes, cliRes] = await Promise.all([
@@ -2096,7 +2360,10 @@ async function saveAssignment(cons) {
   const id        = document.getElementById('assignment-modal-id').value;
   const projectId = document.getElementById('assignment-project-select').value;
   const clientId  = document.getElementById('assignment-client-select').value;
-  const tjm       = parseFloat(document.getElementById('assignment-tjm').value);
+  const tjm              = parseFloat(document.getElementById('assignment-tjm').value);
+  const dailyCostRaw     = document.getElementById('assignment-daily-cost').value.trim();
+  const dailyCost        = dailyCostRaw === '' ? null : parseFloat(dailyCostRaw);
+  const paymentTermsDays = parseInt(document.getElementById('assignment-payment-terms').value, 10);
 
   if (!projectId) { statusEl.textContent = 'Le projet est obligatoire.'; return; }
   if (!clientId)  { statusEl.textContent = 'Le client est obligatoire.'; return; }
@@ -2109,10 +2376,19 @@ async function saveAssignment(cons) {
     const res = await fetch(url, {
       method,
       headers: adminHeaders(),
-      body: JSON.stringify({ projectId, clientId, tjm }),
+      body: JSON.stringify({ projectId, clientId, tjm, paymentTermsDays }),
     });
     restore();
     if (!res.ok) { statusEl.textContent = 'Erreur lors de la sauvegarde.'; return; }
+
+    // Sauvegarder le prix d'achat sur le profil consultant
+    if (currentConsultant) {
+      currentConsultant.dailyCost = dailyCost;
+      const idx = allConsultants.findIndex(c => c.email === currentConsultant.email);
+      if (idx >= 0) { allConsultants[idx].dailyCost = dailyCost; saveConsultants(allConsultants); }
+      await saveConsultantToBackend(currentConsultant);
+    }
+
     showToast(id ? 'Trio mis à jour.' : 'Trio ajouté.', 'ok');
     closeAssignmentModal();
     loadConsultantAssignments(cons);
@@ -2313,5 +2589,101 @@ async function deleteClient(id) {
     renderClientsTable();
   } catch {
     showToast('Impossible de joindre le serveur.', 'error');
+  }
+}
+
+// ============================================================
+// CONGÉS — ADMIN
+// ============================================================
+
+async function loadConsLeaves(cons) {
+  const statusEl  = document.getElementById('cons-leave-status');
+  const listEl    = document.getElementById('cons-leave-list');
+  const balanceEl = document.getElementById('cons-leave-balance');
+
+  setStatus(statusEl, 'Chargement…');
+  listEl.innerHTML = '';
+
+  try {
+    // Solde
+    const year = new Date().getFullYear();
+    const bRes = await fetch(`${base()}/leaves/balance?consultantEmail=${encodeURIComponent(cons.email)}&year=${year}`, { headers: authHeaders() });
+    if (bRes.ok) {
+      const b = await bRes.json();
+      balanceEl.innerHTML = `
+        <span style="color:var(--accent);font-weight:700">CP : ${Number(b.cpRemaining).toFixed(1)}j restants</span>
+        <span style="color:var(--accent-2);font-weight:700">RTT : ${Number(b.rttRemaining).toFixed(1)}j restants</span>`;
+    }
+
+    // Demandes
+    const res = await fetch(`${base()}/leaves/mine?consultantEmail=${encodeURIComponent(cons.email)}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const items = await res.json();
+    setStatus(statusEl, '');
+
+    if (!items.length) { listEl.innerHTML = '<p class="muted-sm" style="padding:12px 0">Aucune demande de congé.</p>'; return; }
+
+    const STATUS_COLOR = { DEMANDEE: 'orange', APPROUVEE: 'green', REFUSEE: 'red' };
+    const STATUS_LABEL = { DEMANDEE: 'En attente', APPROUVEE: 'Approuvée', REFUSEE: 'Refusée' };
+    const COLS = '90px 90px 70px 70px 100px 1fr 120px';
+
+    let html = `<div class="data-list">
+      <div class="data-list-header" style="grid-template-columns:${COLS}">
+        <span>Du</span><span>Au</span><span>Jours</span><span>Type</span><span>Statut</span><span>Motif</span><span>Actions</span>
+      </div>`;
+
+    items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).forEach(l => {
+      const color  = STATUS_COLOR[l.status] || 'grey';
+      const label  = STATUS_LABEL[l.status] || l.status;
+      const actions = l.status === 'DEMANDEE'
+        ? `<button class="btn-approve-leave btn-primary" data-id="${escapeHtml(l.id)}" style="padding:4px 10px;font-size:11px">✓ Approuver</button>
+           <button class="btn-refuse-leave btn-secondary" data-id="${escapeHtml(l.id)}" style="padding:4px 8px;font-size:11px;color:#f87171">✗</button>`
+        : '';
+      html += `<div class="data-list-row" style="grid-template-columns:${COLS}">
+        <span style="font-size:12px;font-weight:600;color:var(--accent-2)">${escapeHtml(l.startDate || '')}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--accent-2)">${escapeHtml(l.endDate || '')}</span>
+        <span style="font-weight:600">${l.daysCount}j</span>
+        <span class="expense-type-cell">${escapeHtml(l.type || '')}</span>
+        <span><span class="status-badge ${color}">${escapeHtml(label)}</span></span>
+        <span class="cell-muted" style="font-size:12px">${escapeHtml(l.reason || l.refusedReason || '')}</span>
+        <div style="display:flex;gap:6px">${actions}</div>
+      </div>`;
+    });
+    html += '</div>';
+    listEl.innerHTML = html;
+
+    listEl.querySelectorAll('.btn-approve-leave').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = '…';
+        try {
+          const res = await fetch(`${base()}/leaves/${btn.dataset.id}/approve`, {
+            method: 'PUT', headers: adminHeaders(),
+            body: JSON.stringify({ approvedBy: adminUser?.email || 'Admin' }),
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          showToast('Congé approuvé.', 'ok');
+          loadConsLeaves(cons);
+        } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✓ Approuver'; }
+      });
+    });
+
+    listEl.querySelectorAll('.btn-refuse-leave').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const reason = prompt('Motif du refus (optionnel) :') || '';
+        btn.disabled = true;
+        try {
+          const res = await fetch(`${base()}/leaves/${btn.dataset.id}/refuse`, {
+            method: 'PUT', headers: adminHeaders(),
+            body: JSON.stringify({ reason }),
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          showToast('Congé refusé.', 'err');
+          loadConsLeaves(cons);
+        } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; }
+      });
+    });
+
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
   }
 }

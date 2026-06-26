@@ -14,6 +14,17 @@ public record ConsultantProfile(
         Boolean active,
         VehicleType vehicleType,
         Integer fiscalPower,
-        Integer kmAnnual
+        Integer kmAnnual,
+        /** false pour admin/manager (personnel interne non facturable) */
+        Boolean isConsultant,
+        /** Prix d'achat journalier (€/j) : coût complet salarié ou taux freelance convenu */
+        Double dailyCost
 ) {
+    /** Dérive isConsultant depuis le rôle si non fourni explicitement. */
+    public boolean billable() {
+        if (isConsultant != null) return isConsultant;
+        if (role == null) return true;
+        String r = role.toLowerCase();
+        return !r.equals("admin") && !r.equals("manager") && !r.equals("gestionnaire");
+    }
 }

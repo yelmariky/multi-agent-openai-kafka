@@ -10,6 +10,8 @@ import io.multiagent.core.organization.entity.Client;
 import io.multiagent.core.organization.entity.Mission;
 import io.multiagent.core.organization.entity.Resource;
 import io.multiagent.core.organization.entity.ProjectEntity;
+import io.multiagent.core.organization.entity.ConsultantAssignmentEntity;
+import io.multiagent.core.organization.repository.ConsultantAssignmentRepository;
 import io.multiagent.core.organization.repository.MissionRepository;
 import io.multiagent.core.organization.repository.ProjectRepository;
 import io.multiagent.core.service.WeaviateService;
@@ -44,6 +46,7 @@ public class CraPdfService {
     private final CraJpaRepository craRepo;
     private final MissionRepository missionRepo;
     private final ProjectRepository projectRepo;
+    private final ConsultantAssignmentRepository assignmentRepo;
     private final WeaviateService weaviateService;
     private final ObjectMapper objectMapper;
     private final ConsultantProfileJpaRepository consultantProfileRepo;
@@ -60,7 +63,7 @@ public class CraPdfService {
     private static final Color COLOR_WEEKEND = new Color(0xe8, 0xe8, 0xe8);
 
     @Transactional(readOnly = true)
-    public byte[] generatePdf(UUID craId) {
+    public byte[] generatePdf(UUID craId, UUID projectIdFilter) {
         CraEntity cra = craRepo.findById(craId)
                 .orElseThrow(() -> new IllegalArgumentException("CRA introuvable : " + craId));
 
@@ -112,20 +115,45 @@ public class CraPdfService {
             prestaContact = consultantDisplayName;
         }
 
-        // Client block: from mission client > consultant profile > CRA fields
+        // Résolution assignment (TRIO projet/client/TJM configuré par l'admin)
+        // Si projectIdFilter est fourni (PDF filtré par projet), on cherche l'assignment de ce projet précis.
+        // Sinon : projectId du CRA > premier assignment du consultant
+        ConsultantAssignmentEntity assignment = null;
+        if (consultantProfile != null) {
+            List<ConsultantAssignmentEntity> assignments =
+                    assignmentRepo.findByConsultantProfileIdAndTenantId(consultantProfile.getId(), tenantId);
+            UUID effectivePid = projectIdFilter != null ? projectIdFilter : cra.getProjectId();
+            if (effectivePid != null && !assignments.isEmpty()) {
+                assignment = assignments.stream()
+                        .filter(a -> a.getProject() != null
+                                && a.getProject().getId().equals(effectivePid))
+                        .findFirst()
+                        .orElseGet(() -> assignments.get(0));
+            } else if (!assignments.isEmpty()) {
+                assignment = assignments.get(0);
+            }
+        }
+
+        // Client block: mission client > assignment client (TRIO) > champs CRA (stale) > profil consultant
         String clientSociete;
         String clientAddr;
         String clientContact;
-        if (client != null) {
-            clientSociete = safe(client.getName());
-            clientAddr = safe(client.getAddress());
-            clientContact = safe(client.getContactName());
+        Client resolvedClient = client != null ? client
+                : (assignment != null ? assignment.getClient() : null);
+
+        if (resolvedClient != null) {
+            clientSociete = safe(resolvedClient.getName());
+            clientAddr    = safe(resolvedClient.getAddress());
+            // Préférer contactName, sinon contactEmail
+            String cn = resolvedClient.getContactName();
+            String ce = resolvedClient.getContactEmail();
+            clientContact = (cn != null && !cn.isBlank()) ? cn : safe(ce);
         } else {
+            // Dernier recours : valeurs sauvegardées dans le CRA ou le profil consultant
             String craClientCompany = cra.getClientCompany();
             clientSociete = (craClientCompany != null && !craClientCompany.isBlank()) ? craClientCompany
                     : (consultantProfile != null ? safe(consultantProfile.getClientName()) : "");
             clientAddr = consultantProfile != null ? safe(consultantProfile.getClientAddress()) : "";
-            // Contact: CRA field first, fallback to admin-set profile field
             String craEmail = cra.getClientContactEmail();
             clientContact = (craEmail != null && !craEmail.isBlank()) ? craEmail
                     : (consultantProfile != null ? safe(consultantProfile.getClientContactEmail()) : "");
@@ -178,6 +206,13 @@ public class CraPdfService {
                 if (byProject.isEmpty()) {
                     byProject.put("__fallback__", entries.isEmpty() ? new ArrayList<>() : new ArrayList<>(entries));
                 }
+                // Filtre par projet si demandé (PDF par client) : garder uniquement le projet ciblé + absences
+                if (projectIdFilter != null) {
+                    byProject.entrySet().removeIf(entry ->
+                        !"__ABSENCE__".equals(entry.getKey()) &&
+                        !projectIdFilter.toString().equals(entry.getKey())
+                    );
+                }
                 // Résoudre le label de chaque groupe — ligne Absences en premier.
                 // Ignorer les groupes sans entrées de travail ou d'absence (ex. résidu WEEKEND/FERIE d'anciens CRAs).
                 List<ProjectRow> rows = new ArrayList<>();
@@ -214,7 +249,21 @@ public class CraPdfService {
 
                 // === TOTAL ===
                 y -= 10;
-                double total = cra.getTotalDays() != null ? cra.getTotalDays().doubleValue() : 0;
+                // Total = jours travaillés uniquement (ABSENT exclu — non facturable).
+                // PDF filtré : calcul depuis les lignes filtrées. PDF complet : entrées TRAVAIL du CRA entier.
+                double total;
+                if (projectIdFilter != null) {
+                    total = rows.stream()
+                            .flatMap(r -> r.entries().stream())
+                            .filter(e -> "TRAVAIL".equals(e.type()))
+                            .mapToDouble(CraDayEntry::value)
+                            .sum();
+                } else {
+                    total = entries.stream()
+                            .filter(e -> "TRAVAIL".equals(e.type()))
+                            .mapToDouble(CraDayEntry::value)
+                            .sum();
+                }
                 cs.setFont(PDType1Font.HELVETICA_BOLD, 11);
                 writeLine(cs, MARGIN, y, "Total : " + formatDays(total) + " jours");
                 y -= LEADING;
@@ -359,7 +408,7 @@ public class CraPdfService {
         y -= cellH;
 
         // === Data rows (one per project) ===
-        // Pré-calcul des totaux par jour (TRAVAIL + ABSENT) pour la ligne Total
+        // Pré-calcul des totaux par jour — TRAVAIL uniquement (absences affichées mais non comptabilisées)
         double[] dayTotals = new double[daysInMonth + 1];
         for (ProjectRow row : rows) {
             cs.setFont(PDType1Font.HELVETICA, 7);
@@ -378,7 +427,8 @@ public class CraPdfService {
                     switch (entry.type()) {
                         case "WEEKEND" -> bg = COLOR_WEEKEND;
                         case "FERIE"   -> { bg = COLOR_FERIE;  lbl = "F"; }
-                        case "ABSENT"  -> { bg = COLOR_ABSENT; lbl = entry.value() < 1.0 ? "1/2" : "A"; dayTotals[d] += entry.value(); }
+                        // Absences : affichées dans la grille mais NON comptées dans le total
+                        case "ABSENT"  -> { bg = COLOR_ABSENT; lbl = entry.value() < 1.0 ? "1/2" : "A"; }
                         default -> {
                             if (entry.value() >= 1.0)  { bg = COLOR_TRAVAIL; lbl = "1";   dayTotals[d] += entry.value(); }
                             else if (entry.value() > 0) { bg = COLOR_TRAVAIL; lbl = "0.5"; dayTotals[d] += entry.value(); }

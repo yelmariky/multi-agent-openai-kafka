@@ -7,6 +7,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -63,6 +64,14 @@ public class CraEntity {
 
     @Column(name = "project_id")
     private UUID projectId;
+
+    /** Référence de validation client (n° bon de commande, email de confirmation…) */
+    @Column(name = "client_validation_ref", length = 200)
+    private String clientValidationRef;
+
+    /** Date à laquelle le client a validé le CRA (retour Excel, email…) */
+    @Column(name = "client_validation_date")
+    private LocalDate clientValidationDate;
 
     @Column(name = "created_at")
     private Instant createdAt;

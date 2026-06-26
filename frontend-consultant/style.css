@@ -308,6 +308,24 @@ header {
 .inline select:focus { outline: none; border-color: rgba(44,229,167,.4); }
 .inline input::placeholder { color: rgba(168,179,198,.4); }
 
+/* Champ mois verrouillé (mois précédent clôturé) */
+.inline input.cra-month-locked {
+  border-color: rgba(44,229,167,.25);
+  color: var(--accent);
+  cursor: not-allowed;
+  pointer-events: none;
+  user-select: none;
+  opacity: .85;
+}
+.inline input.cra-month-locked:focus { border-color: rgba(44,229,167,.25); }
+.cra-month-lock-notice {
+  font-size: 11px;
+  color: var(--accent);
+  opacity: .7;
+  margin: 2px 0 0;
+  letter-spacing: .02em;
+}
+
 /* ============================================================
    BOUTONS
    ============================================================ */
@@ -356,6 +374,7 @@ header {
   font: 600 12px var(--font);
   letter-spacing: .5px;
   text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(185,28,28,.35);
   transition: box-shadow .15s, transform .1s, opacity .15s;
@@ -363,6 +382,36 @@ header {
 .btn-pdf:hover:not(:disabled)  { box-shadow: 0 4px 16px rgba(185,28,28,.50); transform: translateY(-1px); }
 .btn-pdf:active                 { transform: none; opacity: .9; }
 .btn-pdf:disabled               { opacity: .45; cursor: not-allowed; }
+#cra-download-pdf               { position: relative; }
+
+.cra-pdf-menu {
+  position: absolute;
+  z-index: 500;
+  background: var(--card);
+  border: 1px solid rgba(44,229,167,.25);
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 240px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  margin-top: 4px;
+  right: 0;
+  top: 100%;
+}
+.cra-pdf-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cra-pdf-menu button:hover           { background: rgba(44,229,167,.1); color: var(--accent); }
+.cra-pdf-menu button:first-child      { color: var(--muted); font-size: 12px; font-style: italic; border-bottom: 1px solid rgba(255,255,255,.06); padding-bottom: 10px; margin-bottom: 2px; }
+.cra-pdf-menu button:first-child:hover { color: var(--text); background: rgba(255,255,255,.04); }
 
 .btn-recall {
   display: inline-flex;
@@ -537,6 +586,15 @@ header {
 }
 .cell-name   { font-weight: 600; font-size: 14px; color: var(--text); }
 .cell-sub    { font-size: 12px; color: var(--muted); }
+.expense-type-cell {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  line-height: 1.3;
+}
 .cell-muted  { font-size: 13px; color: var(--muted); }
 .cell-amount { font-size: 14px; font-weight: 700; color: var(--text); }
 
@@ -563,12 +621,54 @@ header {
 .cra-cal-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
+/* ── Barre de progression CRA ─────────────────────────────────────── */
+.cra-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: center;
+  margin: 0 0 18px;
+  padding: 10px 16px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 10px;
+}
+.cra-progress-pct {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 74px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.cra-progress-bar-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(255,255,255,.10);
+  border-radius: 99px;
+  overflow: hidden;
+  min-width: 120px;
+}
+.cra-progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width .4s ease;
+}
+.cra-progress-label {
+  font-size: 13px;
+  font-style: italic;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+/* anciens sélecteurs conservés (utilisés ailleurs) */
 .cra-summary       { display: flex; align-items: baseline; gap: 6px; }
 .cra-total-label   { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .cra-total-value   { font-size: 28px; font-weight: 700; color: var(--accent); line-height: 1; }
@@ -687,6 +787,88 @@ header {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 20px;
 }
+
+/* Saisie libre + Justificatif côte à côte */
+.notes-saisie-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 640px) {
+  .notes-saisie-row { grid-template-columns: 1fr; }
+}
+
+/* Rapport notes de frais — carte full-width */
+.notes-report-card {
+  background: linear-gradient(135deg, var(--card) 0%, rgba(44,229,167,.04) 100%);
+  border-color: rgba(44,229,167,.18);
+}
+.notes-report-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.notes-report-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(44,229,167,.12);
+  border: 1px solid rgba(44,229,167,.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.notes-report-header-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+.notes-report-header-top { }
+.notes-report-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.notes-report-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,255,255,.06);
+}
+.notes-kpi-card {
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.notes-kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+}
+.notes-kpi-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.notes-kpi-value.accent { color: var(--accent); }
+.notes-kpi-value.green  { color: #4ade80; }
+.notes-kpi-value.orange { color: #fb923c; }
 
 /* Periods editor (saisie libre km absences) */
 .absence-period-row {
@@ -854,7 +1036,8 @@ select {
 .cra-stacked th,
 .cra-stacked td { border:1px solid rgba(255,255,255,.1); padding:4px 6px; text-align:center; min-width:28px; white-space:nowrap; }
 .cra-stacked th { background:rgba(255,255,255,.04); color:var(--muted); font-weight:500; }
-.cra-stacked .cra-g-label { text-align:left; min-width:160px; font-weight:500; color:var(--text); }
+.cra-stacked .cra-g-label { text-align:left; min-width:160px; font-weight:500; color:var(--text); white-space:nowrap; }
+.cra-g-row-total { margin-left:6px; font-size:11px; font-weight:600; color:var(--accent); opacity:.85; letter-spacing:.02em; }
 .cra-stacked .cra-g-empty  { background: transparent; }
 .cra-stacked .cra-g-empty.clickable:hover { background: rgba(255,255,255,.06); }
 .cra-stacked .cra-g-full   { background:rgba(44,229,167,.2);   color:#6ee7b7; }
@@ -866,13 +1049,26 @@ select {
 .cra-stacked .clickable:hover { filter:brightness(1.3); }
 .cra-stacked tr.cra-g-total td { font-weight:600; background:rgba(255,255,255,.04); }
 .cra-stacked .cra-g-disabled    { background:rgba(255,255,255,.02); color:#3a4455; cursor:not-allowed; }
-.cra-stacked .cra-g-abs-half    { background:rgba(251,191,36,.22);  color:#fde047; }
-.cra-stacked .cra-g-abs-full    { background:rgba(239,68,68,.22);   color:#fca5a5; }
+.cra-stacked .cra-g-abs-half    { background:rgba(251,191,36,.22);  color:#fde047; cursor:default; }
+.cra-stacked .cra-g-abs-full    { background:rgba(239,68,68,.22);   color:#fca5a5; cursor:default; }
+.cra-stacked .cra-g-leave-lock    { background:rgba(44,229,167,.12);  color:var(--accent); cursor:not-allowed; border:1px solid rgba(44,229,167,.3); }
+.cra-stacked .cra-g-leave-pending { background:rgba(251,191,36,.10);  color:#fde047;       cursor:not-allowed; border:1px dashed rgba(251,191,36,.4); }
+/* Absence manuelle ancienne (legacy) — retirable mais doit être remplacée par un congé */
+.cra-stacked .cra-g-abs-legacy    { background:rgba(248,113,113,.12); color:#fca5a5;       cursor:pointer;     border:1px dashed rgba(248,113,113,.45); }
+.cra-stacked .cra-g-abs-legacy:hover { background:rgba(248,113,113,.22); }
 .cra-stacked tr.cra-g-absence-row .cra-g-label { color:var(--muted); font-style:italic; }
 /* Jours incomplets */
 .cra-stacked thead th.cra-g-hdr-warn             { color:#fed7aa; }
 .cra-stacked tr.cra-g-total td.cra-g-incomplete  { background:rgba(251,146,60,.20); color:#fed7aa; }
 .cra-incomplete-banner { margin-top:8px; padding:8px 14px; background:rgba(251,146,60,.08); border:1px solid rgba(251,146,60,.28); border-radius:6px; color:#fed7aa; font-size:12px; }
+/* En-tête 3 niveaux : semaine / abréviation / numéro */
+.cra-stacked .cra-g-week-hdr  { background:rgba(255,255,255,.06); color:var(--accent); font-size:11px; font-weight:600; letter-spacing:.04em; border-bottom:1px solid rgba(255,255,255,.08); }
+.cra-stacked .cra-g-day-abbr  { background:rgba(255,255,255,.03); color:#9ca3af; font-size:10px; font-weight:400; padding:2px 4px; }
+.cra-stacked .cra-g-label-top { vertical-align:middle; }
+/* Ligne total attendu (première ligne du corps) */
+.cra-stacked tr.cra-g-attendu td             { background:rgba(255,255,255,.02); color:#9ca3af; font-size:11px; border-bottom:2px solid rgba(255,255,255,.08); }
+.cra-stacked tr.cra-g-attendu .cra-g-label   { color:#9ca3af; font-weight:500; font-style:italic; }
+.cra-stacked tr.cra-g-attendu .cra-g-attendu-val { color:#9ca3af; }
 
 /* ============================================================
    CARTES PROJET (au-dessus de la grille CRA)
@@ -954,4 +1150,36 @@ select {
   font-size: 15px;
   font-weight: 700;
   color: var(--proj-color, var(--accent));
+}
+
+/* ============================================================
+   CONGÉS CP/RTT
+   ============================================================ */
+.leave-balance-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  min-width: 140px;
+}
+.leave-balance-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+}
+.leave-balance-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.leave-balance-value.accent { color: var(--accent); }
+.leave-balance-sub {
+  font-size: 11px;
+  color: var(--muted);
 }

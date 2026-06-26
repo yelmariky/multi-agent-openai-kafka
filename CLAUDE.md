@@ -123,8 +123,9 @@ kubectl apply -f invoice-service/deploy/k8s/ && kubectl rollout restart deployme
 | Commande | Domaine |
 |---|---|
 | `/expense` | Notes de frais — texte libre, OCR, frais km, workflow PENDING/APPROVED/REFUSED, paymentMode, absences |
-| `/invoices` | Factures PDF/Excel — invoice-service :8083 |
-| `/cra` | CRA mensuel — workflow BROUILLON→SOUMIS→VALIDE/REFUSE, SSE |
+| `/invoices` | Factures PDF/Excel — invoice-service :8083, suivi paiement (mark-sent, mark-paid) |
+| `/cra` | CRA mensuel — workflow BROUILLON→SOUMIS→VALIDE/REFUSE, SSE, retour client |
+| `/conge` | Congés CP/RTT — demandes, approbation, solde par consultant, tables leave_request/leave_balance |
 | `/rag` | Pipelines RAG — pgvector, embeddings, Groq/OpenAI |
 | `/tenant` | Multi-tenant — Keycloak, TenantFilter, realm-per-tenant |
 | `/deploy` | Déploiement — Docker build, K8s apply, port-forwards |

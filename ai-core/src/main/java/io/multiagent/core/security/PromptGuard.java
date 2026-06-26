@@ -64,6 +64,9 @@ public class PromptGuard {
             // Tentatives de jailbreak classiques
             Pattern.compile("do anything now|DAN mode|developer mode|jailbreak", Pattern.CASE_INSENSITIVE),
             Pattern.compile("without (any )?(restrictions?|limitations?|filters?|safety)", Pattern.CASE_INSENSITIVE)
+            // NOTE : la détection des opérations destructives multi-langues (FR, EN, ES, AR…)
+            // est déléguée à ScopeGuardService qui utilise le LLM via AI_CORE_PROMPT_GUARD_SECURITY.
+            // Ajouter des regex ici serait fragile et jamais exhaustif.
     );
 
     // ── API publique ──────────────────────────────────────────────────────────

@@ -41,6 +41,9 @@ public class ConsultantAssignmentEntity {
 
     private BigDecimal tjm;
 
+    @Column(name = "payment_terms_days")
+    private Integer paymentTermsDays = 30;
+
     @Column(name = "created_at")
     private Instant createdAt;
 

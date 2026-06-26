@@ -99,11 +99,25 @@ public class InvoiceEntity {
     @Column(name = "excel_path", length = 500)
     private String excelPath;
 
+    // Suivi paiement
+    @Column(name = "payment_status", length = 20)
+    private String paymentStatus = "EN_ATTENTE"; // EN_ATTENTE | ENVOYEE | PAYEE | EN_RETARD
+
+    @Column(name = "payment_received_date")
+    private LocalDate paymentReceivedDate;
+
+    @Column(name = "sent_date")
+    private LocalDate sentDate;
+
+    @Column(name = "invoice_number", length = 50)
+    private String invoiceNumber;
+
     @Column(name = "created_at")
     private Instant createdAt;
 
     @PrePersist
     void prePersist() {
         if (createdAt == null) createdAt = Instant.now();
+        if (paymentStatus == null) paymentStatus = "EN_ATTENTE";
     }
 }

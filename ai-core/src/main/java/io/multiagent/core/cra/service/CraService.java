@@ -3,6 +3,9 @@ package io.multiagent.core.cra.service;
 import io.multiagent.core.infrastructure.kafka.DomainEvent;
 import io.multiagent.core.infrastructure.kafka.EventPublisher;
 import io.multiagent.core.infrastructure.kafka.KafkaTopics;
+import io.multiagent.core.infrastructure.tenant.TenantContext;
+import io.multiagent.core.leave.entity.LeaveRequestEntity;
+import io.multiagent.core.leave.repository.LeaveRequestRepository;
 import io.multiagent.core.model.CraDayEntry;
 import io.multiagent.core.model.CraRequest;
 import io.multiagent.core.model.ExpenseItem;
@@ -18,9 +21,9 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -30,6 +33,7 @@ public class CraService {
     private final WeaviateService weaviateService;
     private final NotificationService notificationService;
     private final ConsultantNotificationService consultantNotificationService;
+    private final LeaveRequestRepository leaveRepo;
 
     // Kafka best-effort : null si le broker n'est pas disponible en dev local
     @Autowired(required = false)
@@ -64,7 +68,9 @@ public class CraService {
                 cra.validatedBy(),
                 cra.refusedReason(),
                 cra.missionId(),
-                cra.projectId()
+                cra.projectId(),
+                cra.clientValidationRef(),
+                cra.clientValidationDate()
         );
         String uuid = weaviateService.indexCra(toSave);
         return new CraRequest(
@@ -82,7 +88,9 @@ public class CraService {
                 toSave.validatedBy(),
                 toSave.refusedReason(),
                 toSave.missionId(),
-                toSave.projectId()
+                toSave.projectId(),
+                toSave.clientValidationRef(),
+                toSave.clientValidationDate()
         );
     }
 
@@ -107,7 +115,9 @@ public class CraService {
                 cra.validatedBy(),
                 null,  // clear refusedReason on resubmit
                 cra.missionId(),
-                cra.projectId()
+                cra.projectId(),
+                cra.clientValidationRef(),
+                cra.clientValidationDate()
         );
         CraRequest submitted = save(toSubmit);
         notificationService.push(
@@ -148,7 +158,9 @@ public class CraService {
                 validatedBy,
                 null,
                 cra.missionId(),
-                cra.projectId()
+                cra.projectId(),
+                cra.clientValidationRef(),
+                cra.clientValidationDate()
         );
         CraRequest validated = save(toValidate);
         consultantNotificationService.push(
@@ -186,7 +198,9 @@ public class CraService {
                 cra.validatedBy(),
                 reason,
                 cra.missionId(),
-                cra.projectId()
+                cra.projectId(),
+                cra.clientValidationRef(),
+                cra.clientValidationDate()
         );
         CraRequest refused = save(toRefuse);
         consultantNotificationService.push(
@@ -226,7 +240,9 @@ public class CraService {
                 cra.validatedBy(),
                 null,   // clear refusedReason
                 cra.missionId(),
-                cra.projectId()
+                cra.projectId(),
+                cra.clientValidationRef(),
+                cra.clientValidationDate()
         );
         return save(toRecall);
     }
@@ -251,7 +267,9 @@ public class CraService {
                 null,   // clear validatedBy
                 null,   // clear refusedReason
                 cra.missionId(),
-                cra.projectId()
+                cra.projectId(),
+                cra.clientValidationRef(),
+                cra.clientValidationDate()
         );
         return save(toReopen);
     }
@@ -264,17 +282,45 @@ public class CraService {
     }
 
     /**
-     * Returns merged absence periods from two sources:
-     * 1. absencePeriodsJson stored in mileage expenses (km expenses created with absence periods)
-     * 2. ABSENT entries from the saved CRA for this consultant/company/month
-     * Half-days (0.5j, type=TRAVAIL) are NOT included — consultant still drove to work.
+     * Returns merged absence periods from three sources:
+     * 1. absencePeriodsJson stored in mileage expenses (km expenses)
+     * 2. ABSENT entries from the saved CRA for this consultant/month
+     * 3. Approved leave_requests for this consultant in the given month
+     *    (congé = absence automatique, plus besoin de saisie manuelle)
      */
     public List<ExpenseItem.AbsencePeriod> getKmAbsences(String company, String month, String consultant) {
-        List<ExpenseItem.AbsencePeriod> kmAbsences  = weaviateService.findKmExpenseAbsences(company, month);
-        List<ExpenseItem.AbsencePeriod> craAbsences = weaviateService.findCraAbsentDays(consultant, company, month);
-        return java.util.stream.Stream.concat(kmAbsences.stream(), craAbsences.stream())
+        List<ExpenseItem.AbsencePeriod> kmAbsences   = weaviateService.findKmExpenseAbsences(company, month);
+        List<ExpenseItem.AbsencePeriod> craAbsences  = weaviateService.findCraAbsentDays(consultant, company, month);
+        List<ExpenseItem.AbsencePeriod> leaveAbsences = approvedLeaveAbsences(consultant, month);
+
+        return java.util.stream.Stream.of(kmAbsences.stream(), craAbsences.stream(), leaveAbsences.stream())
+                .flatMap(s -> s)
                 .distinct()
                 .toList();
+    }
+
+    /** Convertit les congés APPROUVÉS du consultant pour le mois en AbsencePeriod. */
+    private List<ExpenseItem.AbsencePeriod> approvedLeaveAbsences(String consultant, String month) {
+        if (consultant == null || consultant.isBlank() || month == null) return List.of();
+        try {
+            UUID tenantId = TenantContext.getTenantIdOrNull();
+            if (tenantId == null) return List.of();
+            List<LeaveRequestEntity> leaves =
+                    leaveRepo.findByTenantIdAndConsultantEmailIgnoreCaseAndStatus(tenantId, consultant, "APPROUVEE");
+            // Filtrer ceux qui chevauchent le mois
+            java.time.YearMonth ym = java.time.YearMonth.parse(month);
+            java.time.LocalDate monthStart = ym.atDay(1);
+            java.time.LocalDate monthEnd   = ym.atEndOfMonth();
+            return leaves.stream()
+                    .filter(l -> !l.getEndDate().isBefore(monthStart) && !l.getStartDate().isAfter(monthEnd))
+                    .map(l -> new ExpenseItem.AbsencePeriod(
+                            l.getStartDate().isBefore(monthStart) ? monthStart.toString() : l.getStartDate().toString(),
+                            l.getEndDate().isAfter(monthEnd)      ? monthEnd.toString()   : l.getEndDate().toString()
+                    ))
+                    .toList();
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 
     /**

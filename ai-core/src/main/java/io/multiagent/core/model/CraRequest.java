@@ -17,5 +17,7 @@ public record CraRequest(
     String validatedBy,          // Nom du validateur
     String refusedReason,        // Motif de refus (retour en BROUILLON)
     String missionId,            // UUID de la mission liée (nullable)
-    String projectId             // UUID du projet associé (nullable)
+    String projectId,            // UUID du projet associé (nullable)
+    String clientValidationRef,  // Référence retour client (BC, email…)
+    String clientValidationDate  // Date validation client ISO (YYYY-MM-DD)
 ) {}

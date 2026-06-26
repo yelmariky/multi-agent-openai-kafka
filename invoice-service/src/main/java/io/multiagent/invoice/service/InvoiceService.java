@@ -25,8 +25,10 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -150,9 +152,46 @@ public class InvoiceService {
     }
 
     public List<SimpleInvoiceRequest> findInvoicesByPeriod(String start, String end, String company, String consultantEmail) {
+        return findEntitiesByPeriod(start, end, company, consultantEmail)
+                .stream().map(this::toSimpleInvoiceRequest).toList();
+    }
+
+    /** Version enrichie incluant id + champs de suivi paiement. */
+    public List<Map<String, Object>> findInvoicesByPeriodEnriched(String start, String end, String company, String consultantEmail) {
+        LocalDate today = LocalDate.now();
+        return findEntitiesByPeriod(start, end, company, consultantEmail).stream()
+                .map(e -> {
+                    // Calculer EN_RETARD dynamiquement
+                    String status = e.getPaymentStatus() != null ? e.getPaymentStatus() : "EN_ATTENTE";
+                    if (!"PAYEE".equals(status) && e.getPaymentDueDate() != null && e.getPaymentDueDate().isBefore(today)) {
+                        status = "EN_RETARD";
+                    }
+                    Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id",                  e.getId());
+                    m.put("invoiceName",         e.getInvoiceName());
+                    m.put("invoiceNumber",       e.getInvoiceNumber());
+                    m.put("billingMonth",        e.getBillingMonth());
+                    m.put("invoiceDate",         e.getInvoiceDate());
+                    m.put("sellerCompanyName",   e.getSellerCompanyName());
+                    m.put("clientCompanyName",   e.getClientCompanyName());
+                    m.put("consultantEmail",     e.getConsultantEmail());
+                    m.put("totalHt",             e.getTotalHt());
+                    m.put("totalTtc",            e.getTotalTtc());
+                    m.put("currency",            e.getCurrency());
+                    m.put("paymentDueDate",      e.getPaymentDueDate());
+                    m.put("paymentStatus",       status);
+                    m.put("paymentReceivedDate", e.getPaymentReceivedDate());
+                    m.put("sentDate",            e.getSentDate());
+                    m.put("daysCount",           e.getDaysExact());
+                    m.put("unitPriceHt",         e.getUnitPriceHt());
+                    return m;
+                })
+                .toList();
+    }
+
+    private List<InvoiceEntity> findEntitiesByPeriod(String start, String end, String company, String consultantEmail) {
         UUID tenantId = TenantContext.getTenantId();
         List<InvoiceEntity> entities;
-
         if (!isBlank(company)) {
             entities = invoiceRepo.findByTenantIdAndBillingMonthBetweenAndSellerCompanyNameIgnoreCase(
                     tenantId, start != null ? start : "0000-00", end != null ? end : "9999-99", company);
@@ -160,13 +199,11 @@ public class InvoiceService {
             entities = invoiceRepo.findByTenantIdAndBillingMonthBetween(
                     tenantId, start != null ? start : "0000-00", end != null ? end : "9999-99");
         }
-
         return entities.stream()
-                .map(this::toSimpleInvoiceRequest)
-                .filter(inv -> isBlank(consultantEmail)
-                        || isBlank(inv.consultantEmail())
-                        || inv.consultantEmail().trim().equalsIgnoreCase(consultantEmail.trim()))
-                .sorted(Comparator.comparing(inv -> inv.billingMonth() != null ? inv.billingMonth() : "", String.CASE_INSENSITIVE_ORDER))
+                .filter(e -> isBlank(consultantEmail)
+                        || isBlank(e.getConsultantEmail())
+                        || e.getConsultantEmail().trim().equalsIgnoreCase(consultantEmail.trim()))
+                .sorted(Comparator.comparing(e -> e.getBillingMonth() != null ? e.getBillingMonth() : "", String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }
 
@@ -258,7 +295,8 @@ public class InvoiceService {
         BigDecimal vatRate = request.vatRate() != null ? request.vatRate() : DEFAULT_VAT_RATE;
         String currency = isBlank(request.currency()) ? DEFAULT_CURRENCY : request.currency();
         String title = isBlank(request.invoiceTitle()) ? DEFAULT_TITLE : request.invoiceTitle();
-        LocalDate dueDate = request.paymentDueDate() != null ? request.paymentDueDate() : invoiceDate.plusMonths(1);
+        LocalDate dueDate = request.paymentDueDate() != null ? request.paymentDueDate()
+                : resolvePaymentDueDate(invoiceDate, request.clientCompanyName(), request.consultantEmail(), TenantContext.getTenantId());
 
         Double daysCount = resolveDaysCount(request, billingMonth);
 
@@ -346,6 +384,25 @@ public class InvoiceService {
                 .orElse(null);
     }
 
+    private LocalDate resolvePaymentDueDate(LocalDate invoiceDate, String clientCompanyName, String consultantEmail, UUID tenantId) {
+        if (!isBlank(clientCompanyName) && !isBlank(consultantEmail) && tenantId != null) {
+            try {
+                Integer days = jdbcTemplate.queryForObject(
+                        "SELECT ca.payment_terms_days " +
+                        "FROM consultant_assignment ca " +
+                        "JOIN consultant_profile cp ON cp.id = ca.consultant_profile_id " +
+                        "JOIN client c ON c.id = ca.client_id " +
+                        "WHERE LOWER(c.name) = LOWER(?) AND LOWER(cp.email) = LOWER(?) AND ca.tenant_id = ? " +
+                        "LIMIT 1",
+                        Integer.class, clientCompanyName.trim(), consultantEmail.trim(), tenantId);
+                if (days != null) {
+                    return invoiceDate.plusDays(days);
+                }
+            } catch (Exception ignored) { /* assignment non trouvé — défaut appliqué */ }
+        }
+        return invoiceDate.plusDays(30);
+    }
+
     private Double resolveDaysCount(SimpleInvoiceRequest request, String billingMonth) {
         List<AbsencePeriod> absences = request.absencePeriods();
         if (absences == null || absences.isEmpty()) {
@@ -411,7 +468,7 @@ public class InvoiceService {
             return request.invoiceDate();
         }
         if (!isBlank(billingMonth)) {
-            return YearMonth.parse(billingMonth).plusMonths(2).atDay(1);
+            return YearMonth.parse(billingMonth).plusMonths(1).atDay(1);
         }
         return LocalDate.now().withDayOfMonth(1);
     }
@@ -425,15 +482,18 @@ public class InvoiceService {
         }
 
         UUID tenantId = TenantContext.getTenantId();
+        String yyyymm = YearMonth.parse(billingMonth).plusMonths(1).toString().replace("-", "");
+        String expectedPrefix = "F-" + yyyymm + "-";
+
         List<InvoiceEntity> existingInvoices = invoiceRepo.findByTenantIdAndBillingMonthAndSellerCompanyNameIgnoreCase(
                 tenantId, billingMonth, request.sellerCompanyName());
         int nextSequence = existingInvoices.stream()
                 .map(InvoiceEntity::getInvoiceName)
+                .filter(name -> name != null && name.toUpperCase().startsWith(expectedPrefix.toUpperCase()))
                 .mapToInt(this::extractSequenceNumber)
                 .max()
                 .orElse(0) + 1;
 
-        String yyyymm = YearMonth.parse(billingMonth).plusMonths(2).toString().replace("-", "");
         return "F-%s-%02d".formatted(yyyymm, nextSequence);
     }
 

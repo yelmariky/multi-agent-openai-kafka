@@ -51,6 +51,10 @@ public class ConsultantProfileEntity {
 
     private Boolean active = true;
 
+    /** true = consultant facturable (dashboard/rapports). false = personnel interne (admin, manager). */
+    @Column(name = "is_consultant")
+    private Boolean isConsultant = true;
+
     @Enumerated(jakarta.persistence.EnumType.STRING)
     @Column(name = "vehicle_type", length = 20)
     private io.multiagent.core.model.VehicleType vehicleType = io.multiagent.core.model.VehicleType.CAR;
@@ -60,6 +64,10 @@ public class ConsultantProfileEntity {
 
     @Column(name = "km_annual")
     private Integer kmAnnual = 4999;
+
+    /** Prix d'achat journalier (€/j) : salaire+charges pour salarié, taux convenu pour freelance. */
+    @Column(name = "daily_cost", precision = 10, scale = 2)
+    private BigDecimal dailyCost;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

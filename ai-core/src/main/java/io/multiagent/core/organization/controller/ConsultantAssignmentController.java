@@ -28,7 +28,7 @@ public class ConsultantAssignmentController {
     private final ProjectRepository projectRepository;
     private final ClientRepository clientRepository;
 
-    public record AssignmentRequest(UUID projectId, UUID clientId, BigDecimal tjm) {}
+    public record AssignmentRequest(UUID projectId, UUID clientId, BigDecimal tjm, Integer paymentTermsDays) {}
 
     @GetMapping
     public List<ConsultantAssignmentEntity> list(@PathVariable UUID consultantId) {
@@ -55,6 +55,7 @@ public class ConsultantAssignmentController {
         assignment.setProject(project);
         assignment.setClient(client);
         assignment.setTjm(req.tjm());
+        if (req.paymentTermsDays() != null) assignment.setPaymentTermsDays(req.paymentTermsDays());
 
         return ResponseEntity.ok(assignmentRepository.save(assignment));
     }
@@ -78,6 +79,7 @@ public class ConsultantAssignmentController {
         assignment.setProject(project);
         assignment.setClient(client);
         assignment.setTjm(req.tjm());
+        if (req.paymentTermsDays() != null) assignment.setPaymentTermsDays(req.paymentTermsDays());
 
         return ResponseEntity.ok(assignmentRepository.save(assignment));
     }

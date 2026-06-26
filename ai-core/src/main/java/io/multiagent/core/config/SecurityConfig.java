@@ -63,6 +63,14 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/consultants/profiles").hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.GET, "/consultants/keycloak-users").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers("/settings/seller-profile", "/settings/seller", "/settings/reindex-chunks").hasRole(ROLE_ADMIN)
+                // Dashboard manager
+                .requestMatchers("/dashboard/**").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
+                // Congés — consultant peut soumettre et consulter, admin peut approuver/refuser/gérer les soldes
+                .requestMatchers(HttpMethod.POST, "/leaves/request").authenticated()
+                .requestMatchers(HttpMethod.GET,  "/leaves/mine", "/leaves/balance").authenticated()
+                .requestMatchers(HttpMethod.PUT,  "/leaves/balance").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
+                .requestMatchers(HttpMethod.PUT,  "/leaves/*/approve", "/leaves/*/refuse").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
+                .requestMatchers(HttpMethod.GET,  "/leaves").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 // Platform admin endpoints
                 .requestMatchers("/platform/**").hasRole("platform_admin")
                 .anyRequest().authenticated()

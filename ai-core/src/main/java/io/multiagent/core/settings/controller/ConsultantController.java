@@ -77,17 +77,21 @@ public class ConsultantController {
         }
 
         try {
-            // 1) Create Keycloak user with consultant role
-            String keycloakUserId = keycloakService.createConsultantUser(
-                    realm, email, firstName, lastName, tempPassword);
+            // Dériver le rôle Keycloak depuis le rôle métier
+            String keycloakRole = resolveKeycloakRole(role);
 
-            // 2) Create consultant profile in the application
+            // 1) Créer l'utilisateur Keycloak avec le bon rôle système
+            String keycloakUserId = keycloakService.createUserWithRole(
+                    realm, email, firstName, lastName, tempPassword, keycloakRole);
+
+            // 2) Créer le profil en DB — isConsultant dérivé automatiquement via billable()
             String fullName = (firstName + " " + lastName).trim();
             if (fullName.isBlank()) fullName = email;
             ConsultantProfile profile = new ConsultantProfile(
                     null, email, fullName, role,
                     company.isBlank() ? realm.toUpperCase() : company,
-                    clientName, "", "", null, 0.0, true, io.multiagent.core.model.VehicleType.CAR, 7, 4999);
+                    clientName, "", "", null, 0.0, true,
+                    io.multiagent.core.model.VehicleType.CAR, 7, 4999, null, null);
             weaviateService.upsertConsultantProfile(profile);
 
             log.info("Invited consultant '{}' in realm '{}' (keycloakId={})", email, realm, keycloakUserId);
@@ -99,6 +103,16 @@ public class ConsultantController {
             log.error("Failed to invite consultant '{}' in realm '{}': {}", email, realm, e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    /** Mappe le rôle métier vers le rôle Keycloak système. */
+    private String resolveKeycloakRole(String role) {
+        if (role == null) return "consultant";
+        return switch (role.toLowerCase()) {
+            case "admin"        -> "admin";
+            case "manager", "gestionnaire" -> "manager";
+            default             -> "consultant";
+        };
     }
 
     @GetMapping("/keycloak-users")

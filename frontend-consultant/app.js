@@ -178,11 +178,9 @@ document.querySelectorAll('.tab').forEach(btn => {
       const session = getSession();
       if (session) loadAbsencesForNotes(session);
     }
-    if (btn.dataset.tab === 'absences') {
+    if (btn.dataset.tab === 'conges') {
       const session = getSession();
-      const craMonth = document.getElementById('cra-month')?.value;
-      if (craMonth) document.getElementById('abs-month').value = craMonth;
-      if (session) loadAbsences(session);
+      if (session) loadLeaveTab(session);
     }
   });
 });
@@ -197,6 +195,14 @@ const DAY_MS = 86400000;
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function toMonthStr(y, m) { return `${y}-${pad(m + 1)}`; }
+
+/** Retourne le numéro de semaine ISO 8601 (lundi = 1er jour, S01 = semaine avec le 1er jeudi). */
+function getISOWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
 
 function setStatus(el, msg, type = '') {
   el.textContent = msg;
@@ -265,9 +271,20 @@ function connectConsultantSSE(user) {
         const n = JSON.parse(e.data);
         notifCount++;
         updateNotifBadge();
-        showToast(n.message, n.type === 'CRA_VALIDATED' ? 'ok' : n.type === 'CRA_REFUSED' ? 'err' : 'info');
+        const toastType = (n.type === 'CRA_VALIDATED' || n.type === 'EXPENSE_APPROVED' || n.type === 'LEAVE_APPROVED') ? 'ok'
+                        : (n.type === 'CRA_REFUSED'   || n.type === 'EXPENSE_REFUSED'  || n.type === 'LEAVE_REFUSED')  ? 'err'
+                        : 'info';
+        showToast(n.message, toastType);
         const dropdown = document.getElementById('notif-dropdown');
         if (!dropdown.classList.contains('hidden')) loadNotifications(user);
+        if (n.type === 'EXPENSE_APPROVED' || n.type === 'EXPENSE_REFUSED') {
+          const notesTab = document.getElementById('tab-notes');
+          if (notesTab && notesTab.style.display !== 'none') loadNotesReport(user);
+        }
+        if (n.type === 'LEAVE_APPROVED' || n.type === 'LEAVE_REFUSED') {
+          const congesTab = document.getElementById('tab-conges');
+          if (congesTab && congesTab.classList.contains('active')) loadLeaveTab(user);
+        }
       } catch { /* ignore malformed */ }
     });
     es.onerror = () => setTimeout(() => connectConsultantSSE(user), 5000);
@@ -300,7 +317,7 @@ async function loadNotifications(user) {
     }
     list.innerHTML = items.map(n => `
       <div class="notif-item" data-id="${escapeHtml(n.id)}" style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">
-        <span style="font-size:16px">${n.type === 'CRA_VALIDATED' ? '✅' : '❌'}</span>
+        <span style="font-size:16px">${['CRA_VALIDATED','EXPENSE_APPROVED','LEAVE_APPROVED'].includes(n.type) ? '✅' : ['CRA_REFUSED','EXPENSE_REFUSED','LEAVE_REFUSED'].includes(n.type) ? '❌' : n.type === 'LEAVE_REQUESTED' ? '🏖️' : 'ℹ️'}</span>
         <div style="flex:1;min-width:0">
           <p style="margin:0;font-size:13px;color:#f0f0f0">${escapeHtml(n.message)}</p>
           <p style="margin:2px 0 0;font-size:11px;color:var(--muted,#8892a4)">${formatNotifTs(n.timestamp)}</p>
@@ -356,11 +373,9 @@ function initApp(user) {
   document.getElementById('cra-month').value          = curMonth;
   document.getElementById('hist-start').value         = toMonthStr(now.getFullYear(), Math.max(0, now.getMonth() - 2));
   document.getElementById('hist-end').value           = curMonth;
-  document.getElementById('abs-month').value          = curMonth;
   document.getElementById('notes-km-month').value     = curMonth;
   document.getElementById('notes-report-month').value = curMonth;
   initCra(user);
-  initAbsences(user);
   initNotes(user);
 }
 
@@ -400,6 +415,11 @@ async function initCra(user) {
     }
   });
 
+  // Auto-charger quand le consultant change le mois (si les projets sont déjà chargés)
+  document.getElementById('cra-month').addEventListener('change', () => {
+    if (craProjects.length > 0) loadCra(user);
+  });
+
   // Load profile first (missions need it for project client info)
   currentProfile = await loadConsultantProfile(user);
   await loadMissions(user);
@@ -415,6 +435,41 @@ async function initCra(user) {
   emailEl.readOnly  = true;
   clientEl.style.background = '#f5f5f5';
   emailEl.style.background  = '#f5f5f5';
+
+  // ── Règle mois courant ────────────────────────────────────────────────────
+  // Si le CRA du mois précédent est clôturé (date > 5 du mois suivant),
+  // le consultant ne peut travailler que sur le mois courant : forcer et verrouiller.
+  const now          = new Date();
+  const curMonthStr  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const prevDate     = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+  const monthInput   = document.getElementById('cra-month');
+  const locked       = isCloture(prevMonthStr);
+
+  if (locked) {
+    // Mois précédent clôturé → forcer le mois courant et verrouiller le sélecteur
+    monthInput.value = curMonthStr;
+    monthInput.classList.add('cra-month-locked');
+    monthInput.readOnly = true;
+    monthInput.title = `Le CRA de ${prevMonthStr} est clôturé — vous saisissez le mois en cours (${curMonthStr}).`;
+    // <input type="month"> ignore readOnly — on bloque les événements
+    monthInput.addEventListener('mousedown', e => e.preventDefault(), true);
+    monthInput.addEventListener('keydown',   e => e.preventDefault(), true);
+    // Badge d'info sous le champ
+    const lockNotice = document.createElement('p');
+    lockNotice.className = 'cra-month-lock-notice';
+    lockNotice.textContent = `Mois de saisie verrouillé — ${prevMonthStr} clôturé.`;
+    monthInput.closest('.inline')?.after(lockNotice);
+  } else {
+    // Restaurer le dernier mois mémorisé (rechargement de page)
+    const lastMonth = sessionStorage.getItem('cra:lastMonth');
+    if (lastMonth && !monthInput.value) monthInput.value = lastMonth;
+  }
+
+  // Auto-charger le CRA si un mois est déjà sélectionné (lock ou restore)
+  if (monthInput.value && craProjects.length > 0) {
+    await loadCra(user);
+  }
 }
 
 async function loadConsultantProfile(user) {
@@ -440,33 +495,10 @@ async function loadMissions(user) {
     sel.innerHTML = '<option value="">-- Aucune mission --</option>';
     craProjects = [];
 
-    missions.forEach(m => {
-      const opt = document.createElement('option');
-      opt.value = m.id;
-      opt.dataset.type = 'mission';
-      const clientName         = m.client?.name         || '';
-      const clientContactEmail = m.client?.contactEmail || '';
-      opt.dataset.client = clientName;
-      opt.dataset.contactEmail = clientContactEmail;
-      opt.textContent = m.title + (clientName ? ' (' + clientName + ')' : '');
-      sel.appendChild(opt);
-      craProjects.push({ id: m.id, name: m.title, clientName, clientContactEmail, tjm: null });
-    });
-    projects.forEach(proj => {
-      if (craProjects.some(cp => cp.id === proj.id)) return;
-      const clientName         = currentProfile?.clientName         || '';
-      const clientContactEmail = currentProfile?.clientContactEmail || '';
-      const opt = document.createElement('option');
-      opt.value = proj.id;
-      opt.dataset.type = 'project';
-      opt.dataset.client = clientName;
-      opt.dataset.contactEmail = clientContactEmail;
-      opt.textContent = proj.name;
-      sel.appendChild(opt);
-      craProjects.push({ id: proj.id, name: proj.name, clientName, clientContactEmail, tjm: null });
-    });
-
-    // Source principale : trios (assignments) configurés dans l'admin
+    // Source de vérité : TRIOS (assignments) configurés par l'admin.
+    // Si des assignments existent, on les utilise EXCLUSIVEMENT — les missions/projects
+    // historiques ne sont PAS ajoutés pour éviter l'apparition de projets fantômes.
+    let assignmentLoaded = false;
     if (currentProfile?.id) {
       try {
         const aRes = await fetch(`${base()}/consultants/${currentProfile.id}/assignments`, { headers: authHeaders() });
@@ -474,29 +506,53 @@ async function loadMissions(user) {
           const assignments = await aRes.json();
           assignments.forEach(a => {
             if (!a.project?.id) return;
-            const existing = craProjects.find(cp => cp.id === a.project.id);
-            if (existing) {
-              // Enrichir avec client + TJM si pas déjà renseigné
-              if (!existing.clientName) existing.clientName = a.client?.name || '';
-              if (!existing.tjm)        existing.tjm        = a.tjm || null;
-            } else {
-              const opt = document.createElement('option');
-              opt.value = a.project.id;
-              opt.dataset.type = 'assignment';
-              opt.dataset.client = a.client?.name || '';
-              opt.textContent = a.project.name + (a.client?.name ? ' — ' + a.client.name : '');
-              sel.appendChild(opt);
-              craProjects.push({
-                id:                 a.project.id,
-                name:               a.project.name,
-                clientName:         a.client?.name    || '',
-                clientContactEmail: '',
-                tjm:                a.tjm || null,
-              });
-            }
+            if (craProjects.some(cp => cp.id === a.project.id)) return;
+            const opt = document.createElement('option');
+            opt.value = a.project.id;
+            opt.dataset.type = 'assignment';
+            opt.dataset.client = a.client?.name || '';
+            opt.textContent = a.project.name + (a.client?.name ? ' — ' + a.client.name : '');
+            sel.appendChild(opt);
+            craProjects.push({
+              id:                 a.project.id,
+              name:               a.project.name,
+              clientName:         a.client?.name || '',
+              clientContactEmail: '',
+              tjm:                a.tjm || null,
+            });
           });
+          assignmentLoaded = assignments.length > 0;
         }
       } catch { /* assignments non disponibles */ }
+    }
+
+    // Fallback : si aucun assignment, utiliser missions + projects historiques
+    if (!assignmentLoaded) {
+      missions.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.dataset.type = 'mission';
+        const clientName         = m.client?.name         || '';
+        const clientContactEmail = m.client?.contactEmail || '';
+        opt.dataset.client = clientName;
+        opt.dataset.contactEmail = clientContactEmail;
+        opt.textContent = m.title + (clientName ? ' (' + clientName + ')' : '');
+        sel.appendChild(opt);
+        craProjects.push({ id: m.id, name: m.title, clientName, clientContactEmail, tjm: null });
+      });
+      projects.forEach(proj => {
+        if (craProjects.some(cp => cp.id === proj.id)) return;
+        const clientName         = currentProfile?.clientName         || '';
+        const clientContactEmail = currentProfile?.clientContactEmail || '';
+        const opt = document.createElement('option');
+        opt.value = proj.id;
+        opt.dataset.type = 'project';
+        opt.dataset.client = clientName;
+        opt.dataset.contactEmail = clientContactEmail;
+        opt.textContent = proj.name;
+        sel.appendChild(opt);
+        craProjects.push({ id: proj.id, name: proj.name, clientName, clientContactEmail, tjm: null });
+      });
     }
 
     // Auto-select first option
@@ -519,24 +575,111 @@ async function loadMissions(user) {
   } catch { /* missions unavailable */ }
 }
 
-async function downloadCraPdf() {
+function downloadCraPdf() {
   if (!craId) return;
-  await downloadCraPdfById(craId, document.getElementById('cra-month').value,
-    document.getElementById('cra-action-status'));
+  const month    = document.getElementById('cra-month').value;
+  const statusEl = document.getElementById('cra-action-status');
+
+  // Mono-projet ou aucun projet → téléchargement direct
+  if (craProjects.length <= 1) {
+    downloadCraPdfById(craId, month, statusEl, craProjects[0]?.id, craProjects[0]?.name);
+    return;
+  }
+
+  // Multi-projets → mini-menu de sélection
+  showCraPdfMenu(month, statusEl);
 }
 
-async function downloadCraPdfById(id, month, statusEl) {
+function showHistPdfMenu(btn) {
+  document.getElementById('hist-pdf-menu')?.remove();
+  const craId   = btn.dataset.id;
+  const month   = btn.dataset.month;
+  const projs   = JSON.parse(btn.dataset.projects || '[]');
+
+  const menu = document.createElement('div');
+  menu.id = 'hist-pdf-menu';
+  menu.className = 'cra-pdf-menu';
+
+  // Option "Tout le CRA"
+  const allOpt = document.createElement('button');
+  allOpt.textContent = 'Tout le CRA (tous clients)';
+  allOpt.addEventListener('click', () => { menu.remove(); downloadCraPdfById(craId, month); });
+  menu.appendChild(allOpt);
+
+  projs.forEach(proj => {
+    const opt = document.createElement('button');
+    opt.textContent = proj.name;
+    opt.addEventListener('click', () => { menu.remove(); downloadCraPdfById(craId, month, null, proj.id, proj.name); });
+    menu.appendChild(opt);
+  });
+
+  // Use fixed positioning to escape overflow:hidden on .data-list
+  const rect = btn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top  = (rect.bottom + 4) + 'px';
+  menu.style.left = (rect.right - 240) + 'px'; // right-align to button
+  menu.style.right = 'auto';
+
+  const close = (e) => { if (!menu.contains(e.target) && e.target !== btn) { menu.remove(); document.removeEventListener('click', close); } };
+  document.addEventListener('click', close);
+  document.body.appendChild(menu);
+}
+
+function showCraPdfMenu(month, statusEl) {
+  document.getElementById('cra-pdf-menu')?.remove();
+
+  const btn  = document.getElementById('cra-download-pdf');
+  const menu = document.createElement('div');
+  menu.id = 'cra-pdf-menu';
+  menu.className = 'cra-pdf-menu';
+
+  // Option "Tout le CRA"
+  const allOpt = document.createElement('button');
+  allOpt.textContent = 'Tout le CRA (tous clients)';
+  allOpt.addEventListener('click', () => { menu.remove(); downloadCraPdfById(craId, month, statusEl); });
+  menu.appendChild(allOpt);
+
+  // Une option par projet
+  craProjects.forEach(proj => {
+    const opt = document.createElement('button');
+    opt.textContent = proj.name + (proj.clientName ? ` — ${proj.clientName}` : '');
+    opt.addEventListener('click', () => {
+      menu.remove();
+      downloadCraPdfById(craId, month, statusEl, proj.id, proj.name);
+    });
+    menu.appendChild(opt);
+  });
+
+  // Fermer au clic extérieur
+  setTimeout(() => {
+    const close = (e) => {
+      if (!menu.contains(e.target) && e.target !== btn) {
+        menu.remove();
+        document.removeEventListener('click', close);
+      }
+    };
+    document.addEventListener('click', close);
+  }, 0);
+
+  btn.insertAdjacentElement('afterend', menu);
+}
+
+async function downloadCraPdfById(id, month, statusEl, projectId, projectName) {
   if (!id) return;
   try {
-    const res = await fetch(`${base()}/cra/pdf/${id}`, { headers: authHeaders() });
+    const url = projectId
+      ? `${base()}/cra/pdf/${id}?projectId=${projectId}`
+      : `${base()}/cra/pdf/${id}`;
+    const res = await fetch(url, { headers: authHeaders() });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+    const objUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `CRA-${month || id}.pdf`;
+    a.href = objUrl;
+    const suffix = projectName ? `-${projectName.replace(/\s+/g, '_')}` : '';
+    a.download = `CRA-${month || id}${suffix}.pdf`;
     a.click();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(objUrl);
   } catch (e) {
     if (statusEl) setStatus(statusEl, 'Erreur PDF : ' + e.message, 'err');
     else showToast('Erreur PDF : ' + e.message, 'error');
@@ -577,10 +720,15 @@ function initCraMonth(monthStr, savedEntries) {
       if (e.type === 'ABSENT') {
         // Rétrocompat : migrer les absences des lignes projet vers la ligne absence
         if (allProjectEntries['__ABSENCE__']?.[e.date]) {
-          allProjectEntries['__ABSENCE__'][e.date] = { value: e.value || 1, type: 'ABSENT' };
+          // Conserver la source pour distinguer congé approuvé vs en attente
+          const src = e.projectId === '__LEAVE__'         ? 'LEAVE'
+                    : e.projectId === '__LEAVE_PENDING__'  ? 'LEAVE_PENDING'
+                    : null;
+          allProjectEntries['__ABSENCE__'][e.date] = { value: e.value || 1, type: 'ABSENT', source: src };
         }
-        // Vider la cellule projet si elle existait
-        if (e.projectId && allProjectEntries[e.projectId]?.[e.date]) {
+        // Vider la cellule projet si elle existait (rétrocompat : ancienne absence stockée par projet).
+        // Ne pas cibler '__ABSENCE__' lui-même — sinon on efface ce qu'on vient de poser.
+        if (e.projectId && e.projectId !== '__ABSENCE__' && allProjectEntries[e.projectId]?.[e.date]) {
           allProjectEntries[e.projectId][e.date] = { value: 0, type: 'EMPTY' };
         }
       } else {
@@ -760,8 +908,51 @@ function renderCraGrid() {
     if (dayTotal > 0 && dayTotal < 1) incompleteSet.add(d);
   }
 
-  // En-tête : numéros de jours
-  let hdr = '<thead><tr><th class="cra-g-label">Projet</th>';
+  // ── Pré-calcul : total attendu (jours ouvrés hors week-ends et fériés) ──
+  const DAY_ABBR = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.'];
+  let nbAttendu = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow     = new Date(y, m - 1, d).getDay();
+    const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+    if (dow !== 0 && dow !== 6 && !holidays.has(dateStr)) nbAttendu++;
+  }
+
+  // ── Groupes de semaines ISO pour le colspan ────────────────────────────
+  const weekGroups = [];
+  let curWG = null;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const wn = getISOWeek(new Date(y, m - 1, d));
+    if (!curWG || curWG.week !== wn) { curWG = { week: wn, count: 1 }; weekGroups.push(curWG); }
+    else curWG.count++;
+  }
+
+  // ── En-tête 3 lignes ──────────────────────────────────────────────────
+  // Ligne 1 : numéros de semaine (ex. S23, S24…)
+  let hdr = '<thead><tr>';
+  hdr += '<th class="cra-g-label cra-g-label-top" rowspan="3">Projet</th>';
+  weekGroups.forEach(wg => {
+    hdr += `<th colspan="${wg.count}" class="cra-g-week-hdr">S${wg.week}</th>`;
+  });
+  hdr += '</tr>';
+
+  // Ligne 2 : abréviations des jours (sam. + dim. fusionnés en "samdim.")
+  hdr += '<tr>';
+  let da = 1;
+  while (da <= daysInMonth) {
+    const dow = new Date(y, m - 1, da).getDay();
+    if (dow === 6 && da + 1 <= daysInMonth && new Date(y, m - 1, da + 1).getDay() === 0) {
+      hdr += `<th colspan="2" class="cra-g-wkd cra-g-day-abbr">samdim.</th>`;
+      da += 2;
+    } else {
+      const cls = (dow === 0 || dow === 6) ? 'cra-g-wkd' : '';
+      hdr += `<th class="${cls} cra-g-day-abbr">${DAY_ABBR[dow]}</th>`;
+      da++;
+    }
+  }
+  hdr += '</tr>';
+
+  // Ligne 3 : numéros des jours
+  hdr += '<tr>';
   for (let d = 1; d <= daysInMonth; d++) {
     const dow = new Date(y, m - 1, d).getDay();
     const isWkd = dow === 0 || dow === 6;
@@ -770,11 +961,26 @@ function renderCraGrid() {
   }
   hdr += '</tr></thead>';
 
-  // Lignes projets
+  // ── Corps : total attendu EN PREMIÈRE LIGNE, puis projets / absences / total ──
   let body = '<tbody>';
+
+  // Ligne total attendu — première position
+  body += `<tr class="cra-g-attendu"><td class="cra-g-label">Total attendu — ${nbAttendu} j</td>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+    const dow     = new Date(y, m - 1, d).getDay();
+    const isWkd   = dow === 0 || dow === 6;
+    const isFerie = holidays.has(dateStr);
+    const cls     = isWkd ? 'cra-g-wkd' : isFerie ? 'cra-g-ferie' : 'cra-g-attendu-val';
+    const lbl     = (!isWkd && !isFerie) ? '1' : '';
+    body += `<td class="${cls}">${lbl}</td>`;
+  }
+  body += '</tr>';
   craProjects.forEach(proj => {
-    const entries = allProjectEntries[proj.id] || {};
-    body += `<tr><td class="cra-g-label">${escHtml(proj.name)}</td>`;
+    const entries    = allProjectEntries[proj.id] || {};
+    const projTotal  = Object.values(entries).reduce((s, e) => s + (e?.type === 'TRAVAIL' ? e.value : 0), 0);
+    const projTotStr = projTotal % 1 === 0 ? `${projTotal}j` : `${projTotal.toFixed(1)}j`;
+    body += `<tr><td class="cra-g-label">${escHtml(proj.name)}<span class="cra-g-row-total">${projTotStr}</span></td>`;
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr       = `${y}-${pad(m)}-${pad(d)}`;
       const e             = entries[dateStr] || { value: 0, type: 'EMPTY' };
@@ -801,7 +1007,10 @@ function renderCraGrid() {
   });
 
   // Ligne Absence (avant Total)
-  body += '<tr class="cra-g-absence-row"><td class="cra-g-label">Absence</td>';
+  const absEntries = allProjectEntries['__ABSENCE__'] || {};
+  const absTotal   = Object.values(absEntries).reduce((s, e) => s + (e?.type === 'ABSENT' ? e.value : 0), 0);
+  const absTotStr  = absTotal % 1 === 0 ? `${absTotal}j` : `${absTotal.toFixed(1)}j`;
+  body += `<tr class="cra-g-absence-row"><td class="cra-g-label">Absence<span class="cra-g-row-total">${absTotStr}</span></td>`;
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${y}-${pad(m)}-${pad(d)}`;
     const ae      = allProjectEntries['__ABSENCE__']?.[dateStr] || { value: 0, type: 'EMPTY' };
@@ -812,18 +1021,32 @@ function renderCraGrid() {
       const oe = (allProjectEntries[p.id] || {})[dateStr];
       return s + (oe?.type === 'TRAVAIL' ? oe.value : 0);
     }, 0);
-    const absDisabled = projSum >= 1;
+    const isFromLeave    = ae.source === 'LEAVE';
+    const isFromPending  = ae.source === 'LEAVE_PENDING';
+    const isLeafLocked   = isFromLeave || isFromPending;
+    // Les congés (approuvés ou en attente) ne sont jamais bloqués par le TRAVAIL existant
+    // (cas de transition : l'ancien TRAVAIL n'a pas encore été nettoyé en base)
+    const absDisabled    = !isLeafLocked && projSum >= 1;
     let cls = isWkd       ? 'cra-g-wkd'
             : isFerie     ? 'cra-g-ferie'
             : absDisabled ? 'cra-g-disabled'
             : ae.type === 'EMPTY' ? 'cra-g-empty'
             : ae.value === 0.5   ? 'cra-g-abs-half'
             :                      'cra-g-abs-full';
+    if (isFromLeave   && ae.type !== 'EMPTY') cls += ' cra-g-leave-lock';
+    if (isFromPending && ae.type !== 'EMPTY') cls += ' cra-g-leave-pending';
     const lbl = isWkd || isFerie || absDisabled || ae.type === 'EMPTY' ? ''
+              : isFromLeave   ? '🏖️'
+              : isFromPending ? '⏳'
               : ae.value === 0.5 ? '½A' : 'A';
-    const clickable = !readonly && !isWkd && !isFerie && !absDisabled;
-    if (clickable) cls += ' clickable';
-    body += `<td class="${cls}" data-pid="__ABSENCE__" data-date="${dateStr}">${lbl}</td>`;
+    // Absences manuelles anciennes (sans congé = legacy) → retirables par clic uniquement
+    const isManualLegacy = !isLeafLocked && !isWkd && !isFerie && !absDisabled && ae.type === 'ABSENT';
+    if (!readonly && isManualLegacy) cls += ' clickable cra-g-abs-legacy';
+    const title = isFromLeave   ? 'Congé approuvé'
+                : isFromPending ? 'Congé en attente de validation RH'
+                : isManualLegacy ? 'Absence sans congé associé — cliquez pour retirer puis créez une demande de congé'
+                : '';
+    body += `<td class="${cls}" data-pid="__ABSENCE__" data-date="${dateStr}" ${title ? `title="${title}"` : ''}>${lbl}</td>`;
   }
   body += '</tr>';
 
@@ -864,27 +1087,14 @@ function renderCraGrid() {
         if (!e) return;
 
         if (pid === '__ABSENCE__') {
-          // Cycle absence : EMPTY → ½A → A → EMPTY
-          const projSum = craProjects.reduce((s, p) => {
-            const oe = (allProjectEntries[p.id] || {})[date];
-            return s + (oe?.type === 'TRAVAIL' ? oe.value : 0);
-          }, 0);
-          if (e.type === 'EMPTY') {
-            if (projSum <= 0.5)
-              allProjectEntries['__ABSENCE__'][date] = { value: 0.5, type: 'ABSENT' };
-          } else if (e.value === 0.5) {
-            if (projSum === 0)
-              allProjectEntries['__ABSENCE__'][date] = { value: 1, type: 'ABSENT' };
-          } else {
-            // A → EMPTY + vider les projets du jour
+          // Absence legacy (manuelle sans congé) : permettre le retrait uniquement
+          const ae = allProjectEntries['__ABSENCE__'][date];
+          if (ae && ae.type === 'ABSENT' && !ae.source) {
             allProjectEntries['__ABSENCE__'][date] = { value: 0, type: 'EMPTY' };
-            craProjects.forEach(p => {
-              if (allProjectEntries[p.id]?.[date])
-                allProjectEntries[p.id][date] = { value: 0, type: 'EMPTY' };
-            });
           }
         } else {
-          // Cellule projet — cycle EMPTY → 1j → ½j → EMPTY, sans ABSENT
+          // Cellule projet — cycle EMPTY → 1j → ½j → EMPTY
+          // L'ajout manuel d'absences n'est plus possible : passer par une demande de congé
           const absVal   = allProjectEntries['__ABSENCE__']?.[date]?.value || 0;
           const otherSum = craProjects
             .filter(p => p.id !== pid)
@@ -917,16 +1127,46 @@ function renderCraGrid() {
   refreshProjectDays();
 }
 
-function updateCraTotal() {
-  // Somme tous les jours TRAVAIL sur tous les projets
-  let total = 0;
-  Object.values(allProjectEntries).forEach(entries => {
-    Object.values(entries).forEach(e => {
-      if (e.type === 'TRAVAIL') total += e.value;
+function updateCraTotal() { updateCraProgress(); }
+
+function updateCraProgress() {
+  // Jours ouvrés du mois sélectionné
+  const monthStr = document.getElementById('cra-month')?.value;
+  let ouvrés = 0;
+  const workdays = new Set(); // dateStr des jours ouvrés
+  if (monthStr) {
+    const [y, m] = monthStr.split('-').map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const holidays = craHolidays(y);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dow     = new Date(y, m - 1, d).getDay();
+      const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+      if (dow !== 0 && dow !== 6 && !holidays.has(dateStr)) { ouvrés++; workdays.add(dateStr); }
+    }
+  }
+
+  // Pour chaque jour ouvré : couverts = TRAVAIL (projets) + ABSENT, plafonné à 1
+  let saisi = 0;
+  workdays.forEach(dateStr => {
+    let travail = 0;
+    craProjects.forEach(proj => {
+      const e = (allProjectEntries[proj.id] || {})[dateStr];
+      if (e?.type === 'TRAVAIL') travail += e.value;
     });
+    const absent = allProjectEntries['__ABSENCE__']?.[dateStr]?.value || 0;
+    saisi += Math.min(travail + absent, 1);
   });
-  document.getElementById('cra-total-days').textContent =
-    total % 1 === 0 ? String(total) : total.toFixed(1);
+
+  const pct = ouvrés > 0 ? (saisi / ouvrés) * 100 : 0;
+  const pctStr = pct.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '\u00a0%';
+  const saisiStr = saisi % 1 === 0 ? String(saisi) : saisi.toFixed(1);
+
+  const pctEl   = document.getElementById('cra-progress-pct');
+  const fillEl  = document.getElementById('cra-progress-bar-fill');
+  const labelEl = document.getElementById('cra-progress-label');
+  if (pctEl)   pctEl.textContent   = pctStr;
+  if (fillEl)  fillEl.style.width  = Math.min(pct, 100) + '%';
+  if (labelEl) labelEl.textContent = `${saisiStr}\u00a0/ ${ouvrés} jours ouvrés`;
 }
 
 function isCloture(billingMonth) {
@@ -977,6 +1217,12 @@ function updateCraButtons() {
     submitBtn.title = '';
   }
   document.getElementById('cra-save').disabled        = CRA_READONLY();
+  // Masquer barre de progression et légende quand CRA non modifiable (VALIDE / CLOTURE)
+  const isReadonlyFinal = effectiveStatus === 'VALIDE' || effectiveStatus === 'CLOTURE';
+  const progressWrap = document.getElementById('cra-progress-wrap');
+  const legendEl     = document.getElementById('cra-legend');
+  if (progressWrap) progressWrap.style.display = isReadonlyFinal ? 'none' : '';
+  if (legendEl)     legendEl.style.display     = isReadonlyFinal ? 'none' : '';
   // "Retirer ma soumission" uniquement quand SOUMIS (avant action admin)
   const recallBtn = document.getElementById('cra-recall');
   if (recallBtn) recallBtn.style.display = effectiveStatus === 'SOUMIS' ? '' : 'none';
@@ -990,6 +1236,9 @@ async function loadCra(user) {
   const statusEl = document.getElementById('cra-load-status');
 
   if (!monthStr) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
+
+  // Mémoriser le mois pour le restaurer après un rechargement de page
+  sessionStorage.setItem('cra:lastMonth', monthStr);
 
   craId = null; craStatus = 'BROUILLON'; craSubmittedAt = null;
   currentSelectedProjectId = null;
@@ -1032,9 +1281,75 @@ async function loadCra(user) {
       const fallbackPid = existing.projectId || existing.missionId || (craProjects[0]?.id) || '__none__';
       saved = saved.map(e => ({ ...e, projectId: e.projectId || fallbackPid }));
 
+      // Migration : si des entrées TRAVAIL référencent d'anciens projectIds (ex : EDF → expert kafka),
+      // les remap vers l'assignment courant pour éviter des lignes fantômes dans la grille.
+      // IMPORTANT : ne jamais remap les entrées ABSENT — leur projectId '__ABSENCE__' est intentionnel.
+      if (craProjects.length > 0) {
+        const validPids = new Set(craProjects.map(p => p.id));
+        const mainPid   = craProjects[0].id;
+        saved = saved.map(e => {
+          if (e.type === 'ABSENT') return e;                           // absences → ne pas toucher
+          return { ...e, projectId: validPids.has(e.projectId) ? e.projectId : mainPid };
+        });
+      }
+
       // Réinitialiser la sélection pour forcer le premier projet
       currentSelectedProjectId = null;
       initCraMonth(monthStr, saved);
+
+      // Fallback : si loadMissions() n'a pas peuplé craProjects mais le CRA a des entrées
+      // sauvegardées, on crée UN SEUL slot projet (pas un par projectId orphelin) et on
+      // consolide toutes les entrées dedans.
+      if (craProjects.length === 0) {
+        const knownPids = Object.keys(allProjectEntries)
+          .filter(k => k !== '__ABSENCE__' && k !== '__none__');
+        if (knownPids.length > 0) {
+          const mainPid = knownPids[0];
+
+          // Fusionner les entrées des projectIds orphelins dans mainPid
+          knownPids.slice(1).forEach(pid => {
+            const src = allProjectEntries[pid] || {};
+            Object.entries(src).forEach(([date, val]) => {
+              if (val?.value > 0 && val.type !== 'EMPTY') {
+                const cur = allProjectEntries[mainPid]?.[date];
+                if (!cur || cur.type === 'EMPTY' || cur.value === 0) {
+                  allProjectEntries[mainPid][date] = val;
+                }
+              }
+            });
+            delete allProjectEntries[pid];
+          });
+
+          // Un seul slot projet — le nom sera enrichi depuis les assignments
+          craProjects.push({ id: mainPid, name: 'Projet',
+            clientName: '', clientContactEmail: existing.clientContactEmail || '', tjm: null });
+
+          // Enrichir depuis les assignments (source de vérité admin)
+          if (currentProfile?.id) {
+            try {
+              const aRes = await fetch(`${base()}/consultants/${currentProfile.id}/assignments`, { headers: authHeaders() });
+              if (aRes.ok) {
+                const assignments = await aRes.json();
+                const a = assignments[0]; // premier assignment = projet actif
+                if (a?.project) {
+                  craProjects[0].name      = a.project.name;
+                  craProjects[0].clientName = a.client?.name || '';
+                  // Remap les clés allProjectEntries vers le vrai projectId de l'assignment
+                  if (a.project.id !== mainPid && allProjectEntries[mainPid]) {
+                    allProjectEntries[a.project.id] = allProjectEntries[mainPid];
+                    delete allProjectEntries[mainPid];
+                    craProjects[0].id = a.project.id;
+                  }
+                }
+              }
+            } catch { /* ignore */ }
+          }
+
+          currentSelectedProjectId = craProjects[0].id;
+          craEntries = allProjectEntries[currentSelectedProjectId];
+        }
+      }
+
       renderProjectTabs();
       renderProjectsInfoTable();
       renderCraGrid();
@@ -1072,7 +1387,8 @@ function buildCraPayload() {
   const entries = [];
   Object.entries(allProjectEntries).forEach(([pid, projectMap]) => {
     Object.entries(projectMap).forEach(([date, e]) => {
-      if (e.type === 'EMPTY') return; // jour non saisi — ne pas envoyer
+      // Ne persister que les jours réellement saisis (TRAVAIL/ABSENT) — WEEKEND/FERIE sont recalculés côté client
+      if (e.type !== 'TRAVAIL' && e.type !== 'ABSENT') return;
       entries.push({ date, value: e.value, type: e.type, projectId: (pid === '__none__') ? null : pid });
     });
   });
@@ -1177,16 +1493,35 @@ async function loadHistory(user) {
     setStatus(statusEl, `${items.length} CRA trouvé${items.length > 1 ? 's' : ''}.`, 'ok');
     resultEl.innerHTML = renderHistoryList(items);
     resultEl.querySelectorAll('.hist-pdf-btn').forEach(btn => {
-      btn.addEventListener('click', () => downloadCraPdfById(btn.dataset.id, btn.dataset.month));
+      btn.addEventListener('click', () => downloadCraPdfById(btn.dataset.id, btn.dataset.month, null, btn.dataset.pid || undefined, btn.dataset.pname || undefined));
+    });
+    resultEl.querySelectorAll('.hist-pdf-multi').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showHistPdfMenu(btn);
+      });
     });
     resultEl.style.display = 'block';
   } catch (e) { setStatus(statusEl, 'Erreur : ' + e.message, 'err'); }
 }
 
+function renderHistPdfBtn(cra) {
+  const pdfIcon = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`;
+  const projs = Array.isArray(cra.projects) ? cra.projects.filter(p => p.id) : [];
+  if (projs.length <= 1) {
+    // Mono-projet : bouton simple
+    const pid = projs[0]?.id || '';
+    return `<button class="btn-pdf hist-pdf-btn" data-id="${escapeHtml(cra.id)}" data-month="${escapeHtml(cra.billingMonth || '')}" data-pid="${escapeHtml(pid)}" data-pname="${escapeHtml(projs[0]?.name || '')}" title="Télécharger PDF">${pdfIcon} PDF</button>`;
+  }
+  // Multi-projets : bouton avec chevron + data JSON
+  const projsJson = escapeHtml(JSON.stringify(projs));
+  return `<button class="btn-pdf hist-pdf-multi" data-id="${escapeHtml(cra.id)}" data-month="${escapeHtml(cra.billingMonth || '')}" data-projects="${projsJson}" title="Choisir le PDF à télécharger">${pdfIcon} PDF ▾</button>`;
+}
+
 function renderHistoryList(items) {
   const STATUS_COLOR = { BROUILLON: 'grey', SOUMIS: 'orange', VALIDE: 'green', REFUSE: 'red', CLOTURE: 'purple' };
   const STATUS_LABEL = { BROUILLON: 'Brouillon', SOUMIS: 'Soumis', VALIDE: 'Validé', REFUSE: 'Refusé', CLOTURE: 'Clôturé' };
-  const COLS = '1fr 1fr 80px 110px 1fr 60px';
+  const COLS = '1fr 1fr 80px 110px 1fr 100px';
   let html = `
     <div class="data-list">
       <div class="data-list-header" style="grid-template-columns:${COLS}">
@@ -1213,10 +1548,7 @@ function renderHistoryList(items) {
         <span style="font-weight:600;font-size:14px">${escapeHtml(days)}</span>
         <span><span class="status-badge ${color}">${escapeHtml(label)}</span></span>
         <span class="cell-muted">${cra.validatedBy ? escapeHtml(cra.validatedBy) : '—'}</span>
-        <span>${cra.id ? `<button class="btn-pdf hist-pdf-btn" data-id="${escapeHtml(cra.id)}" data-month="${escapeHtml(cra.billingMonth || '')}" title="Télécharger PDF">
-          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-          PDF
-        </button>` : ''}</span>
+        <span style="position:relative">${cra.id ? renderHistPdfBtn(cra) : ''}</span>
       </div>`;
   }
   html += '</div>';
@@ -1226,188 +1558,6 @@ function renderHistoryList(items) {
 // ============================================================
 // ABSENCES
 // ============================================================
-function initAbsences(user) {
-  document.getElementById('abs-month').addEventListener('change', () => loadAbsences(user));
-  document.getElementById('abs-goto-cra').addEventListener('click', () => {
-    const monthStr = document.getElementById('abs-month').value;
-    if (monthStr) document.getElementById('cra-month').value = monthStr;
-    document.querySelector('.tab[data-tab="cra"]')?.click();
-  });
-}
-
-async function loadAbsences(user) {
-  const monthStr = document.getElementById('abs-month').value;
-  const statusEl = document.getElementById('abs-status');
-  const calCard  = document.getElementById('abs-cal-card');
-
-  if (!monthStr) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
-  setStatus(statusEl, 'Chargement…');
-  calCard.style.display = 'none';
-
-  try {
-    const absenceMap = await buildAbsenceMap(monthStr, user);
-    renderAbsenceCalendar(monthStr, absenceMap);
-
-    // Badge statut CRA
-    const craMonth    = document.getElementById('cra-month')?.value;
-    const statusBadge = document.getElementById('abs-cra-status');
-    const gotoBtn     = document.getElementById('abs-goto-cra');
-    const LABELS      = { BROUILLON: 'BROUILLON', SOUMIS: 'SOUMIS', VALIDE: 'VALIDÉ', REFUSE: 'REFUSÉ' };
-    if (craMonth === monthStr && craStatus) {
-      statusBadge.textContent = LABELS[craStatus] || craStatus;
-      statusBadge.className   = `status-badge ${craStatus.toLowerCase()}`;
-      gotoBtn.style.display   = (craStatus === 'BROUILLON' || craStatus === 'REFUSE') ? '' : 'none';
-    } else {
-      statusBadge.textContent = '';
-      gotoBtn.style.display   = 'none';
-    }
-
-    const count = [...absenceMap.values()].reduce((s, v) => s + v, 0);
-    setStatus(statusEl, count > 0 ? `${count % 1 ? count.toFixed(1) : count} jour${count > 1 ? 's' : ''} d'absence ce mois.` : 'Aucune absence ce mois.', count ? 'ok' : '');
-    calCard.style.display = '';
-  } catch (e) {
-    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
-  }
-}
-
-/**
- * Construit une Map<dateStr, 1|0.5> depuis trois sources (par priorité) :
- *  0. allProjectEntries['__ABSENCE__'] si le même mois est chargé en mémoire (source de vérité)
- *  1. /cra/absences — périodes km (toujours 1j, ne remplace pas la source 0)
- *  2. /cra/report   — fallback API si le CRA d'un autre mois est en mémoire
- */
-async function buildAbsenceMap(monthStr, user) {
-  const map = new Map();
-
-  // Source 0 (prioritaire) : CRA chargé en mémoire pour ce mois exact
-  const craMonth = document.getElementById('cra-month')?.value;
-  if (craMonth === monthStr && allProjectEntries['__ABSENCE__']) {
-    Object.entries(allProjectEntries['__ABSENCE__']).forEach(([dateStr, ae]) => {
-      if (ae.type === 'ABSENT' && ae.value > 0) map.set(dateStr, ae.value);
-    });
-  }
-
-  // Source 1 : absences km (notes de frais) — toujours 1j, ne remplace pas les entrées CRA
-  const pAbs = new URLSearchParams({ month: monthStr, consultant: user.email });
-  const resAbs = await fetch(`${base()}/cra/absences?${pAbs}`, { headers: authHeaders() });
-  if (!resAbs.ok) throw new Error(`HTTP ${resAbs.status}`);
-  const kmPeriods = await resAbs.json();
-  kmPeriods.forEach(p => {
-    for (let ms = new Date(p.from).getTime(); ms <= new Date(p.to).getTime(); ms += DAY_MS) {
-      const d = new Date(ms).toISOString().substring(0, 10);
-      if (!map.has(d)) map.set(d, 1);
-    }
-  });
-
-  // Source 2 : CRA API — fallback si un autre mois est chargé en mémoire
-  if (craMonth !== monthStr) {
-    try {
-      const pCra = new URLSearchParams({ start: monthStr, end: monthStr, consultant: user.email });
-      const resCra = await fetch(`${base()}/cra/report?${pCra}`, { headers: authHeaders() });
-      if (resCra.ok) {
-        const items = await resCra.json();
-        const myCra = items.find(item =>
-          item.billingMonth === monthStr &&
-          (item.consultant || '').trim().toLowerCase() === user.email.toLowerCase()
-        );
-        if (myCra?.entriesJson) {
-          JSON.parse(myCra.entriesJson).forEach(e => {
-            if (e.type === 'ABSENT' && e.value > 0) map.set(e.date, e.value);
-          });
-        }
-      }
-    } catch {
-      // CRA indisponible — on continue avec les données km uniquement
-    }
-  }
-
-  return map;
-}
-
-function renderAbsenceCalendar(monthStr, absenceMap) {
-  const [y, m]      = monthStr.split('-').map(Number);
-  const firstDow    = (new Date(y, m - 1, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(y, m, 0).getDate();
-  const holidays    = craHolidays(y);
-
-  document.getElementById('abs-cal-title').textContent = `${MONTHS_FR[m - 1]} ${y}`;
-
-  let html = '';
-  for (let i = 0; i < firstDow; i++) html += '<div class="cra-day empty"></div>';
-
-  let totalAbsent = 0;
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr   = `${y}-${pad(m)}-${pad(d)}`;
-    const dow       = new Date(y, m - 1, d).getDay();
-    const isWeekend = dow === 0 || dow === 6;
-    const isHoliday = holidays.has(dateStr);
-    const abVal     = absenceMap.get(dateStr);
-
-    let cls = 'cra-day';
-    let lbl = '';
-    if (isWeekend)          { cls += ' weekend'; }
-    else if (isHoliday)     { cls += ' holiday'; lbl = 'Férié'; }
-    else if (abVal === 1)   { cls += ' absent';  lbl = 'Abs.';  totalAbsent += 1; }
-    else if (abVal === 0.5) { cls += ' half';    lbl = '½j';    totalAbsent += 0.5; }
-    else                    { cls += ' full';    lbl = '1j'; }
-
-    html += `<div class="${cls}">
-      <span class="cra-day-num">${d}</span>
-      <span class="cra-day-val">${lbl}</span>
-    </div>`;
-  }
-
-  document.getElementById('abs-cal-grid').innerHTML = html;
-  document.getElementById('abs-total-days').textContent =
-    totalAbsent % 1 === 0 ? String(totalAbsent) : totalAbsent.toFixed(1);
-
-  const periodEl = document.getElementById('abs-periods-list');
-  if (!absenceMap.size) {
-    periodEl.innerHTML = '<p class="muted-sm">Aucune absence enregistrée ce mois.</p>';
-    return;
-  }
-
-  // Regrouper les jours consécutifs pour afficher les périodes.
-  // Les demi-journées (0.5) ne sont jamais fusionnées — chacune a sa propre ligne.
-  const sortedDays = [...absenceMap.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const periods = [];
-  let from = sortedDays[0], to = sortedDays[0];
-  for (let i = 1; i < sortedDays.length; i++) {
-    const next       = new Date(new Date(to).getTime() + DAY_MS).toISOString().substring(0, 10);
-    const toIsHalf   = absenceMap.get(to) === 0.5;
-    const nextIsHalf = absenceMap.get(sortedDays[i]) === 0.5;
-    if (next === sortedDays[i] && !toIsHalf && !nextIsHalf) {
-      to = sortedDays[i];
-    } else {
-      periods.push({ from, to });
-      from = sortedDays[i]; to = sortedDays[i];
-    }
-  }
-  periods.push({ from, to });
-
-  const fmtDate = d => `${d.getDate()} ${MONTHS_FR[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
-  let periodHtml = '<div class="abs-periods">';
-  periods.forEach(p => {
-    const fromDate = new Date(p.from);
-    const toDate   = new Date(p.to);
-    const isHalf   = absenceMap.get(p.from) === 0.5 && p.from === p.to;
-    const days     = isHalf ? 0.5 : Math.round((toDate - fromDate) / DAY_MS) + 1;
-    const daysLabel = isHalf ? '½ jour' : `${days} jour${days > 1 ? 's' : ''}`;
-    const rangeLabel = p.from === p.to
-      ? fmtDate(fromDate)
-      : `${fmtDate(fromDate)} → ${fmtDate(toDate)}`;
-    periodHtml += `<div class="abs-period-row">
-      <span class="abs-period-range">
-        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-        ${rangeLabel}
-      </span>
-      <span class="abs-period-days">${daysLabel}</span>
-    </div>`;
-  });
-  periodHtml += '</div>';
-  periodEl.innerHTML = periodHtml;
-}
-
 // ============================================================
 // NOTES DE FRAIS
 // ============================================================
@@ -1457,9 +1607,28 @@ async function loadNotesReport(user) {
     const data     = await res.json();
     const expenses = Array.isArray(data) ? data : (data.expenses || []);
 
+    const kpisEl = document.getElementById('notes-report-kpis');
     if (!expenses.length) {
       setStatus(statusEl, 'Aucune note de frais ce mois.', '');
+      if (kpisEl) kpisEl.style.display = 'none';
       return;
+    }
+
+    // --- KPIs ---
+    if (kpisEl) {
+      const totalPerso    = expenses.filter(x => (x.paymentMode || '').toLowerCase().includes('personnel'))
+                                    .reduce((s, x) => s + (x.amount || 0), 0);
+      const totalBusiness = expenses.filter(x => (x.paymentMode || '').toLowerCase().includes('business'))
+                                    .reduce((s, x) => s + (x.amount || 0), 0);
+      const approved = expenses.filter(x => x.approvalStatus === 'APPROVED').length;
+      const pending  = expenses.filter(x => !x.approvalStatus || x.approvalStatus === 'PENDING').length;
+      const fmt = v => v > 0 ? Number(v).toFixed(2) + ' €' : '0 €';
+      document.getElementById('kpi-count').textContent    = expenses.length;
+      document.getElementById('kpi-perso').textContent    = fmt(totalPerso);
+      document.getElementById('kpi-business').textContent = fmt(totalBusiness);
+      document.getElementById('kpi-approved').textContent = approved;
+      document.getElementById('kpi-pending').textContent  = pending;
+      kpisEl.style.display = '';
     }
 
     setStatus(statusEl, `${expenses.length} dépense${expenses.length > 1 ? 's' : ''}.`, 'ok');
@@ -1479,9 +1648,10 @@ function renderConsultantExpenses(expenses) {
   const APPROVAL_COLOR = { APPROVED: 'green', REFUSED: 'red', PENDING: 'orange' };
   const APPROVAL_LABEL = { APPROVED: 'Approuvé', REFUSED: 'Refusé', PENDING: 'En attente' };
 
+  const COLS = '90px 140px 1fr 120px 110px';
   let html = `
     <div class="data-list">
-      <div class="data-list-header" style="grid-template-columns:90px 100px 1fr 110px 110px">
+      <div class="data-list-header" style="grid-template-columns:${COLS}">
         <span>Date</span><span>Type</span><span>Description</span><span>Montant</span><span>Statut</span>
       </div>`;
   for (const exp of expenses) {
@@ -1493,10 +1663,11 @@ function renderConsultantExpenses(expenses) {
     const refusalNote = exp.approvalStatus === 'REFUSED' && exp.approvalNote
       ? `<span class="cell-sub refused-reason" style="font-style:italic">Motif : ${escapeHtml(exp.approvalNote)}</span>`
       : '';
+    const typeLabel = (exp.type || '—').replace(/_/g, ' ');
     html += `
-      <div class="data-list-row" style="grid-template-columns:90px 100px 1fr 110px 110px">
+      <div class="data-list-row" style="grid-template-columns:${COLS}">
         <span style="font-size:12px;font-weight:600;color:var(--accent-2)">${escapeHtml(exp.date || '—')}</span>
-        <span style="font-size:13px;font-weight:600">${escapeHtml(exp.type || '—')}</span>
+        <span class="expense-type-cell">${escapeHtml(typeLabel)}</span>
         <div class="cell-primary">
           <span class="cell-name" style="font-size:13px;font-weight:500">${escapeHtml(exp.description || '')}</span>
           ${refusalNote}
@@ -1518,18 +1689,102 @@ async function loadAbsencesForNotes(user) {
   setStatus(statusEl, 'Chargement des absences…');
 
   try {
+    // Source 1 : CRA chargé en mémoire
+    const craMonth = document.getElementById('cra-month')?.value;
+    if (craMonth === monthStr && craId && allProjectEntries['__ABSENCE__']) {
+      let periods = Object.entries(allProjectEntries['__ABSENCE__'])
+        .filter(([, ae]) => ae.type === 'ABSENT' && ae.value > 0)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date]) => ({ from: date, to: date }));
+      notesAbsences = await mergeApprovedLeaves(periods, user, monthStr);
+      renderNotesAbsences(); section.style.display = '';
+      const n = notesAbsences.length;
+      setStatus(statusEl, `${n} absence${n !== 1 ? 's' : ''} chargée${n !== 1 ? 's' : ''} (CRA + congés).`, n ? 'ok' : '');
+      return;
+    }
+
+    // Source 2 : CRA en base
+    try {
+      const pCra = new URLSearchParams({ start: monthStr, end: monthStr, consultant: user.email });
+      const resCra = await fetch(`${base()}/cra/report?${pCra}`, { headers: authHeaders() });
+      if (resCra.ok) {
+        const items = await resCra.json();
+        const myCra = items.find(item =>
+          item.billingMonth === monthStr &&
+          (item.consultant || '').trim().toLowerCase() === user.email.toLowerCase()
+        );
+        if (myCra?.entriesJson) {
+          let periods = JSON.parse(myCra.entriesJson)
+            .filter(e => e.type === 'ABSENT' && e.value > 0)
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(e => ({ from: e.date, to: e.date }));
+          notesAbsences = await mergeApprovedLeaves(periods, user, monthStr);
+          renderNotesAbsences(); section.style.display = '';
+          const n = notesAbsences.length;
+          setStatus(statusEl, `${n} absence${n !== 1 ? 's' : ''} chargée${n !== 1 ? 's' : ''} (CRA + congés).`, n ? 'ok' : '');
+          return;
+        }
+      }
+    } catch { /* fallback */ }
+
+    // Source 3 : congés approuvés seuls (pas de CRA ce mois)
+    const leavePeriods = await fetchApprovedLeavePeriods(user, monthStr);
+    if (leavePeriods.length) {
+      notesAbsences = leavePeriods;
+      renderNotesAbsences(); section.style.display = '';
+      const n = notesAbsences.length;
+      setStatus(statusEl, `${n} congé${n !== 1 ? 's' : ''} approuvé${n !== 1 ? 's' : ''} chargé${n !== 1 ? 's' : ''}.`, 'ok');
+      return;
+    }
+
+    // Source 4 : km (dernier recours)
     const p = new URLSearchParams({ month: monthStr, consultant: user.email });
     const res = await fetch(`${base()}/cra/absences?${p}`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     notesAbsences = await res.json();
-    renderNotesAbsences();
-    section.style.display = '';
+    renderNotesAbsences(); section.style.display = '';
     const n = notesAbsences.length;
     setStatus(statusEl, `${n} période${n !== 1 ? 's' : ''} d'absence chargée${n !== 1 ? 's' : ''}.`, n ? 'ok' : '');
   } catch (e) {
     notesAbsences = [];
     setStatus(statusEl, 'Erreur chargement absences : ' + e.message, 'err');
   }
+}
+
+/** Congés APPROUVÉS du consultant pour le mois, sous forme {from, to, type}. */
+async function fetchApprovedLeavePeriods(user, monthStr) {
+  try {
+    const res = await fetch(
+      `${base()}/leaves/mine?consultantEmail=${encodeURIComponent(user.email)}&status=APPROUVEE`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) return [];
+    const leaves = await res.json();
+    const [y, m] = monthStr.split('-').map(Number);
+    const monthStart = `${y}-${String(m).padStart(2,'0')}-01`;
+    const monthEnd   = `${y}-${String(m).padStart(2,'0')}-${new Date(y, m, 0).getDate()}`;
+    return leaves
+      .filter(l => l.startDate <= monthEnd && l.endDate >= monthStart)
+      .map(l => ({ from: l.startDate, to: l.endDate, type: l.type }));
+  } catch { return []; }
+}
+
+/** Fusionne absences CRA avec congés approuvés (déduplique par date). */
+async function mergeApprovedLeaves(existing, user, monthStr) {
+  const leavePeriods = await fetchApprovedLeavePeriods(user, monthStr);
+  if (!leavePeriods.length) return existing;
+  const existingDates = new Set(existing.map(p => p.from));
+  const extra = [];
+  for (const lp of leavePeriods) {
+    let d = new Date(lp.from);
+    const end = new Date(lp.to);
+    while (d <= end) {
+      const ds = d.toISOString().substring(0, 10);
+      if (!existingDates.has(ds)) extra.push({ from: ds, to: ds, type: lp.type });
+      d = new Date(d.getTime() + DAY_MS);
+    }
+  }
+  return [...existing, ...extra].sort((a, b) => a.from.localeCompare(b.from));
 }
 
 function renderNotesAbsences() {
@@ -1575,6 +1830,24 @@ function buildAbsenceInjection() {
   return ' [absences: ' + lines.join(', ') + ']';
 }
 
+// Mots-clés bloqués côté client avant même d'appeler le serveur.
+// Double protection : le serveur bloque aussi, mais on évite l'appel réseau inutile.
+// Note : "facture" seul n'est PAS bloqué car un consultant peut écrire
+// "j'ai payé une facture de taxi/restaurant" — c'est une note de frais légitime.
+const EXPENSE_BLOCKED_PATTERNS = [
+  // Verbes destructifs FR
+  /\b(supprim|effac|enlev|retir|vider|détruir|nettoy|écras)/i,
+  // Verbes destructifs EN
+  /\b(delete|remove|erase|wipe|destroy|drop|truncate|purge)\b/i,
+  // Gestion de factures en masse (pas "une facture de restaurant")
+  /\bfactures\b.{0,40}(du mois|de mai|de juin|de janvier|de f[eé]vrier|de mars|d'avril|de juillet|d'ao[uû]t|de septembre|d'octobre|de novembre|de d[eé]cembre|\d{4})/i,
+  /\b(toutes?|tous?)\s+(les|des)\s+(factures?|invoices?|clients?|utilisateurs?|comptes?|consultants?)\b/i,
+];
+
+function isBlockedExpenseInput(text) {
+  return EXPENSE_BLOCKED_PATTERNS.some(p => p.test(text));
+}
+
 async function submitNotesSaisie(user) {
   const textEl   = document.getElementById('notes-text');
   const statusEl = document.getElementById('notes-status');
@@ -1583,6 +1856,14 @@ async function submitNotesSaisie(user) {
 
   if (!text) { setStatus(statusEl, 'Saisissez un texte.', 'err'); return; }
 
+  // ── Garde client : rejeter les saisies hors périmètre sans appel serveur ──
+  if (isBlockedExpenseInput(text)) {
+    setStatus(statusEl,
+      'Saisie non autorisée. Ce champ accepte uniquement des notes de frais (repas, transport, hébergement…). ' +
+      'Les suppressions et les opérations sur les factures ne sont pas acceptées ici.', 'err');
+    return;
+  }
+
   const fullText = text + buildAbsenceInjection();
   setStatus(statusEl, 'Analyse en cours…');
   resultEl.style.display = 'none';
@@ -1590,10 +1871,15 @@ async function submitNotesSaisie(user) {
   try {
     const res = await fetch(`${base()}/reasoning/analyze`, {
       method:  'POST',
-      headers: authHeaders(),
+      headers: { ...authHeaders(), 'X-Source': 'consultant-frontend' },
       body:    JSON.stringify({ text: fullText, consultantEmail: user.email }),
     });
-    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const msg  = body.error || ('Erreur serveur (' + res.status + ')');
+      setStatus(statusEl, msg, 'err');
+      return;
+    }
     await res.json();
     showToast('Note de frais enregistrée avec succès.', 'ok');
     setStatus(statusEl, '');
@@ -1615,7 +1901,7 @@ async function uploadJustificatif(user) {
   fd.append('paymentMode', modeEl.value);
   fd.append('consultantEmail', user.email);
 
-  setStatus(statusEl, 'Upload en cours…');
+  setStatus(statusEl, 'Analyse du justificatif en cours… (peut prendre quelques secondes)');
 
   try {
     const token = _keycloak?.token;
@@ -1625,12 +1911,30 @@ async function uploadJustificatif(user) {
       body:    fd,
     });
     if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
-    await res.json();
-    showToast('Justificatif traité et note de frais créée.', 'ok');
+    const data = await res.json();
+
+    // Déterminer le mois de la dépense créée (date extraite ou mois courant)
+    let expenseMonth = null;
+    try {
+      const expJson = data?.extractedExpenseJson ? JSON.parse(data.extractedExpenseJson) : null;
+      if (expJson?.date) expenseMonth = expJson.date.substring(0, 7); // YYYY-MM
+    } catch { /* ignore */ }
+    if (!expenseMonth) expenseMonth = new Date().toISOString().substring(0, 7);
+
+    showToast('Justificatif traité — note de frais créée pour ' + expenseMonth + '.', 'ok');
     setStatus(statusEl, '');
     fileInput.value = '';
+
+    // Auto-charger le rapport du mois de la dépense créée
+    const monthInput = document.getElementById('notes-report-month');
+    if (monthInput) {
+      monthInput.value = expenseMonth;
+      // Scroll vers le rapport et charger
+      monthInput.closest('.card')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await loadNotesReport(user);
+    }
   } catch (e) {
-    setStatus(statusEl, 'Erreur lors de l\'upload. Réessayez ou contactez votre administrateur.', 'err');
+    setStatus(statusEl, 'Erreur lors de l\'upload : ' + e.message + '. Réessayez.', 'err');
   }
 }
 
@@ -1663,6 +1967,110 @@ async function downloadNotesReport(format, user) {
     link.click();
     URL.revokeObjectURL(link.href);
     setStatus(statusEl, 'Téléchargement lancé.', 'ok');
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+// ============================================================
+// CONGÉS CP/RTT
+// ============================================================
+
+async function loadLeaveTab(user) {
+  await Promise.all([
+    loadLeaveBalance(user),
+    loadLeaveHistory(user),
+  ]);
+  // Wiring bouton de soumission
+  const btn = document.getElementById('leave-submit-btn');
+  if (btn && !btn._wired) {
+    btn._wired = true;
+    btn.addEventListener('click', () => submitLeaveRequest(user));
+  }
+}
+
+async function loadLeaveBalance(user) {
+  const year = new Date().getFullYear();
+  const el   = document.getElementById('leave-balance-cards');
+  if (!el) return;
+  try {
+    const res = await fetch(`${base()}/leaves/balance?consultantEmail=${encodeURIComponent(user.email)}&year=${year}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const b = await res.json();
+    el.innerHTML = `
+      <div class="leave-balance-card">
+        <span class="leave-balance-label">CP restants</span>
+        <span class="leave-balance-value accent">${Number(b.cpRemaining).toFixed(1)} j</span>
+        <span class="leave-balance-sub">${Number(b.cpTaken).toFixed(1)} pris / ${Number(b.cpInitial).toFixed(1)} initial</span>
+      </div>
+      <div class="leave-balance-card">
+        <span class="leave-balance-label">RTT restants</span>
+        <span class="leave-balance-value" style="color:#7ad7ff">${Number(b.rttRemaining).toFixed(1)} j</span>
+        <span class="leave-balance-sub">${Number(b.rttTaken).toFixed(1)} pris / ${Number(b.rttInitial).toFixed(1)} initial</span>
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--muted);font-size:12px">Solde indisponible</span>`;
+  }
+}
+
+async function loadLeaveHistory(user) {
+  const statusEl = document.getElementById('leave-history-status');
+  const listEl   = document.getElementById('leave-history-list');
+  setStatus(statusEl, 'Chargement…');
+  try {
+    const res = await fetch(`${base()}/leaves/mine?consultantEmail=${encodeURIComponent(user.email)}`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const items = await res.json();
+    setStatus(statusEl, '');
+    if (!items.length) { listEl.innerHTML = '<p class="muted-sm">Aucune demande de congé.</p>'; return; }
+    const COLS = '90px 90px 90px 80px 100px 1fr';
+    const STATUS_COLOR = { DEMANDEE: 'orange', APPROUVEE: 'green', REFUSEE: 'red' };
+    const STATUS_LABEL = { DEMANDEE: 'En attente', APPROUVEE: 'Approuvée', REFUSEE: 'Refusée' };
+    let html = `<div class="data-list">
+      <div class="data-list-header" style="grid-template-columns:${COLS}">
+        <span>Du</span><span>Au</span><span>Jours</span><span>Type</span><span>Statut</span><span>Motif refus</span>
+      </div>`;
+    items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).forEach(l => {
+      const color  = STATUS_COLOR[l.status] || 'grey';
+      const label  = STATUS_LABEL[l.status] || l.status;
+      html += `<div class="data-list-row" style="grid-template-columns:${COLS}">
+        <span style="font-size:12px;font-weight:600;color:var(--accent-2)">${escapeHtml(l.startDate || '')}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--accent-2)">${escapeHtml(l.endDate || '')}</span>
+        <span style="font-weight:600">${l.daysCount}j</span>
+        <span class="expense-type-cell">${escapeHtml(l.type || '')}</span>
+        <span><span class="status-badge ${color}">${escapeHtml(label)}</span></span>
+        <span class="cell-muted" style="font-size:12px;font-style:italic">${escapeHtml(l.refusedReason || l.reason || '')}</span>
+      </div>`;
+    });
+    html += '</div>';
+    listEl.innerHTML = html;
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+async function submitLeaveRequest(user) {
+  const type   = document.getElementById('leave-type').value;
+  const start  = document.getElementById('leave-start').value;
+  const end    = document.getElementById('leave-end').value;
+  const reason = document.getElementById('leave-reason').value.trim();
+  const statusEl = document.getElementById('leave-submit-status');
+
+  if (!start || !end) { setStatus(statusEl, 'Veuillez sélectionner les dates.', 'err'); return; }
+  setStatus(statusEl, 'Envoi en cours…');
+  try {
+    const res = await fetch(`${base()}/leaves/request`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ consultantEmail: user.email, type, startDate: start, endDate: end, reason }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    setStatus(statusEl, 'Demande envoyée avec succès.', 'ok');
+    document.getElementById('leave-start').value = '';
+    document.getElementById('leave-end').value   = '';
+    document.getElementById('leave-reason').value = '';
+    document.getElementById('leave-request-details').removeAttribute('open');
+    await loadLeaveHistory(user);
   } catch (e) {
     setStatus(statusEl, 'Erreur : ' + e.message, 'err');
   }

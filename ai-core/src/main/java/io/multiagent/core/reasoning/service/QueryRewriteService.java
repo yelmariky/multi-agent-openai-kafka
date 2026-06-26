@@ -54,14 +54,15 @@ public class QueryRewriteService implements InitializingBean {
         LocalDate today = dateProvider.todayUtc();
         String todayStr = today.toString();
 
-        String system = systemPromptTemplate.formatted(todayStr);
+        // Échapper les % littéraux du template configmap avant substitution
+        String system = systemPromptTemplate.replace("%", "%%").replace("%%s", "%s").formatted(todayStr);
 
         String user = """
                 Voici la requête utilisateur :
                 "%s"
 
                 Donne uniquement le JSON demandé.
-                """.formatted(query);
+                """.formatted(query.replace("%", "%%"));
 
         try {
             var completion = llm.chatJson(rewriteModel, system, user);

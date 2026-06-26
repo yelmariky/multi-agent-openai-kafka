@@ -4,20 +4,17 @@ import io.multiagent.invoice.model.InvoiceLookupRequest;
 import io.multiagent.invoice.model.SimpleInvoiceRequest;
 import io.multiagent.invoice.service.DeleteInvoiceService;
 import io.multiagent.invoice.service.InvoiceService;
+import io.multiagent.invoice.service.InvoicePaymentService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @RestController
@@ -26,14 +23,17 @@ public class InvoiceController {
 
     private static final String ATTACHMENT_PREFIX = "attachment; filename=\"";
 
-    private final InvoiceService invoiceService;
-    private final DeleteInvoiceService deleteInvoiceService;
+    private final InvoiceService        invoiceService;
+    private final DeleteInvoiceService  deleteInvoiceService;
+    private final InvoicePaymentService invoicePaymentService;
 
     public InvoiceController(
             InvoiceService invoiceService,
-            DeleteInvoiceService deleteInvoiceService) {
-        this.invoiceService = invoiceService;
-        this.deleteInvoiceService = deleteInvoiceService;
+            DeleteInvoiceService deleteInvoiceService,
+            InvoicePaymentService invoicePaymentService) {
+        this.invoiceService        = invoiceService;
+        this.deleteInvoiceService  = deleteInvoiceService;
+        this.invoicePaymentService = invoicePaymentService;
     }
 
     @GetMapping("/report")
@@ -43,11 +43,8 @@ public class InvoiceController {
             @RequestParam(required = false) String company,
             @RequestParam(required = false) String consultantEmail
     ) {
-        List<SimpleInvoiceRequest> invoices = invoiceService.findInvoicesByPeriod(start, end, company, consultantEmail);
-        List<Map<String, Object>> result = invoices.stream()
-                .map(inv -> buildInvoiceResponse("", inv, "", ""))
-                .toList();
-        return ResponseEntity.ok(result);
+        // Version enrichie : inclut id, paymentStatus, paymentDueDate, sentDate, etc.
+        return ResponseEntity.ok(invoiceService.findInvoicesByPeriodEnriched(start, end, company, consultantEmail));
     }
 
     @PostMapping("/generate")
@@ -112,6 +109,40 @@ public class InvoiceController {
             return ResponseEntity.badRequest().body(result);
         }
         return ResponseEntity.ok(result);
+    }
+
+    /** Marquer une facture comme envoyée au client. */
+    @PutMapping("/{id}/mark-sent")
+    public ResponseEntity<Object> markSent(@PathVariable UUID id) {
+        try {
+            return ResponseEntity.ok(invoicePaymentService.markSent(id));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
+    }
+
+    /** Marquer une facture comme payée (encaissement reçu). */
+    @PutMapping("/{id}/mark-paid")
+    public ResponseEntity<Object> markPaid(
+            @PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> body) {
+        try {
+            String dateStr = body != null ? body.get("paymentDate") : null;
+            return ResponseEntity.ok(invoicePaymentService.markPaid(id, dateStr));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
+    }
+
+    /** Liste les factures avec leur statut de paiement, optionnellement filtrées. */
+    @GetMapping("/payment-status")
+    public ResponseEntity<Object> paymentStatus(
+            @RequestParam(name = "status", required = false) String status) {
+        try {
+            return ResponseEntity.ok(invoicePaymentService.list(status));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
     }
 
     private Map<String, Object> buildInvoiceResponse(String message, SimpleInvoiceRequest inv,

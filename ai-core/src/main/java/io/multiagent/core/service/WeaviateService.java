@@ -25,7 +25,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -133,7 +136,7 @@ public class WeaviateService {
             entity.setType(item.getType());
             entity.setKm(item.getKm() != null ? BigDecimal.valueOf(item.getKm()) : null);
             if (item.getDate() != null && !item.getDate().isBlank()) {
-                try { entity.setExpenseDate(LocalDate.parse(item.getDate())); } catch (Exception ignored) {}
+                entity.setExpenseDate(parseFlexibleDate(item.getDate()));
             }
             entity.setDateText(item.getDate());
             entity.setDescription(item.getDescription());
@@ -284,7 +287,7 @@ public class WeaviateService {
     }
 
     @Transactional
-    public void updateExpenseApproval(String entityId, String status, String note) {
+    public ExpenseEntity updateExpenseApproval(String entityId, String status, String note) {
         try {
             UUID id = UUID.fromString(entityId);
             ExpenseEntity entity = expenseRepo.findById(id)
@@ -293,6 +296,7 @@ public class WeaviateService {
             if (note != null) entity.setApprovalNote(note);
             expenseRepo.save(entity);
             log.info("Expense approval updated: id={}, status={}", entityId, status);
+            return entity;
         } catch (Exception e) {
             log.error("updateExpenseApproval exception: {}", e.getMessage(), e);
             throw new RuntimeException("updateExpenseApproval failed: " + e.getMessage(), e);
@@ -380,6 +384,14 @@ public class WeaviateService {
                 entity.setProjectId(UUID.fromString(cra.projectId()));
             } else {
                 entity.setProjectId(null);
+            }
+
+            // Retour client
+            if (cra.clientValidationRef() != null && !cra.clientValidationRef().isBlank()) {
+                entity.setClientValidationRef(cra.clientValidationRef());
+            }
+            if (cra.clientValidationDate() != null && !cra.clientValidationDate().isBlank()) {
+                try { entity.setClientValidationDate(LocalDate.parse(cra.clientValidationDate())); } catch (Exception ignored) {}
             }
 
             if (cra.entries() != null) {
@@ -471,6 +483,199 @@ public class WeaviateService {
     }
 
     // -----------------------------------------------------------------------
+    // Congés → CRA : appliquer / retirer les absences automatiques
+    // -----------------------------------------------------------------------
+
+    /**
+     * Applique les jours d'un congé DEMANDÉ (en attente) dans le CRA du consultant.
+     * Les entrées sont marquées projectId="__LEAVE_PENDING__" → affichage ⏳ en lecture seule.
+     * Le CRA n'est PAS modifié (ni repassé en brouillon) — la soumission reste possible.
+     */
+    @Transactional
+    public void applyPendingLeaveAbsences(String consultant, LocalDate start, LocalDate end, UUID tenantId) {
+        String pendingTag = "__LEAVE_PENDING__";
+        java.util.Map<YearMonth, java.util.List<LocalDate>> byMonth = new java.util.TreeMap<>();
+        LocalDate d = start;
+        while (!d.isAfter(end)) {
+            java.time.DayOfWeek dow = d.getDayOfWeek();
+            if (dow != java.time.DayOfWeek.SATURDAY && dow != java.time.DayOfWeek.SUNDAY) {
+                byMonth.computeIfAbsent(YearMonth.from(d), k -> new java.util.ArrayList<>()).add(d);
+            }
+            d = d.plusDays(1);
+        }
+
+        for (java.util.Map.Entry<YearMonth, java.util.List<LocalDate>> entry : byMonth.entrySet()) {
+            String month = entry.getKey().toString();
+            java.util.List<LocalDate> days = entry.getValue();
+
+            io.multiagent.core.cra.entity.CraEntity cra = craRepo
+                    .findByTenantIdAndConsultantIgnoreCaseAndBillingMonth(tenantId, consultant, month)
+                    .orElseGet(() -> {
+                        io.multiagent.core.cra.entity.CraEntity c = new io.multiagent.core.cra.entity.CraEntity();
+                        c.setTenantId(tenantId);
+                        c.setConsultant(consultant);
+                        c.setBillingMonth(month);
+                        c.setStatus("BROUILLON");
+                        c.setEntriesJson("[]");
+                        return c;
+                    });
+
+            java.util.List<CraDayEntry> entries = parseEntriesJson(cra.getEntriesJson());
+            java.util.Set<String> pendingDates = days.stream().map(LocalDate::toString).collect(java.util.stream.Collectors.toSet());
+
+            // Retirer les éventuels pending existants pour ces dates (re-apply propre)
+            entries.removeIf(e -> pendingDates.contains(e.date()) && pendingTag.equals(e.projectId()));
+
+            // Ajouter les entrées ABSENT pending (seulement si aucune autre absence n'est déjà là)
+            for (LocalDate day : days) {
+                String ds = day.toString();
+                boolean alreadyCovered = entries.stream()
+                        .anyMatch(e -> ds.equals(e.date()) && "ABSENT".equals(e.type()));
+                if (!alreadyCovered) {
+                    entries.add(new CraDayEntry(ds, 1.0, "ABSENT", pendingTag));
+                }
+            }
+
+            cra.setEntriesJson(serializeEntries(entries));
+            craRepo.save(cra);
+            log.info("Congé DEMANDÉ ⏳ injecté dans CRA {} {} : {} jours", consultant, month, days.size());
+        }
+    }
+
+    /**
+     * Applique les jours de congé approuvé comme entrées ABSENT dans le CRA du consultant.
+     * Les entrées sont marquées projectId="__LEAVE__" pour être distinguées des absences manuelles.
+     * Si le CRA est SOUMIS → repasse BROUILLON. Si VALIDE → invalide + log.
+     */
+    @Transactional
+    public void applyLeaveAbsences(String consultant, UUID leaveId, LocalDate start, LocalDate end, UUID tenantId) {
+        String leaveTag = "__LEAVE__";
+        // Grouper les jours ouvrés par mois
+        java.util.Map<YearMonth, java.util.List<LocalDate>> byMonth = new java.util.TreeMap<>();
+        LocalDate d = start;
+        while (!d.isAfter(end)) {
+            java.time.DayOfWeek dow = d.getDayOfWeek();
+            if (dow != java.time.DayOfWeek.SATURDAY && dow != java.time.DayOfWeek.SUNDAY) {
+                byMonth.computeIfAbsent(YearMonth.from(d), k -> new java.util.ArrayList<>()).add(d);
+            }
+            d = d.plusDays(1);
+        }
+
+        for (java.util.Map.Entry<YearMonth, java.util.List<LocalDate>> entry : byMonth.entrySet()) {
+            String month = entry.getKey().toString();
+            java.util.List<LocalDate> days = entry.getValue();
+
+            io.multiagent.core.cra.entity.CraEntity cra = craRepo
+                    .findByTenantIdAndConsultantIgnoreCaseAndBillingMonth(tenantId, consultant, month)
+                    .orElseGet(() -> {
+                        io.multiagent.core.cra.entity.CraEntity c = new io.multiagent.core.cra.entity.CraEntity();
+                        c.setTenantId(tenantId);
+                        c.setConsultant(consultant);
+                        c.setBillingMonth(month);
+                        c.setStatus("BROUILLON");
+                        c.setEntriesJson("[]");
+                        return c;
+                    });
+
+            java.util.List<CraDayEntry> entries = parseEntriesJson(cra.getEntriesJson());
+            java.util.Set<String> leaveDates = days.stream().map(LocalDate::toString).collect(java.util.stream.Collectors.toSet());
+
+            // Retirer pour ces dates :
+            // 1. les entrées __LEAVE__ et __LEAVE_PENDING__ existantes (upgrade pending → confirmed)
+            // 2. les entrées TRAVAIL (le consultant est en congé = non-travaillé ces jours)
+            // 3. les absences manuelles __ABSENCE__ (le congé devient la source officielle)
+            entries.removeIf(e -> leaveDates.contains(e.date()) && (
+                    leaveTag.equals(e.projectId())
+                    || "__LEAVE_PENDING__".equals(e.projectId())
+                    || "TRAVAIL".equals(e.type())
+                    || ("ABSENT".equals(e.type()) && "__ABSENCE__".equals(e.projectId()))
+            ));
+
+            // Ajouter les entrées ABSENT confirmées (1j par jour ouvré)
+            for (LocalDate day : days) {
+                entries.add(new CraDayEntry(day.toString(), 1.0, "ABSENT", leaveTag));
+            }
+
+            cra.setEntriesJson(serializeEntries(entries));
+
+            // Gestion statut
+            String oldStatus = cra.getStatus();
+            if ("SOUMIS".equals(oldStatus)) {
+                cra.setStatus("BROUILLON");
+                cra.setSubmittedAt("");
+                log.info("CRA {} ({}) repassé BROUILLON suite congé approuvé", consultant, month);
+            } else if ("VALIDE".equals(oldStatus)) {
+                cra.setStatus("BROUILLON");
+                cra.setValidatedAt("");
+                cra.setValidatedBy("");
+                log.warn("CRA {} ({}) VALIDE invalidé suite ajout congé — re-validation requise", consultant, month);
+            }
+
+            craRepo.save(cra);
+            log.info("Congé appliqué au CRA {} {} : {} jours ABSENT", consultant, month, days.size());
+        }
+    }
+
+    /**
+     * Retire les entrées ABSENT issues d'un congé (marquées __LEAVE__) du CRA du consultant.
+     * Appelé lors du refus d'un congé.
+     */
+    @Transactional
+    public void removeLeaveAbsences(String consultant, LocalDate start, LocalDate end, UUID tenantId) {
+        String leaveTag = "__LEAVE__";
+        java.util.Map<YearMonth, java.util.List<LocalDate>> byMonth = new java.util.TreeMap<>();
+        LocalDate d = start;
+        while (!d.isAfter(end)) {
+            java.time.DayOfWeek dow = d.getDayOfWeek();
+            if (dow != java.time.DayOfWeek.SATURDAY && dow != java.time.DayOfWeek.SUNDAY) {
+                byMonth.computeIfAbsent(YearMonth.from(d), k -> new java.util.ArrayList<>()).add(d);
+            }
+            d = d.plusDays(1);
+        }
+
+        for (java.util.Map.Entry<YearMonth, java.util.List<LocalDate>> entry : byMonth.entrySet()) {
+            String month = entry.getKey().toString();
+            java.util.List<LocalDate> days = entry.getValue();
+            java.util.Set<String> leaveDates = days.stream().map(LocalDate::toString).collect(java.util.stream.Collectors.toSet());
+
+            craRepo.findByTenantIdAndConsultantIgnoreCaseAndBillingMonth(tenantId, consultant, month)
+                    .ifPresent(cra -> {
+                        java.util.List<CraDayEntry> entries = parseEntriesJson(cra.getEntriesJson());
+                        // Retirer TOUTES les entrées ABSENT pour ces dates :
+                        // - __LEAVE__ / __LEAVE_PENDING__ (injectées par le système congés)
+                        // - __ABSENCE__ (absences manuelles legacy) — le consultant repart d'une cellule vide
+                        entries.removeIf(e -> leaveDates.contains(e.date())
+                                && "ABSENT".equals(e.type()));
+                        cra.setEntriesJson(serializeEntries(entries));
+
+                        // Option A : si CRA VALIDE, juste retirer la cellule sans invalider le CRA.
+                        // L'absence refusée n'affecte pas les jours facturables (TRAVAIL) — le CA reste correct.
+                        if ("VALIDE".equals(cra.getStatus())) {
+                            log.info("CRA {} ({}) VALIDE : absence congé refusé retirée, CRA conservé VALIDE (Option A)", consultant, month);
+                        }
+                        craRepo.save(cra);
+                        log.info("Entrées ABSENT congé retirées du CRA {} {}", consultant, month);
+                    });
+        }
+    }
+
+    private java.util.List<CraDayEntry> parseEntriesJson(String json) {
+        if (json == null || json.isBlank() || "[]".equals(json)) return new java.util.ArrayList<>();
+        try {
+            return new java.util.ArrayList<>(objectMapper.readValue(json,
+                    objectMapper.getTypeFactory().constructCollectionType(java.util.List.class, CraDayEntry.class)));
+        } catch (Exception e) {
+            log.warn("parseEntriesJson failed: {}", e.getMessage());
+            return new java.util.ArrayList<>();
+        }
+    }
+
+    private String serializeEntries(java.util.List<CraDayEntry> entries) {
+        try { return objectMapper.writeValueAsString(entries); }
+        catch (Exception e) { return "[]"; }
+    }
+
+    // -----------------------------------------------------------------------
     // Settings (SellerProfile / ConsultantProfile)
     // -----------------------------------------------------------------------
 
@@ -529,9 +734,12 @@ public class WeaviateService {
             entity.setClientContactEmail(profile.clientContactEmail());
             entity.setTjm(profile.tjm() != null ? BigDecimal.valueOf(profile.tjm()) : null);
             entity.setActive(profile.active() != null ? profile.active() : true);
+            // isConsultant dérivé du rôle si non fourni explicitement
+            entity.setIsConsultant(profile.billable());
             if (profile.vehicleType() != null) entity.setVehicleType(profile.vehicleType());
             if (profile.fiscalPower() != null) entity.setFiscalPower(profile.fiscalPower());
             if (profile.kmAnnual() != null) entity.setKmAnnual(profile.kmAnnual());
+            if (profile.dailyCost() != null) entity.setDailyCost(java.math.BigDecimal.valueOf(profile.dailyCost()));
             ConsultantProfileEntity saved = consultantProfileRepo.save(entity);
             log.info("ConsultantProfile upserted (email={}, id={})", email, saved.getId());
             return saved.getId();
@@ -689,6 +897,30 @@ public class WeaviateService {
         }
         row.put("entries", entries);
 
+        // Projects list for multi-PDF support (history + admin)
+        List<Map<String, String>> projects = entries.stream()
+                .filter(entry -> "TRAVAIL".equals(entry.type())
+                        && entry.projectId() != null
+                        && !entry.projectId().isBlank())
+                .map(CraDayEntry::projectId)
+                .distinct()
+                .map(pid -> {
+                    Map<String, String> proj = new LinkedHashMap<>();
+                    proj.put("id", pid);
+                    try {
+                        projectRepo.findById(UUID.fromString(pid)).ifPresent(p ->
+                                proj.put("name", p.getName() != null ? p.getName() : pid));
+                    } catch (Exception ex) { /* ignore bad UUID */ }
+                    if (!proj.containsKey("name")) proj.put("name", pid.substring(0, 8) + "…");
+                    return proj;
+                })
+                .collect(Collectors.toList());
+        row.put("projects", projects);
+
+        // Retour client
+        row.put("clientValidationRef",  e.getClientValidationRef()  != null ? e.getClientValidationRef()  : "");
+        row.put("clientValidationDate", e.getClientValidationDate() != null ? e.getClientValidationDate().toString() : "");
+
         double total = e.getTotalDays() != null ? e.getTotalDays().doubleValue() : 0.0;
         if (total <= 0.0 && !entries.isEmpty()) {
             total = entries.stream()
@@ -719,7 +951,9 @@ public class WeaviateService {
                 e.getActive(),
                 e.getVehicleType() != null ? e.getVehicleType() : io.multiagent.core.model.VehicleType.CAR,
                 e.getFiscalPower() != null ? e.getFiscalPower() : 7,
-                e.getKmAnnual() != null ? e.getKmAnnual() : 4999
+                e.getKmAnnual() != null ? e.getKmAnnual() : 4999,
+                e.getIsConsultant() != null ? e.getIsConsultant() : true,
+                e.getDailyCost() != null ? e.getDailyCost().doubleValue() : null
         );
     }
 
@@ -741,5 +975,15 @@ public class WeaviateService {
 
     private boolean isNullOrBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /** Parse une date ISO flexible : YYYY-MM-DD, YYYY-MM-DDTHH:mm:ss, ou avec offset. */
+    private LocalDate parseFlexibleDate(String date) {
+        if (date == null || date.isBlank()) return null;
+        try { return LocalDate.parse(date); } catch (Exception ignored) {}
+        try { return LocalDateTime.parse(date, DateTimeFormatter.ISO_LOCAL_DATE_TIME).toLocalDate(); } catch (Exception ignored) {}
+        try { return OffsetDateTime.parse(date).toLocalDate(); } catch (Exception ignored) {}
+        log.warn("parseFlexibleDate: impossible de parser '{}'", date);
+        return null;
     }
 }

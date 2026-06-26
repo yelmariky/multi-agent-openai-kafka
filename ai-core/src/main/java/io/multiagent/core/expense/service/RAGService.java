@@ -75,6 +75,10 @@ public class RAGService {
     private String expenseListPromptEnv;
     @Value("${AI_CORE_PROMPT_INVOICE:}")
     private String invoicePromptEnv;
+    // Modèle dédié à l'extraction JSON complexe (notes de frais, factures)
+    // llama-3.3-70b-versatile par défaut : bien meilleur que 8b pour suivre les instructions JSON
+    @Value("${OPENAI_EXPENSE_MODEL:llama-3.3-70b-versatile}")
+    private String expenseExtractionModel;
     private String singleExpensePromptTemplate;
     private String expenseListPromptTemplate;
     private String invoicePromptTemplate;
@@ -112,10 +116,38 @@ public class RAGService {
         List<String> docs = semanticSearch.searchTopK(rewritten, 5);
         List<String> sortedDocs = rerankService.rerankAndExtractTopK(rewritten, docs, 3);
 
-        String json = llm.extractJSON(
-                singleExpensePromptTemplate.formatted(dateProvider.todayUtc().toString()),
-                buildSingleExpenseUserPrompt(text, sortedDocs));
+        String json;
+        try {
+            json = llm.extractJSONWithModel(
+                    expenseExtractionModel,
+                    singleExpensePromptTemplate.replace("%s", dateProvider.todayUtc().toString()),
+                    buildSingleExpenseUserPrompt(text, sortedDocs));
+        } catch (Exception llmEx) {
+            log.warn("⚠️ LLM indisponible pour extraction expense ({}), tentative règle km", llmEx.getMessage());
+            ExpenseItem kmItem = tryExtractKmByRules(text);
+            if (kmItem == null) {
+                return ReasoningResult.error(
+                        "Le service LLM est temporairement indisponible. " +
+                        "Pour les frais kilométriques, reformulez ainsi : '44 km aller-retour domicile-bureau par jour juin'.");
+            }
+            ReasoningResult kmValidation = prepareExpense(kmItem, text, consultantEmail);
+            if (kmValidation != null) return kmValidation;
+            boolean kmMonthly = isKmMonthly(kmItem, text);
+            List<ExpenseItem> kmExpanded = kmMonthly ? expandKmMonthly(kmItem, text) : List.of(kmItem);
+            List<ExpenseItem> kmValid = indexExpenses(kmExpanded);
+            pushExpenseNotification(kmValid, kmItem, consultantEmail, kmMonthly);
+            return ReasoningResult.builder()
+                    .type("create_expense").status("EXPENSE_CREATED").confidence(0.85).raw(text)
+                    .expenses(kmValid)
+                    .metadata(Map.of("source", "rules-km", PROCESSING_MS, System.currentTimeMillis() - start))
+                    .build();
+        }
+
+        // Groq/llama renvoie parfois un tableau JSON directement malgré le mode json_object
         List<ExpenseItem> items = ExpenseItem.fromJsonArray("[" + json + "]");
+        if (items.isEmpty()) {
+            items = ExpenseItem.fromJsonArray(json); // retry si le LLM a déjà renvoyé un array
+        }
         if (items.isEmpty()) {
             log.error("❌ Impossible d'extraire une dépense structurée du JSON retourné par le LLM pour le texte : {}", text);
             return ReasoningResult.error("Le LLM n'a pas pu extraire de dépense valide à partir du texte fourni.");
@@ -143,6 +175,51 @@ public class RAGService {
                         PROCESSING_MS, System.currentTimeMillis() - start
                 ))
                 .build();
+    }
+
+    /**
+     * Extrait un frais km directement par règles regex — utilisé quand le LLM est indisponible.
+     * Supporte : "44 km aller-retour domicile-bureau par jour juin"
+     */
+    private ExpenseItem tryExtractKmByRules(String text) {
+        if (text == null) return null;
+        String lower = text.toLowerCase();
+        if (!lower.contains("km") && !lower.contains("kilom")) return null;
+
+        // Distance
+        java.util.regex.Matcher dm = java.util.regex.Pattern.compile("(\\d+(?:[.,]\\d+)?)\\s*km").matcher(lower);
+        if (!dm.find()) return null;
+        double km = Double.parseDouble(dm.group(1).replace(",", "."));
+
+        // Aller-retour → double
+        if (lower.contains("aller-retour") || lower.contains("aller retour") || lower.contains(" a/r")) km *= 2;
+
+        // Mois (français)
+        String[] FR_MONTHS = {"janvier","février","fevrier","mars","avril","mai","juin",
+                               "juillet","août","aout","septembre","octobre","novembre","décembre","decembre"};
+        int[]    MONTH_NUM  = {1,2,2,3,4,5,6,7,8,8,9,10,11,12,12};
+        int monthNum = -1;
+        for (int i = 0; i < FR_MONTHS.length; i++) {
+            if (lower.contains(FR_MONTHS[i])) { monthNum = MONTH_NUM[i]; break; }
+        }
+        java.time.LocalDate today = java.time.LocalDate.now();
+        if (monthNum < 1) monthNum = today.getMonthValue();
+
+        // Mensuel = "par jour" / "chaque jour" / "/jour"
+        boolean monthly = lower.contains("par jour") || lower.contains("/jour")
+                || lower.contains("chaque jour") || lower.contains("tous les jours");
+
+        ExpenseItem item = new ExpenseItem();
+        item.setType("frais_km");
+        item.setKm(km);
+        item.setMonthly(monthly);
+        item.setDate(java.time.YearMonth.of(today.getYear(), monthNum).atDay(1).toString());
+        item.setDescription("Frais km" + (km % 1 == 0 ? " (" + (int) km + " km)" : " (" + km + " km)")
+                + (monthly ? " mensuel" : ""));
+        item.setCurrency("EUR");
+        item.setOriginalText(text);
+        log.info("🛤️ Frais km extraits par règle : km={} monthly={} mois={}", km, monthly, monthNum);
+        return item;
     }
 
     /** Enrichit, normalise et valide une expense avant indexation. Retourne une erreur si invalide, null sinon. */
@@ -358,7 +435,7 @@ public class RAGService {
     }
 
     private String buildExpenseListPrompt(List<String> docs) {
-        return expenseListPromptTemplate.formatted(String.join("\n---\n", docs));
+        return expenseListPromptTemplate.replace("%s", String.join("\n---\n", docs));
     }
 
     private boolean isBlank(String s) {
@@ -452,7 +529,7 @@ public class RAGService {
                     "en précisant le montant de votre carte ou pass mensuel.");
         }
 
-        if (e.getKm() != null && e.getAmount() == null) {
+        if (e.getKm() != null && (e.getAmount() == null || e.getAmount() == 0.0)) {
             double costPerKm = computeCostPerKm(vp.kmAnnual(), vp.vehicleType());
             e.setAmount(round2(costPerKm * e.getKm()));
             log.info("📐 Barème km: vehicleType={} fiscalPower={}CV kmAnnual={} taux={}/km montant={}€",

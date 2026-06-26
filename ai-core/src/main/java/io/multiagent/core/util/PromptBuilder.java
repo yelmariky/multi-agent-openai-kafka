@@ -24,6 +24,14 @@ public class PromptBuilder {
                 IMPORTANT:
                 - Always answer in JSON
                 - Do NOT invent missing fields
-                """.formatted(role, context, instruction);
+                """.formatted(
+                safe(role),
+                safe(context),
+                safe(instruction));
+    }
+
+    /** Échappe les % littéraux pour éviter MissingFormatArgumentException si le texte contient "% d", "% s", etc. */
+    private static String safe(String s) {
+        return s == null ? "" : s.replace("%", "%%");
     }
 }

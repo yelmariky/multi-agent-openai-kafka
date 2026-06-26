@@ -154,6 +154,49 @@ public class KeycloakProvisioningService {
         }
     }
 
+    /**
+     * Crée un utilisateur Keycloak et lui assigne le rôle indiqué (consultant / manager / admin).
+     * Remplace createConsultantUser() pour supporter tous les types de profils.
+     */
+    public String createUserWithRole(String realmName, String email, String firstName,
+                                     String lastName, String tempPassword, String keycloakRole) {
+        try (Keycloak kc = buildAdminClient()) {
+            UserRepresentation user = new UserRepresentation();
+            user.setUsername(email);
+            user.setEmail(email);
+            user.setFirstName(firstName);
+            user.setLastName(lastName);
+            user.setEnabled(true);
+            user.setEmailVerified(true);
+
+            if (tempPassword != null && !tempPassword.isBlank()) {
+                CredentialRepresentation cred = new CredentialRepresentation();
+                cred.setType(CredentialRepresentation.PASSWORD);
+                cred.setValue(tempPassword);
+                cred.setTemporary(true);
+                user.setCredentials(Collections.singletonList(cred));
+            }
+
+            try (Response res = kc.realm(realmName).users().create(user)) {
+                if (res.getStatus() != 201) {
+                    String body = res.readEntity(String.class);
+                    throw new RuntimeException("Keycloak user creation failed (HTTP " + res.getStatus() + "): " + body);
+                }
+                String userId = res.getLocation().getPath().replaceAll(".*/", "");
+                String resolvedRole = (keycloakRole != null && !keycloakRole.isBlank()) ? keycloakRole : "consultant";
+                try {
+                    RoleRepresentation role = kc.realm(realmName).roles().get(resolvedRole).toRepresentation();
+                    kc.realm(realmName).users().get(userId).roles().realmLevel()
+                            .add(Collections.singletonList(role));
+                    log.info("Created user '{}' with role '{}' in realm '{}'", email, resolvedRole, realmName);
+                } catch (Exception re) {
+                    log.warn("Could not assign role '{}' to user '{}': {}", resolvedRole, email, re.getMessage());
+                }
+                return userId;
+            }
+        }
+    }
+
     private Keycloak buildAdminClient() {
         return KeycloakBuilder.builder()
                 .serverUrl(keycloakUrl)

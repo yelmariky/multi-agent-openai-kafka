@@ -27,11 +27,16 @@ public class CraController {
     }
 
     @GetMapping(value = "/pdf/{id}", produces = "application/pdf")
-    public ResponseEntity<byte[]> downloadPdf(@PathVariable UUID id) {
+    public ResponseEntity<byte[]> downloadPdf(
+            @PathVariable UUID id,
+            @RequestParam(name = "projectId", required = false) UUID projectId) {
         try {
-            byte[] pdf = craPdfService.generatePdf(id);
+            byte[] pdf = craPdfService.generatePdf(id, projectId);
+            String filename = projectId != null
+                    ? "cra-" + id + "-" + projectId + ".pdf"
+                    : "cra-" + id + ".pdf";
             HttpHeaders headers = new HttpHeaders();
-            headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"cra-" + id + ".pdf\"");
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
             return ResponseEntity.ok().headers(headers).body(pdf);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
@@ -63,7 +68,7 @@ public class CraController {
     @PostMapping("/validate")
     public ResponseEntity<Object> validate(
             @RequestBody CraRequest cra,
-            @RequestParam String validatedBy) {
+            @RequestParam(name = "validatedBy") String validatedBy) {
         try {
             CraRequest validated = craService.validate(cra, validatedBy);
             return ResponseEntity.ok(validated);
@@ -75,10 +80,10 @@ public class CraController {
 
     @GetMapping("/report")
     public ResponseEntity<Object> report(
-            @RequestParam(required = false) String start,
-            @RequestParam(required = false) String end,
-            @RequestParam(required = false) String consultant,
-            @RequestParam(required = false) String company) {
+            @RequestParam(name = "start",      required = false) String start,
+            @RequestParam(name = "end",        required = false) String end,
+            @RequestParam(name = "consultant", required = false) String consultant,
+            @RequestParam(name = "company",    required = false) String company) {
         try {
             List<Map<String, Object>> result = craService.report(start, end, consultant, company);
             return ResponseEntity.ok(result);
@@ -89,9 +94,9 @@ public class CraController {
 
     @GetMapping("/absences")
     public ResponseEntity<Object> absences(
-            @RequestParam(required = false) String company,
-            @RequestParam(required = false) String month,
-            @RequestParam(required = false) String consultant) {
+            @RequestParam(name = "company",    required = false) String company,
+            @RequestParam(name = "month",      required = false) String month,
+            @RequestParam(name = "consultant", required = false) String consultant) {
         try {
             List<ExpenseItem.AbsencePeriod> absences = craService.getKmAbsences(company, month, consultant);
             return ResponseEntity.ok(absences);
@@ -103,7 +108,7 @@ public class CraController {
     @PostMapping("/refuse")
     public ResponseEntity<Object> refuse(
             @RequestBody CraRequest cra,
-            @RequestParam(required = false) String reason) {
+            @RequestParam(name = "reason", required = false) String reason) {
         try {
             CraRequest refused = craService.refuse(cra, reason);
             return ResponseEntity.ok(refused);
