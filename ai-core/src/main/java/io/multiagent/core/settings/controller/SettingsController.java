@@ -53,4 +53,20 @@ public class SettingsController {
                     .body("Erreur lors de la sauvegarde : " + e.getMessage());
         }
     }
+
+    /**
+     * Re-génère et persiste les embeddings pgvector pour tous les chunks
+     * dont la colonne embedding est NULL (migration Weaviate → pgvector).
+     * Réservé à l'admin — appel OpenAI par chunk.
+     */
+    @PostMapping("/reindex-chunks")
+    public ResponseEntity<Object> reindexChunks() {
+        try {
+            int count = weaviateService.reindexOrphanChunks();
+            return ResponseEntity.ok(Map.of("reindexed", count));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body("Erreur reindex : " + e.getMessage());
+        }
+    }
 }

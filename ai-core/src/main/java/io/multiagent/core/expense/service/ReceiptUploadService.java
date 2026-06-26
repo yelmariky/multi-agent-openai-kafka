@@ -1,16 +1,21 @@
 package io.multiagent.core.expense.service;
 
+import io.multiagent.core.infrastructure.tenant.TenantContext;
 import io.multiagent.core.model.ReceiptDuplicateInfo;
 import io.multiagent.core.model.ReceiptUploadResponse;
 import io.multiagent.core.model.ExpenseItem;
 import io.multiagent.core.util.DateProvider;
-import io.multiagent.core.service.WeaviateService;import lombok.RequiredArgsConstructor;
+import io.multiagent.core.service.WeaviateService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -33,7 +38,12 @@ public class ReceiptUploadService {
     private final ExpenseIdGenerator idGenerator;
 
     @Async
-    public CompletableFuture<ReceiptUploadResponse> handleUpload(MultipartFile file, String paymentMode) {
+    public CompletableFuture<ReceiptUploadResponse> handleUpload(
+            MultipartFile file, String paymentMode, String consultantEmail,
+            UUID tenantId, String realm) {
+        // Propager le contexte tenant dans le thread async (ThreadLocal non hérité)
+        if (tenantId != null) TenantContext.set(tenantId, realm);
+
         try {
             if (file == null || file.isEmpty()) {
                 throw new IllegalArgumentException("Fichier manquant ou vide");
@@ -49,7 +59,8 @@ public class ReceiptUploadService {
             String textHash = sha256(normalized.getBytes(StandardCharsets.UTF_8));
 
             ReceiptDuplicateInfo dup = duplicateDetector.track(id, binaryHash, textHash);
-            String extracted = extraction.extractExpenseJson(ocrText);
+            // Passer le chemin image pour le fallback Vision si OCR trop bruité
+            String extracted = extraction.extractExpenseJson(ocrText, saved);
 
             ReceiptUploadResponse response = ReceiptUploadResponse.builder()
                     .id(id)
@@ -68,14 +79,19 @@ public class ReceiptUploadService {
             ExpenseItem expense = parseExpense(extracted);
             if (expense != null) {
                 try {
-                    LocalDate d = expense.getDate() != null ? LocalDate.parse(expense.getDate()) : dateProvider.todayUtc();
+                    // resolveDate() gère LocalDate, LocalDateTime et OffsetDateTime
+                    LocalDate d = resolveDate(expense.getDate());
                     expense.setId(idGenerator.nextId(d));
                 } catch (Exception e) {
-                    log.warn("⚠️ Impossible de générer l'id incrémental (upload) : {}", e.getMessage());
+                    log.warn("⚠️ Impossible de générer l’id incrémental (upload) : {}", e.getMessage());
                 }
-                // Fallbacks légers (on s’appuie sur le prompt pour setter payment/address, ici on met juste des valeurs par défaut si absentes)
+                // Email consultant — propagé pour que approve/refuse SSE fonctionne
+                if (!isBlank(consultantEmail) && isBlank(expense.getConsultantEmail())) {
+                    expense.setConsultantEmail(consultantEmail.toLowerCase(Locale.ROOT).trim());
+                }
+                // Fallbacks légers
                 if (isBlank(expense.getPaymentMode())) {
-                    expense.setPaymentMode("Personnel");
+                    expense.setPaymentMode(isBlank(paymentMode) ? "Personnel" : paymentMode);
                 }
                 if (isBlank(expense.getAddress())) {
                     expense.setAddress("inconnue");
@@ -86,6 +102,8 @@ public class ReceiptUploadService {
             return CompletableFuture.completedFuture(response);
         } catch (Exception e) {
             throw new IllegalStateException("Upload échoué: " + e.getMessage(), e);
+        } finally {
+            TenantContext.clear();
         }
     }
 
@@ -130,14 +148,12 @@ public class ReceiptUploadService {
         if (date == null || date.isBlank()) {
             return dateProvider.todayUtc();
         }
-        try {
-            return LocalDate.parse(date);
-        } catch (Exception ignored) {
-        }
-        try {
-            return java.time.OffsetDateTime.parse(date).toLocalDate();
-        } catch (Exception ignored) {
-        }
+        // YYYY-MM-DD
+        try { return LocalDate.parse(date); } catch (Exception ignored) {}
+        // YYYY-MM-DDTHH:mm:ss (sans offset — cas OCR ticket de caisse)
+        try { return LocalDateTime.parse(date, DateTimeFormatter.ISO_LOCAL_DATE_TIME).toLocalDate(); } catch (Exception ignored) {}
+        // YYYY-MM-DDTHH:mm:ssZ / +HH:mm
+        try { return OffsetDateTime.parse(date).toLocalDate(); } catch (Exception ignored) {}
         return dateProvider.todayUtc();
     }
 

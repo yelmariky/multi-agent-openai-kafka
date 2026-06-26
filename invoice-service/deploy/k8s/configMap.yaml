@@ -4,6 +4,7 @@ metadata:
   name: invoice-service-config
   namespace: multi-agent
 data:
+  KEYCLOAK_INTERNAL_URL: "http://keycloak.keycloak.svc.cluster.local:8080"
   KEYCLOAK_JWK_SET_URI: "http://keycloak.keycloak.svc.cluster.local:8080/realms/ia-insight/protocol/openid-connect/certs"
   KEYCLOAK_ISSUER_URI: "http://keycloak.keycloak.svc.cluster.local:8080/realms/ia-insight"
   WEAVIATE_HOST: "weaviate.weaviate.svc.cluster.local:80"
@@ -12,6 +13,7 @@ data:
   AI_CORE_INVOICES_STORAGE_PATH: "/data/invoices"
   OPENAI_MODEL: "gpt-4o-mini"
   OPENAI_EMBEDDING_MODEL: "text-embedding-3-large"
+  OPENAI_EMBEDDING_DIMENSIONS: "2000"
   # IMPORTANT: Copier les valeurs depuis ai-core/deploy/k8s/configMap.yaml
   # entrées AI_CORE_PROMPT_INVOICE et AI_CORE_PROMPT_DELETE_INVOICE
   AI_CORE_PROMPT_INVOICE: |

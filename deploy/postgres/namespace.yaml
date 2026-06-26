@@ -1,0 +1,8 @@
+# Namespace dédié à Keycloak — isolé du reste de la plateforme
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: db
+  labels:
+    app.kubernetes.io/part-of: ia-insight-platform
+    istio-injection: enabled

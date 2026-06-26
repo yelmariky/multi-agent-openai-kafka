@@ -2,26 +2,47 @@ package io.multiagent.core.cra.controller;
 
 import io.multiagent.core.model.CraRequest;
 import io.multiagent.core.model.ExpenseItem;
+import io.multiagent.core.cra.service.CraPdfService;
 import io.multiagent.core.cra.service.CraService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
+@Slf4j
 @RestController
 @RequestMapping("/cra")
 public class CraController {
 
     private final CraService craService;
+    private final CraPdfService craPdfService;
 
-    public CraController(CraService craService) {
+    public CraController(CraService craService, CraPdfService craPdfService) {
         this.craService = craService;
+        this.craPdfService = craPdfService;
+    }
+
+    @GetMapping(value = "/pdf/{id}", produces = "application/pdf")
+    public ResponseEntity<byte[]> downloadPdf(
+            @PathVariable UUID id,
+            @RequestParam(name = "projectId", required = false) UUID projectId) {
+        try {
+            byte[] pdf = craPdfService.generatePdf(id, projectId);
+            String filename = projectId != null
+                    ? "cra-" + id + "-" + projectId + ".pdf"
+                    : "cra-" + id + ".pdf";
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
+            return ResponseEntity.ok().headers(headers).body(pdf);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @PostMapping("/save")
@@ -47,21 +68,22 @@ public class CraController {
     @PostMapping("/validate")
     public ResponseEntity<Object> validate(
             @RequestBody CraRequest cra,
-            @RequestParam String validatedBy) {
+            @RequestParam(name = "validatedBy") String validatedBy) {
         try {
             CraRequest validated = craService.validate(cra, validatedBy);
             return ResponseEntity.ok(validated);
         } catch (Exception e) {
+            log.error("CRA validate failed for id={} validatedBy={}: {}", cra.id(), validatedBy, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(e.getMessage());
         }
     }
 
     @GetMapping("/report")
     public ResponseEntity<Object> report(
-            @RequestParam(required = false) String start,
-            @RequestParam(required = false) String end,
-            @RequestParam(required = false) String consultant,
-            @RequestParam(required = false) String company) {
+            @RequestParam(name = "start",      required = false) String start,
+            @RequestParam(name = "end",        required = false) String end,
+            @RequestParam(name = "consultant", required = false) String consultant,
+            @RequestParam(name = "company",    required = false) String company) {
         try {
             List<Map<String, Object>> result = craService.report(start, end, consultant, company);
             return ResponseEntity.ok(result);
@@ -72,9 +94,9 @@ public class CraController {
 
     @GetMapping("/absences")
     public ResponseEntity<Object> absences(
-            @RequestParam(required = false) String company,
-            @RequestParam(required = false) String month,
-            @RequestParam(required = false) String consultant) {
+            @RequestParam(name = "company",    required = false) String company,
+            @RequestParam(name = "month",      required = false) String month,
+            @RequestParam(name = "consultant", required = false) String consultant) {
         try {
             List<ExpenseItem.AbsencePeriod> absences = craService.getKmAbsences(company, month, consultant);
             return ResponseEntity.ok(absences);
@@ -86,7 +108,7 @@ public class CraController {
     @PostMapping("/refuse")
     public ResponseEntity<Object> refuse(
             @RequestBody CraRequest cra,
-            @RequestParam(required = false) String reason) {
+            @RequestParam(name = "reason", required = false) String reason) {
         try {
             CraRequest refused = craService.refuse(cra, reason);
             return ResponseEntity.ok(refused);

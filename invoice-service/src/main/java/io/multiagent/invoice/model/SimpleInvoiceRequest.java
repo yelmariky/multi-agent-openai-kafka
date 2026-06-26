@@ -28,6 +28,8 @@ public record SimpleInvoiceRequest(
          *  Si présentes, le backend recalcule daysCount = jours ouvrés du billingMonth - absences. */
         List<AbsencePeriod> absencePeriods,
         /** Email du consultant — permet de filtrer les factures par consultant dans les rapports. */
-        String consultantEmail
+        String consultantEmail,
+        /** Nom du projet assigné au consultant (optionnel, résolu depuis la DB si absent). */
+        String projectName
 ) {
 }

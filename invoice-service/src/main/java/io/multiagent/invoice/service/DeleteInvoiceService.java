@@ -3,38 +3,43 @@ package io.multiagent.invoice.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.multiagent.invoice.client.LLMAIClient;
+import io.multiagent.invoice.entity.InvoiceEntity;
+import io.multiagent.invoice.infrastructure.tenant.TenantContext;
 import io.multiagent.invoice.model.InvoiceLookupRequest;
-import io.multiagent.invoice.repository.InvoiceWeaviateRepository;
+import io.multiagent.invoice.repository.InvoiceJpaRepository;
 import io.multiagent.invoice.util.LLMUtils;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 @Service
 public class DeleteInvoiceService {
 
     private static final String DEFAULT_PROMPT = """
-            Tu es un assistant qui extrait les paramètres nécessaires pour supprimer une facture.
-            Tu réponds UNIQUEMENT en JSON strict, sans texte autour :
+            Tu es un assistant qui extrait les parametres necessaires pour supprimer une facture.
+            Tu reponds UNIQUEMENT en JSON strict, sans texte autour :
             {
               "invoiceName": "...",
               "billingMonth": "YYYY-MM",
               "sellerCompanyName": "..."
             }
 
-            RÈGLES :
-            - `billingMonth` : mois de facturation au format YYYY-MM. Si un mois est mentionné en toutes lettres (ex: "mars 2026", "le mois d'avril"), convertis-le en YYYY-MM.
-            - `invoiceName` : numéro de facture (format F-YYYYMM-NN) si explicitement mentionné, sinon null.
-            - `sellerCompanyName` : nom de la société émettrice de la facture. Si non mentionné, null.
-            - Si une donnée est absente → null.
+            REGLES :
+            - `billingMonth` : mois de facturation au format YYYY-MM. Si un mois est mentionne en toutes lettres (ex: "mars 2026", "le mois d'avril") convertis-le en YYYY-MM.
+            - `invoiceName` : numero de facture (format F-YYYYMM-NN) si explicitement mentionne, sinon null.
+            - `sellerCompanyName` : nom de la societe emettrice de la facture. Si non mentionne, null.
+            - Si une donnee est absente -> null.
             """;
 
-    private final InvoiceWeaviateRepository invoiceRepo;
+    private final InvoiceJpaRepository invoiceRepo;
     private final LLMAIClient llm;
     private final ObjectMapper objectMapper;
 
@@ -44,7 +49,7 @@ public class DeleteInvoiceService {
     private String deleteInvoicePrompt;
 
     public DeleteInvoiceService(
-            InvoiceWeaviateRepository invoiceRepo,
+            InvoiceJpaRepository invoiceRepo,
             LLMAIClient llm,
             ObjectMapper objectMapper) {
         this.invoiceRepo = invoiceRepo;
@@ -59,21 +64,23 @@ public class DeleteInvoiceService {
                 : DEFAULT_PROMPT;
     }
 
-    /**
-     * Deletes an invoice by parsing natural language text.
-     * Returns a Map with keys: deleted (int), invoiceName, billingMonth, sellerCompanyName, error (if any).
-     */
+    @Transactional
     public Map<String, Object> deleteByText(String text) {
         InvoiceLookupRequest lookup = extractLookup(text);
 
         if (lookup == null || isBlank(lookup.sellerCompanyName())) {
-            return errorMap("Suppression impossible : la société émettrice (sellerCompanyName) est requise.");
+            return errorMap("Suppression impossible : la societe emettrice (sellerCompanyName) est requise.");
         }
         if (isBlank(lookup.billingMonth()) && isBlank(lookup.invoiceName())) {
-            return errorMap("Suppression impossible : le mois de facturation ou le numéro de facture est requis.");
+            return errorMap("Suppression impossible : le mois de facturation ou le numero de facture est requis.");
         }
 
-        int deleted = invoiceRepo.deleteInvoices(lookup);
+        UUID tenantId = TenantContext.getTenantId();
+        List<InvoiceEntity> toDelete = findInvoiceEntities(tenantId, lookup);
+        int deleted = toDelete.size();
+        if (!toDelete.isEmpty()) {
+            invoiceRepo.deleteAll(toDelete);
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("invoiceName",       lookup.invoiceName()       != null ? lookup.invoiceName()       : "");
@@ -82,10 +89,22 @@ public class DeleteInvoiceService {
         result.put("deleted",           deleted);
 
         if (deleted <= 0) {
-            result.put("error", "Aucune facture supprimée pour invoiceName=%s, billingMonth=%s, sellerCompanyName=%s"
+            result.put("error", "Aucune facture supprimee pour invoiceName=%s, billingMonth=%s, sellerCompanyName=%s"
                     .formatted(lookup.invoiceName(), lookup.billingMonth(), lookup.sellerCompanyName()));
         }
         return result;
+    }
+
+    private List<InvoiceEntity> findInvoiceEntities(UUID tenantId, InvoiceLookupRequest request) {
+        if (!isBlank(request.invoiceName()) && !isBlank(request.sellerCompanyName())) {
+            return invoiceRepo.findByTenantIdAndInvoiceNameIgnoreCaseAndSellerCompanyNameIgnoreCase(
+                    tenantId, request.invoiceName(), request.sellerCompanyName());
+        }
+        if (!isBlank(request.billingMonth()) && !isBlank(request.sellerCompanyName())) {
+            return invoiceRepo.findByTenantIdAndBillingMonthAndSellerCompanyNameIgnoreCase(
+                    tenantId, request.billingMonth(), request.sellerCompanyName());
+        }
+        return List.of();
     }
 
     private InvoiceLookupRequest extractLookup(String text) {

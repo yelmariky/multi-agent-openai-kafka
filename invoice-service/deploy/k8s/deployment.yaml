@@ -23,6 +23,8 @@ spec:
                 name: invoice-service-config
             - secretRef:
                 name: openai-secret
+            - secretRef:
+                name: postgres-secret
           volumeMounts:
             - name: invoices-storage
               mountPath: /data/invoices

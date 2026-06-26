@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Console plateforme</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- Configuration externalisée (URLs, realm, clientId) -->
+  <script src="config.js"></script>
+  <!-- Keycloak JS adapter — chargé dynamiquement depuis le serveur Keycloak -->
+  <script>
+    globalThis.KEYCLOAK_URL = (globalThis.APP_CONFIG || {}).keycloakUrl
+      || localStorage.getItem('keycloakUrl');
+  </script>
+  <script id="keycloak-script"></script>
+  <script>
+    (function() {
+      var s = document.getElementById('keycloak-script');
+      s.src = globalThis.KEYCLOAK_URL + '/js/keycloak.js';
+      s.onload = function() {
+        var a = document.createElement('script');
+        a.src = 'app.js';
+        document.body.appendChild(a);
+      };
+      s.onerror = function() {
+        document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0d1017;font-family:Space Grotesk,system-ui"><div style="text-align:center;color:#f0f0f0;max-width:480px;padding:2rem"><h2 style="color:#2ce5a7">Service d\'authentification indisponible</h2><p style="color:#8892a4">La connexion au serveur d\'authentification a échoué.<br>Veuillez contacter votre administrateur système.</p></div></div>';
+      };
+    })();
+  </script>
+</head>
+<body>
+
+  <!-- ====== APPLICATION ====== -->
+  <div id="app" class="page" style="display:none">
+
+    <!-- HEADER -->
+    <header>
+      <div class="header-brand">
+        <p class="eyebrow">Console plateforme</p>
+        <h1>Gestion des tenants</h1>
+        <p class="lede">Créez et gérez les organisations de la plateforme.</p>
+      </div>
+      <div class="header-config">
+        <div class="user-meta">
+          <span id="user-email-badge" class="user-email-badge"></span>
+          <span id="user-role-badge" class="user-role-badge platform_admin">Platform Admin</span>
+        </div>
+        <button id="logout-btn" class="btn-ghost btn-logout">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Déconnexion
+        </button>
+      </div>
+    </header>
+
+    <!-- CONTENU PRINCIPAL -->
+    <main>
+
+      <!-- Créer un tenant -->
+      <section class="card" id="create-section">
+        <p class="eyebrow">Nouveau tenant</p>
+        <h2>Ajouter une organisation</h2>
+        <p class="card-desc">Renseignez les informations de la nouvelle organisation. Le slug sera utilisé comme realm Keycloak et dans l'URL d'accès.</p>
+        <div class="form-stack">
+          <div class="form-row">
+            <label class="inline" style="flex:2">
+              Nom de l'organisation
+              <input id="new-name" type="text" placeholder="Acme Consulting">
+            </label>
+            <label class="inline">
+              Slug (URL)
+              <input id="new-slug" type="text" placeholder="acme-consulting" pattern="[a-z0-9-]+">
+            </label>
+          </div>
+          <div class="form-row">
+            <label class="inline">
+              Plan
+              <select id="new-plan">
+                <option value="STARTER">Starter</option>
+                <option value="PRO">Pro</option>
+                <option value="ENTERPRISE">Enterprise</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row">
+            <label class="inline">
+              Email admin initial
+              <input id="new-admin-email" type="email" placeholder="admin@acme-consulting.local">
+            </label>
+            <label class="inline">
+              Mot de passe temporaire
+              <input id="new-admin-pwd" type="text" placeholder="changeme">
+            </label>
+          </div>
+        </div>
+        <div class="actions-row" style="margin-top:12px">
+          <button id="create-btn" class="btn-primary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Créer le tenant
+          </button>
+        </div>
+        <div id="create-status" class="status"></div>
+      </section>
+
+      <!-- Liste des tenants -->
+      <section class="card" id="list-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Organisations</p>
+            <h2>Tenants existants</h2>
+          </div>
+          <button id="refresh-btn" class="btn-secondary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Rafraîchir
+          </button>
+        </div>
+        <div id="list-status" class="status"></div>
+        <div id="tenant-list"></div>
+      </section>
+
+      <!-- Modal édition -->
+      <div id="edit-modal" class="modal-overlay" style="display:none">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h2>Modifier le tenant</h2>
+            <button id="edit-close" class="btn-icon">&times;</button>
+          </div>
+          <div class="form-stack">
+            <input type="hidden" id="edit-id">
+            <label class="inline">
+              Nom
+              <input id="edit-name" type="text">
+            </label>
+            <label class="inline">
+              Slug (lecture seule)
+              <input id="edit-slug" type="text" disabled>
+            </label>
+            <label class="inline">
+              Plan
+              <select id="edit-plan">
+                <option value="STARTER">Starter</option>
+                <option value="PRO">Pro</option>
+                <option value="ENTERPRISE">Enterprise</option>
+              </select>
+            </label>
+            <label class="inline-check">
+              <input id="edit-active" type="checkbox" checked>
+              Actif
+            </label>
+          </div>
+          <div class="actions-row" style="margin-top:16px">
+            <button id="edit-save" class="btn-primary">Enregistrer</button>
+            <button id="edit-cancel" class="btn-ghost">Annuler</button>
+          </div>
+          <div id="edit-status" class="status"></div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+</body>
+</html>

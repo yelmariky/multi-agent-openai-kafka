@@ -32,12 +32,19 @@ public class ReasoningService {
         IntentResult intent = tryParseIntent(userText);
         String raw;
         if (intent == null) {
-            intent = intentClassifierService.classify(userText);
-            raw = userText;
+            // Retirer l'injection [absences: ...] avant classification : c'est du bruit pour le LLM
+            String textForClassification = userText.replaceAll("(?i)\\[absences:[^\\]]*\\]", "").trim();
+            intent = intentClassifierService.classify(textForClassification);
+            raw = userText; // Garder le texte complet (avec absences) pour le RAG
         } else {
             raw = intent.getOriginalText() != null ? intent.getOriginalText() : userText;
         }
-        log.info("🎯 Intent détecté: {}", intent.getIntent());
+
+        if ("error".equals(intent.getIntent())) {
+            log.warn("⚠️ Classification LLM en erreur — texte renvoyé tel quel sans traitement");
+        }
+
+        log.info("🎯 Intent détecté: {} (confidence={})", intent.getIntent(), intent.getConfidence());
 
         return switch (intent.getIntent()) {
 
@@ -58,6 +65,9 @@ public class ReasoningService {
 
             // 🟡 Smalltalk = réponse non métier
             case "smalltalk" -> ReasoningResult.smalltalk("Je suis un agent métier, pas un chatbot général.");
+
+            // 🔴 Erreur de classification LLM (API indisponible, quota, réponse invalide)
+            case "error" -> ReasoningResult.error("Classification échouée - veuillez reformuler votre demande ou réessayer.");
 
             // 🔴 Intent inconnu
             default -> ReasoningResult.builder()
@@ -116,4 +126,5 @@ public class ReasoningService {
         }
         return null;
     }
+
 }

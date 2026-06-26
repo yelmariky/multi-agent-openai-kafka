@@ -5,11 +5,14 @@
 .claude/
 
 # Credentials locaux — ne jamais committer
-deploy/keycloak/.env
+deploy/**/.env*
 
 target/
 **/target/
-
+poc/
+docs/*.md
 *.class
 *.log
 github.lock
+
+**/.env

@@ -14,6 +14,7 @@ public class ExpenseReportResponse {
     private LocalDate end;
     private String company;
     private String consultantEmail;
+    private String projectName;
     private int count;
     private List<ExpenseItem> expenses;
     private Map<String, Double> totalsByCurrency;

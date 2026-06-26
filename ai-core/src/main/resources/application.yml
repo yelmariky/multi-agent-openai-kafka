@@ -4,15 +4,36 @@ server:
 spring:
   application:
     name: ai-core
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8090/realms/ia-insight/protocol/openid-connect/certs}
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ia_insight}
+    username: ${POSTGRES_USER:ia_insight}
+    password: ${POSTGRES_PASSWORD:changeme}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
   cache:
     type: caffeine
   kafka:
@@ -37,6 +58,16 @@ openai:
   api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
   model: ${OPENAI_MODEL:gpt-4.1-mini}
   embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
+  embedding-dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:2000}
+  # LLM provider alternatif (Groq, Together.ai, Ollama…) — laisser vide pour rester sur OpenAI
+  # Groq    : OPENAI_LLM_BASE_URL=https://api.groq.com/openai/v1
+  # Hermes  : OPENAI_LLM_BASE_URL=https://api.together.xyz/v1
+  # Ollama  : OPENAI_LLM_BASE_URL=http://ollama:11434/v1
+  llm:
+    base-url: ${OPENAI_LLM_BASE_URL:}
+    api-key: ${OPENAI_LLM_API_KEY:}
+  # Modèle OpenAI utilisé en fallback si le provider LLM principal (Groq) est indisponible
+  fallback-model: ${OPENAI_FALLBACK_MODEL:gpt-4.1-mini}
   retry:
     max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:4}
     base-backoff-ms: ${OPENAI_RETRY_BASE_BACKOFF_MS:1500}
@@ -44,10 +75,10 @@ openai:
 
 ai-core:
   openai:
-    intent-model: ${AI_CORE_INTENT_MODEL:gpt-4o-mini}
-    rewrite-model: ${AI_CORE_REWRITE_MODEL:gpt-4o-mini}
+    intent-model: ${AI_CORE_INTENT_MODEL:gpt-4.1-mini}
+    rewrite-model: ${AI_CORE_REWRITE_MODEL:gpt-4.1-mini}
     rag-model: ${AI_CORE_RAG_MODEL:gpt-4o}
-    embedding-model: ${AI_CORE_EMBED_MODEL:text-embedding-3-small}
+    embedding-model: ${AI_CORE_EMBED_MODEL:text-embedding-3-large}
   rag:
     top-k-search: ${AI_CORE_RAG_TOP_K_SEARCH:20}
     top-k-context: ${AI_CORE_RAG_TOP_K_CONTEXT:5}
@@ -58,9 +89,16 @@ ai-core:
     km-annual: ${AI_CORE_EXPENSE_KM_ANNUAL:11000}
   company-name: ${AI_CORE_COMPANY_NAME:IA-INSIGHT}
   admin-key: ${AI_CORE_ADMIN_KEY:}
+  guard:
+    max-chars: ${AI_CORE_GUARD_MAX_CHARS:4000}
+    max-requests-per-minute: ${AI_CORE_GUARD_MAX_RPM:20}
   monthly-location:
     enabled: ${MONTHLY_LOCATION_ENABLED:true}
     text: ${MONTHLY_LOCATION_TEXT:"je loue pour la domiciliation à 450 EUR ce mois-ci"}
+  cra-reminder:
+    enabled: ${CRA_REMINDER_ENABLED:true}
+    from: ${MAIL_FROM:${MAIL_USERNAME:noreply@example.com}}
+    frontend-url: ${FRONTEND_CONSULTANT_URL:http://localhost:3001}
   ocr:
     storage-path: ${AI_CORE_RECEIPTS_STORAGE_PATH:/tmp/receipts}
     tesseract-command: ${AI_CORE_OCR_TESSERACT_CMD:tesseract}
@@ -68,14 +106,9 @@ ai-core:
     lang: ${AI_CORE_OCR_LANG:eng+fra}
     dpi: ${AI_CORE_OCR_DPI:300}
 
-weaviate:
-  scheme: ${WEAVIATE_SCHEME:http}
-  host: ${WEAVIATE_HOST:?WEAVIATE_HOST is required}
-  class-name: ${WEAVIATE_CLASS:DocumentChunk}
-  expense-class: ${WEAVIATE_EXPENSE_CLASS:Expense}
-  schema-init:
-    max-attempts: ${WEAVIATE_SCHEMA_INIT_MAX_ATTEMPTS:6}
-    backoff: ${WEAVIATE_SCHEMA_INIT_BACKOFF:10s}
+keycloak:
+  base-url: ${KEYCLOAK_BASE_URL:http://localhost:8090}
+  internal-url: ${KEYCLOAK_INTERNAL_URL:${KEYCLOAK_BASE_URL:http://localhost:8090}}
 
 invoice:
   service:
@@ -90,3 +123,4 @@ logging:
     # SSE broken pipe: connexion navigateur fermée — géré proprement, bruit inutile
     "[org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitterReturnValueHandler]": WARN
     "[org.apache.catalina.connector.ClientAbortException]": WARN
+    "[org.apache.catalina.core.ContainerBase]": WARN

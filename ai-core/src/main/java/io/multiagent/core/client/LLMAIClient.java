@@ -40,15 +40,26 @@ public class LLMAIClient {
     private final OpenAIClient client;
     private final String embeddingModel;
     private final String llmModel;
+    private final long embeddingDimensions;
     private final MeterRegistry metrics;
     private final int maxAttempts;
     private final long baseBackoffMs;
     private final long maxBackoffMs;
 
+    // Client dédié aux appels LLM (chat/completion) — peut pointer vers Groq, Together.ai, ou OpenAI
+    private final OpenAIClient chatClient;
+    // true si chatClient != client (Groq/autre provider configuré) → fallback OpenAI disponible
+    private final boolean hasFallback;
+    private final String fallbackLlmModel;
+
     public LLMAIClient(
             @Value("${openai.api-key}") String apiKey,
+            @Value("${openai.llm.api-key:}") String llmApiKey,
+            @Value("${openai.llm.base-url:}") String llmBaseUrl,
             @Value("${openai.embedding-model:text-embedding-3-large}") String embeddingModel,
             @Value("${openai.model:gpt-4.1-mini}") String llmModel,
+            @Value("${openai.fallback-model:gpt-4.1-mini}") String fallbackLlmModel,
+            @Value("${openai.embedding-dimensions:2000}") long embeddingDimensions,
             @Value("${openai.retry.max-attempts:4}") int maxAttempts,
             @Value("${openai.retry.base-backoff-ms:1500}") long baseBackoffMs,
             @Value("${openai.retry.max-backoff-ms:15000}") long maxBackoffMs,
@@ -57,12 +68,29 @@ public class LLMAIClient {
             throw new IllegalStateException("openai.api-key must be provided (set OPENAI_API_KEY)");
         }
 
+        // Client embeddings — toujours OpenAI (Groq/Together.ai ne supportent pas les embeddings)
         this.client = OpenAIOkHttpClient.builder()
                 .apiKey(apiKey)
                 .build();
 
+        // Client LLM — Groq / Together.ai / OpenAI selon config
+        if (llmBaseUrl != null && !llmBaseUrl.isBlank()) {
+            String resolvedKey = (llmApiKey != null && !llmApiKey.isBlank()) ? llmApiKey : apiKey;
+            this.chatClient = OpenAIOkHttpClient.builder()
+                    .apiKey(resolvedKey)
+                    .baseUrl(llmBaseUrl)
+                    .build();
+            this.hasFallback = true;
+            log.info("LLMClient — chatClient pointe vers: {} (fallback OpenAI: {})", llmBaseUrl, fallbackLlmModel);
+        } else {
+            this.chatClient = this.client;
+            this.hasFallback = false;
+        }
+
         this.embeddingModel = embeddingModel;
         this.llmModel = llmModel;
+        this.fallbackLlmModel = fallbackLlmModel;
+        this.embeddingDimensions = embeddingDimensions;
         this.metrics = registry;
         this.maxAttempts = Math.max(1, maxAttempts);
         this.baseBackoffMs = Math.max(100, baseBackoffMs);
@@ -92,8 +120,23 @@ public class LLMAIClient {
 
         String targetModel = resolveModel(model, this.llmModel);
 
-        ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
-                .model(targetModel)
+        ChatCompletionCreateParams params = buildChatParams(targetModel, system, user);
+
+        try {
+            return safeCall("chat.json(model=" + targetModel + ")", () -> chatClient.chat().completions().create(params));
+        } catch (LLMClientException ex) {
+            if (!hasFallback) throw ex;
+            log.warn("⚠️ LLM provider indisponible ({}), bascule sur OpenAI fallback model={}: {}",
+                    targetModel, fallbackLlmModel, ex.getMessage());
+            ChatCompletionCreateParams fallbackParams = buildChatParams(fallbackLlmModel, system, user);
+            return safeCall("chat.json.fallback(model=" + fallbackLlmModel + ")",
+                    () -> client.chat().completions().create(fallbackParams));
+        }
+    }
+
+    private ChatCompletionCreateParams buildChatParams(String model, String system, String user) {
+        return ChatCompletionCreateParams.builder()
+                .model(model)
                 .messages(List.of(
                         ChatCompletionMessageParam.ofSystem(
                                 ChatCompletionSystemMessageParam.builder()
@@ -110,8 +153,6 @@ public class LLMAIClient {
                         ResponseFormatJsonObject.builder().build()
                 ))
                 .build();
-
-        return safeCall("chat.json(model=" + targetModel + ")", () -> client.chat().completions().create(params));
     }
 
     // 🔹 Completion (texte brut)
@@ -122,7 +163,7 @@ public class LLMAIClient {
                 .maxTokens(200L)
                 .build();
 
-        Completion res = safeCall("completion(model=" + llmModel + ")", () -> client.completions().create(params));
+        Completion res = safeCall("completion(model=" + llmModel + ")", () -> chatClient.completions().create(params));
         if (res.choices().isEmpty()) {
             return "";
         }
@@ -169,6 +210,7 @@ public class LLMAIClient {
         EmbeddingCreateParams params = EmbeddingCreateParams.builder()
                 .model(targetModel)
                 .input(text)
+                .dimensions(embeddingDimensions)
                 .build();
 
         CreateEmbeddingResponse response = safeCall("embeddings.single(model=" + targetModel + ")", () -> client.embeddings().create(params));
@@ -185,6 +227,7 @@ public class LLMAIClient {
         EmbeddingCreateParams params = EmbeddingCreateParams.builder()
                 .model(targetModel)
                 .inputOfArrayOfStrings(documents)
+                .dimensions(embeddingDimensions)
                 .build();
 
         CreateEmbeddingResponse response = safeCall("embeddings.batch(model=" + targetModel + ")", () -> client.embeddings().create(params));
@@ -226,6 +269,12 @@ public class LLMAIClient {
                 systemPrompt,  // system
                 userPrompt     // user
         );
+        return extractContentOrThrow(completion);
+    }
+
+    /** Extraction JSON avec un modèle explicitement spécifié (ex: llama-3.3-70b-versatile pour les tâches complexes). */
+    public String extractJSONWithModel(String model, String systemPrompt, String userPrompt) {
+        ChatCompletion completion = chatJson(model, systemPrompt, userPrompt);
         return extractContentOrThrow(completion);
     }
 

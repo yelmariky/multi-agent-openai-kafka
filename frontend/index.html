@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IA-INSIGHT Admin</title>
+  <base href="/">
+  <title>Console Administrateur</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -51,8 +52,24 @@
       <!-- HEADER -->
       <header class="admin-header">
         <div class="header-brand">
-          <p class="eyebrow">Admin</p>
-          <h1 style="font-size:26px;margin-bottom:0">IA-INSIGHT</h1>
+          <p class="eyebrow">Console Administrateur</p>
+          <div style="display:flex;align-items:center;gap:10px">
+            <h1 id="tenant-name" style="font-size:26px;margin-bottom:0">—</h1>
+            <a href="/tenant-select.html" title="Changer d'organisation" aria-label="Changer d'organisation"
+               style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+                      color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:6px;
+                      border:1px solid var(--border);transition:color .15s,border-color .15s;white-space:nowrap"
+               onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
+               onmouseout="this.style.color='var(--muted)';this.style.borderColor='var(--border)'"
+               onfocus="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'"
+               onblur="this.style.color='var(--muted)';this.style.borderColor='var(--border)'">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+              </svg>
+              Changer
+            </a>
+          </div>
         </div>
 
         <div class="header-right">
@@ -87,6 +104,43 @@
         </div>
       </header>
 
+      <!-- MAIN NAV TABS -->
+      <nav class="main-nav-tabs" aria-label="Navigation principale">
+        <button class="main-tab" data-view="dashboard">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Dashboard
+        </button>
+        <button class="main-tab active" data-view="consultants">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Consultants
+        </button>
+        <button class="main-tab" data-view="projects">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+          Projets
+        </button>
+        <button class="main-tab" data-view="clients">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Clients
+        </button>
+      </nav>
+
+      <!-- ===== DASHBOARD VIEW ===== -->
+      <div id="dashboard-view" style="display:none">
+        <div class="dashboard-toolbar">
+          <label class="inline" style="margin:0">
+            Mois
+            <input type="month" id="dash-month">
+          </label>
+          <button id="dash-load-btn" class="btn-primary" style="padding:8px 18px">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Actualiser
+          </button>
+        </div>
+        <div id="dash-kpis" class="dash-kpis" style="display:none"></div>
+        <div id="dash-table-wrap" style="display:none"></div>
+        <div id="dash-status" class="status"></div>
+      </div>
+
       <!-- CONSULTANTS GRID VIEW -->
       <div id="cons-grid-view">
         <div class="cons-toolbar">
@@ -102,36 +156,99 @@
           </button>
         </div>
 
-        <!-- Add form (hidden) -->
+        <!-- Add form (hidden) — two modes: existing Keycloak user OR invite new -->
         <div id="cons-add-form" class="cons-add-form" style="display:none">
           <div class="card" style="padding:20px">
             <p class="eyebrow">Nouveau consultant</p>
-            <div class="form-row" style="margin-top:12px">
-              <label class="inline" style="flex:2">
-                Nom complet
-                <input id="cons-new-name" type="text" placeholder="Alice Martin">
-              </label>
-              <label class="inline" style="flex:2">
-                Email
-                <input id="cons-new-email" type="email" placeholder="alice@ia-insight.fr">
-              </label>
-              <label class="inline" style="flex:1">
-                Rôle
-                <select id="cons-new-role">
-                  <option value="Salarié">Salarié</option>
-                  <option value="Freelance">Freelance</option>
-                  <option value="Sous-traitant">Sous-traitant</option>
-                </select>
-              </label>
-              <label class="inline" style="flex:1">
-                Société (émetteur)
-                <input id="cons-new-company" type="text" value="IA-INSIGHT">
-              </label>
-              <label class="inline" style="flex:1">
-                Société cliente
-                <input id="cons-new-clientname" type="text" placeholder="INFOGENE DIGITAL">
-              </label>
+            <p id="cons-add-kc-status" style="font-size:12px;color:var(--muted);margin:4px 0 0"></p>
+
+            <!-- Mode toggle -->
+            <div style="display:flex;gap:8px;margin:12px 0 4px">
+              <button id="cons-mode-existing" class="btn-secondary cons-mode-active" style="font-size:12px;padding:5px 12px">Utilisateur existant</button>
+              <button id="cons-mode-invite" class="btn-ghost" style="font-size:12px;padding:5px 12px">Inviter un nouveau</button>
             </div>
+
+            <!-- Mode 1: existing Keycloak user -->
+            <div id="cons-existing-block">
+              <div class="form-row" style="margin-top:12px">
+                <label class="inline" style="flex:3">
+                  Utilisateur Interne
+                  <select id="cons-new-kc-user" style="width:100%">
+                    <option value="">-- Chargement --</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:1">
+                  Role
+                  <select id="cons-new-role">
+                    <option value="Salarie">Salarié</option>
+                    <option value="Freelance">Freelance</option>
+                    <option value="Sous-traitant">Sous-traitant</option>
+                    <option value="Manager" style="color:#fb923c">── Manager (interne)</option>
+                    <option value="Admin" style="color:#f87171">── Admin (interne)</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:1">
+                  Societe (emetteur)
+                  <input id="cons-new-company" type="text" readonly style="opacity:.6;cursor:default">
+                </label>
+                <label class="inline" style="flex:1">
+                  Societe cliente
+                  <input id="cons-new-clientname" type="text" placeholder="INFOGENE DIGITAL">
+                </label>
+              </div>
+            </div>
+
+            <!-- Mode 2: invite new user (Keycloak + profile) -->
+            <div id="cons-invite-block" style="display:none">
+              <div class="form-row" style="margin-top:12px">
+                <label class="inline" style="flex:1">
+                  Email
+                  <input id="cons-invite-email" type="email" placeholder="consultant@exemple.com">
+                </label>
+                <label class="inline" style="flex:1">
+                  Prenom
+                  <input id="cons-invite-firstname" type="text" placeholder="Alice">
+                </label>
+                <label class="inline" style="flex:1">
+                  Nom
+                  <input id="cons-invite-lastname" type="text" placeholder="Dupont">
+                </label>
+              </div>
+              <div class="form-row" style="margin-top:8px">
+                <label class="inline" style="flex:1">
+                  Type d'authentification
+                  <select id="cons-invite-authtype">
+                    <option value="internal">Interne (mot de passe temporaire)</option>
+                    <option value="external">Externe (Google, PayPal, etc.)</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:1" id="cons-invite-password-label">
+                  Mot de passe temporaire
+                  <input id="cons-invite-password" type="text" placeholder="Changeme123!">
+                </label>
+              </div>
+              <div class="form-row" style="margin-top:8px">
+                <label class="inline" style="flex:1">
+                  Role
+                  <select id="cons-invite-role">
+                    <option value="Salarie">Salarié</option>
+                    <option value="Freelance">Freelance</option>
+                    <option value="Sous-traitant">Sous-traitant</option>
+                    <option value="Manager" style="color:#fb923c">── Manager (interne)</option>
+                    <option value="Admin" style="color:#f87171">── Admin (interne)</option>
+                  </select>
+                </label>
+                <label class="inline" style="flex:1">
+                  Societe (emetteur)
+                  <input id="cons-invite-company" type="text" readonly style="opacity:.6;cursor:default">
+                </label>
+                <label class="inline" style="flex:1">
+                  Societe cliente
+                  <input id="cons-invite-clientname" type="text" placeholder="INFOGENE DIGITAL">
+                </label>
+              </div>
+            </div>
+
             <div class="actions-row" style="margin-top:12px">
               <button id="cons-add-save" class="btn-primary">Enregistrer</button>
               <button id="cons-add-cancel" class="btn-ghost">Annuler</button>
@@ -175,50 +292,48 @@
               <span class="cons-kpi-val" id="kpi-expense-pending">—</span>
               <span class="cons-kpi-lbl">Frais en attente</span>
             </div>
-            <div class="cons-kpi-sep"></div>
-            <div class="cons-kpi-item cons-tjm-item">
-              <div class="cons-tjm-wrap">
-                <input type="text" id="cons-clientname-input" class="cons-tjm-input" style="width:130px" placeholder="Société cliente…">
-                <span class="cons-tjm-unit">Client</span>
-              </div>
-            </div>
-            <div class="cons-kpi-sep"></div>
-            <div class="cons-kpi-item cons-tjm-item">
-              <div class="cons-tjm-wrap">
-                <span id="cons-tjm-display" class="cons-tjm-val">—</span>
-                <span class="cons-tjm-unit">€/j TJM</span>
-              </div>
-            </div>
-            <div class="cons-kpi-sep"></div>
-            <button id="cons-edit-detail-btn" class="btn-secondary" style="padding:6px 14px;font-size:12px">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              Modifier
-            </button>
-            <div class="cons-kpi-sep"></div>
-            <button id="cons-disable-btn" class="cons-remove-btn">
-              <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-              Désactiver
-            </button>
           </div>
         </div>
 
-        <!-- Client info row — read-only display (edit via "Modifier" on the card) -->
-        <div class="cons-client-row">
-          <div class="cons-client-field">
-            <span class="cons-client-lbl">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              Adresse client
-            </span>
-            <span id="cons-clientaddress-display" class="cons-client-val">—</span>
+        <!-- Vehicle profile section -->
+        <div id="cons-vehicle-section" class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <p class="eyebrow" style="margin:0">Profil véhicule (frais km)</p>
           </div>
-          <div class="cons-client-sep"></div>
-          <div class="cons-client-field">
-            <span class="cons-client-lbl">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8L2 7h20z"/></svg>
-              RCS client
-            </span>
-            <span id="cons-clientrcs-display" class="cons-client-val">—</span>
+          <div class="form-row" style="gap:12px;flex-wrap:wrap">
+            <label class="inline">
+              Véhicule
+              <select id="cons-vehicle-type">
+                <option value="CAR">Voiture</option>
+                <option value="ELECTRIC_CAR">Voiture électrique (+20%)</option>
+                <option value="MOTORCYCLE">Moto</option>
+                <option value="NONE">Pas de véhicule</option>
+              </select>
+            </label>
+            <label class="inline">
+              Puissance fiscale (CV)
+              <input type="number" id="cons-fiscal-power" min="1" max="20" value="7" style="width:70px">
+            </label>
+            <label class="inline">
+              km annuels estimés
+              <input type="number" id="cons-km-annual" min="1" value="4999" style="width:90px">
+            </label>
+            <button id="cons-vehicle-save" class="btn-primary" style="align-self:flex-end;font-size:12px;padding:5px 12px">Enregistrer</button>
           </div>
+          <p style="font-size:11px;color:var(--text-muted);margin-top:8px">
+            km ≤ 4 999/an → palier 1 (taux maximum). Véhicule électrique : barème ×1.20. Sans véhicule : frais km refusés automatiquement.
+          </p>
+          <div id="cons-vehicle-status" class="status"></div>
+        </div>
+
+        <!-- Assignments section -->
+        <div id="cons-assignments-section" class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <p class="eyebrow" style="margin:0">Trios Projet / Client / TJM</p>
+            <button id="cons-assign-add-btn" class="btn-primary" style="font-size:12px;padding:5px 12px">+ Ajouter</button>
+          </div>
+          <div id="cons-assignments-list"></div>
+          <div id="cons-assignments-status" class="status"></div>
         </div>
 
         <!-- Sub-tabs -->
@@ -226,6 +341,7 @@
           <button class="cons-stab active" data-cons-tab="cra">CRA</button>
           <button class="cons-stab" data-cons-tab="notes">Notes de frais</button>
           <button class="cons-stab" data-cons-tab="factures">Factures</button>
+          <button class="cons-stab" data-cons-tab="conges">Congés</button>
         </div>
 
         <!-- Panel CRA -->
@@ -268,8 +384,8 @@
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
                 Tout approuver
               </button>
-              <button id="cons-notes-pdf" class="btn-secondary" style="display:none">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <button id="cons-notes-pdf" class="btn-pdf" style="display:none">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                 PDF
               </button>
               <button id="cons-notes-excel" class="btn-secondary" style="display:none">
@@ -284,8 +400,10 @@
 
         <!-- Panel Factures -->
         <div id="cons-panel-factures" class="cons-tab-panel" style="display:none">
+
+          <!-- Factures existantes (générées automatiquement à la validation CRA) -->
           <div class="card">
-            <p class="eyebrow">Factures associées</p>
+            <p class="eyebrow">Factures existantes</p>
             <div class="form-row" style="margin-top:12px">
               <label class="inline">
                 De (mois)
@@ -297,7 +415,7 @@
               </label>
               <label class="inline">
                 Société
-                <input id="cons-inv-company" type="text" value="IA-INSIGHT">
+                <input id="cons-inv-company" type="text" readonly style="opacity:.6;cursor:default">
               </label>
             </div>
             <div class="actions-row" style="margin-top:10px">
@@ -315,6 +433,116 @@
           </div>
         </div>
 
+        <!-- Panel Congés -->
+        <div id="cons-panel-conges" class="cons-tab-panel" style="display:none">
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+              <p class="eyebrow" style="margin:0">Congés & RTT</p>
+              <div id="cons-leave-balance" style="display:flex;gap:10px;font-size:12px"></div>
+            </div>
+            <div id="cons-leave-status" class="status"></div>
+            <div id="cons-leave-list"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PROJECTS VIEW -->
+      <div id="projects-view" style="display:none">
+        <div class="cons-toolbar">
+          <div class="cons-search-wrap">
+            <span class="cons-search-icon-box">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </span>
+            <input id="proj-search" type="text" class="cons-search" placeholder="Nom, description…" autocomplete="off">
+          </div>
+          <button id="proj-add-btn" class="btn-primary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nouveau projet
+          </button>
+        </div>
+
+        <!-- Add / edit form (hidden by default) -->
+        <div id="proj-form-wrap" style="display:none">
+          <div class="card" style="padding:20px;margin-bottom:16px">
+            <p class="eyebrow" id="proj-form-title">Nouveau projet</p>
+            <input type="hidden" id="proj-form-id">
+            <div class="form-row" style="margin-top:12px">
+              <label class="inline" style="flex:2">
+                Nom du projet
+                <input id="proj-form-name" type="text" placeholder="Ex : Transformation digitale ACME">
+              </label>
+              <label class="inline" style="flex:4">
+                Description
+                <input id="proj-form-desc" type="text" placeholder="Courte description du projet…">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="proj-form-save" class="btn-primary">Enregistrer</button>
+              <button id="proj-form-cancel" class="btn-ghost">Annuler</button>
+            </div>
+            <div id="proj-form-status" class="status" style="margin-top:8px"></div>
+          </div>
+        </div>
+
+        <div id="proj-list-status" class="status" style="margin:10px 0"></div>
+        <div id="proj-table-wrap"></div>
+      </div>
+
+      <!-- CLIENTS VIEW -->
+      <div id="clients-view" style="display:none">
+        <div class="cons-toolbar">
+          <div class="cons-search-wrap">
+            <span class="cons-search-icon-box">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </span>
+            <input id="client-search" type="text" class="cons-search" placeholder="Nom, contact…" autocomplete="off">
+          </div>
+          <button id="client-add-btn" class="btn-primary">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nouveau client
+          </button>
+        </div>
+
+        <!-- Add / edit form (hidden by default) -->
+        <div id="client-form-wrap" style="display:none">
+          <div class="card" style="padding:20px;margin-bottom:16px">
+            <p class="eyebrow" id="client-form-title">Nouveau client</p>
+            <input type="hidden" id="client-form-id">
+            <div class="form-row" style="margin-top:12px">
+              <label class="inline" style="flex:2">
+                Nom *
+                <input id="client-form-name" type="text" placeholder="Ex : INFOGENE DIGITAL">
+              </label>
+              <label class="inline" style="flex:4">
+                Adresse
+                <input id="client-form-address" type="text" placeholder="12 rue de la Paix, 75002 Paris">
+              </label>
+            </div>
+            <div class="form-row" style="margin-top:8px">
+              <label class="inline" style="flex:2">
+                RCS / SIRET
+                <input id="client-form-rcs" type="text" placeholder="RCS Paris 123 456 789">
+              </label>
+              <label class="inline" style="flex:2">
+                Nom du contact
+                <input id="client-form-contact-name" type="text" placeholder="Jean Dupont">
+              </label>
+              <label class="inline" style="flex:3">
+                Email du contact
+                <input id="client-form-contact-email" type="email" placeholder="j.dupont@client.fr">
+              </label>
+            </div>
+            <div class="actions-row" style="margin-top:12px">
+              <button id="client-form-save" class="btn-primary">Enregistrer</button>
+              <button id="client-form-cancel" class="btn-ghost">Annuler</button>
+            </div>
+            <div id="client-form-status" class="status" style="margin-top:8px"></div>
+          </div>
+        </div>
+
+        <div id="client-list-status" class="status" style="margin:10px 0"></div>
+        <div id="client-table-wrap"></div>
       </div>
 
     </div>
@@ -324,34 +552,85 @@
   <div id="cons-edit-overlay" class="cons-edit-overlay hidden"></div>
   <div id="cons-edit-modal" class="cons-edit-modal hidden">
     <div class="cons-edit-modal-header">
-      <p class="eyebrow" style="margin:0">Modifier le consultant</p>
+      <div>
+        <p class="eyebrow" style="margin:0">Modifier le consultant</p>
+        <p id="cons-edit-cons-name" style="margin:2px 0 0;font-size:13px;color:var(--muted)"></p>
+      </div>
       <button id="cons-edit-modal-close" class="settings-close" aria-label="Fermer">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <p id="cons-edit-name-display" style="font-weight:600;margin:0 0 16px;color:var(--text);font-size:15px"></p>
-    <div class="form-row">
+    <div class="form-row" style="margin-top:14px">
       <label class="inline" style="flex:2">
-        Société cliente
-        <input id="cons-edit-clientname" type="text" placeholder="INFOGENE DIGITAL">
-      </label>
-      <label class="inline" style="flex:3">
-        Adresse client
-        <input id="cons-edit-clientaddress" type="text" placeholder="12 rue de la Paix, 75002 Paris">
+        Nom
+        <input id="cons-edit-name" type="text" placeholder="Alice Martin">
       </label>
       <label class="inline" style="flex:2">
-        RCS client
-        <input id="cons-edit-clientrcs" type="text" placeholder="RCS Paris 123 456 789">
+        Rôle
+        <select id="cons-edit-role">
+          <option value="Salarie">Salarié</option>
+          <option value="Freelance">Freelance</option>
+          <option value="Sous-traitant">Sous-traitant</option>
+          <option value="Manager">── Manager (interne)</option>
+          <option value="Admin">── Admin (interne)</option>
+        </select>
       </label>
-      <label class="inline" style="flex:1">
-        TJM (€/j)
-        <input id="cons-edit-tjm" type="number" min="0" step="50" placeholder="570">
+      <label class="inline" style="flex:2">
+        Société
+        <input id="cons-edit-company" type="text" placeholder="Freelance">
       </label>
     </div>
     <div class="actions-row" style="margin-top:16px">
       <button id="cons-edit-save" class="btn-primary">Enregistrer</button>
       <button id="cons-edit-cancel" class="btn-ghost">Annuler</button>
     </div>
+  </div>
+
+  <!-- ====== ASSIGNMENT MODAL ====== -->
+  <div id="assignment-overlay" class="cons-edit-overlay hidden"></div>
+  <div id="assignment-modal" class="cons-edit-modal hidden">
+    <div class="cons-edit-modal-header">
+      <p class="eyebrow" id="assignment-modal-title" style="margin:0">Ajouter un trio</p>
+      <button id="assignment-modal-close" class="settings-close" aria-label="Fermer">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <input type="hidden" id="assignment-modal-id">
+    <div class="form-row" style="margin-top:12px">
+      <label class="inline" style="flex:2">
+        Projet *
+        <select id="assignment-project-select">
+          <option value="">-- Sélectionner un projet --</option>
+        </select>
+      </label>
+      <label class="inline" style="flex:2">
+        Client *
+        <select id="assignment-client-select">
+          <option value="">-- Sélectionner un client --</option>
+        </select>
+      </label>
+      <label class="inline" style="flex:1">
+        TJM vente (€/j) *
+        <input id="assignment-tjm" type="number" min="0" step="50" placeholder="500">
+      </label>
+      <label class="inline" style="flex:1">
+        Prix achat (€/j)
+        <input id="assignment-daily-cost" type="number" min="0" step="10" placeholder="350" title="Salarié: coût complet. Freelance: taux convenu.">
+      </label>
+      <label class="inline" style="flex:1">
+        Délai de paiement
+        <select id="assignment-payment-terms">
+          <option value="30">1 mois (30j)</option>
+          <option value="45">45 jours</option>
+          <option value="60">2 mois (60j)</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions-row" style="margin-top:14px">
+      <button id="assignment-save" class="btn-primary">Enregistrer</button>
+      <button id="assignment-cancel" class="btn-ghost">Annuler</button>
+    </div>
+    <div id="assignment-status" class="status" style="margin-top:8px"></div>
   </div>
 
   <!-- ====== SETTINGS DRAWER ====== -->
@@ -373,12 +652,12 @@
       <div class="settings-section">
         <p class="settings-section-title">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3H8L2 7h20z"/></svg>
-          Société émettrice (IA-INSIGHT)
+          Société émettrice
         </p>
         <div class="form-stack" style="gap:10px">
           <label class="inline">
             Raison sociale
-            <input id="set-company" type="text" placeholder="IA-INSIGHT" readonly style="opacity:.6;cursor:default">
+            <input id="set-company" type="text" readonly style="opacity:.6;cursor:default">
           </label>
           <label class="inline">
             Adresse

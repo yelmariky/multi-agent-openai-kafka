@@ -2,6 +2,7 @@ package io.multiagent.core.notification.service;
 
 import io.multiagent.core.model.Notification;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -30,10 +31,19 @@ public class NotificationService {
         try {
             long unread = notifications.stream().filter(n -> !n.isRead()).count();
             emitter.send(SseEmitter.event().name("init").data(unread));
-        } catch (Exception ignored) {}
+        } catch (Exception ex) {
+            log.debug("SSE init send failed (client already disconnected): {}", ex.getMessage());
+        }
         return emitter;
     }
 
+    /**
+     * Pousse une notification SSE de façon asynchrone.
+     * Exécuté sur un thread pool séparé : un Broken pipe sur un client SSE déconnecté
+     * ne pollue plus le thread de la requête principale et n'est pas remonté
+     * au DispatcherServlet comme une erreur 500.
+     */
+    @Async
     public void push(String type, String consultantName, String consultantEmail, String message, String refId) {
         Notification n = Notification.builder()
                 .id(UUID.randomUUID().toString())
@@ -48,7 +58,7 @@ public class NotificationService {
         notifications.add(0, n);
         // push to all SSE clients
         String payload = "{\"id\":\"" + n.getId() + "\",\"type\":\"" + n.getType()
-                + "\",\"consultantName\":\"" + escape(n.getConsultantName())
+                + "\",\"consultantEmail\":\"" + escape(safeStr(n.getConsultantEmail()))
                 + "\",\"message\":\"" + escape(n.getMessage())
                 + "\",\"timestamp\":\"" + n.getTimestamp()
                 + "\",\"refId\":\"" + safeStr(n.getRefId()) + "\"}";
@@ -57,6 +67,7 @@ public class NotificationService {
             try {
                 e.send(SseEmitter.event().name("notification").data(payload));
             } catch (Exception ex) {
+                log.debug("SSE client disconnected, removing emitter: {}", ex.getMessage());
                 dead.add(e);
             }
         }

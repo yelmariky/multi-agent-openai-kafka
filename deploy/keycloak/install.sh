@@ -63,7 +63,7 @@ kubectl create secret generic keycloak-secret \
 
 echo "==> [5/7] Application du ConfigMap realm ia-insight"
 kubectl apply -f "${SCRIPT_DIR}/realm-configmap.yaml"
-
+kubectl apply -f "${SCRIPT_DIR}/theme-configmap.yaml"
 echo "==> [6/7] Déploiement Keycloak"
 kubectl apply -f "${SCRIPT_DIR}/deployment.yaml"
 

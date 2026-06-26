@@ -209,6 +209,10 @@ public class ExpensePdfService {
             writeLine(cs, margin, y, safeText("Consultant : " + report.getConsultantEmail()));
             y -= leading;
         }
+        if (report.getProjectName() != null && !report.getProjectName().isBlank()) {
+            writeLine(cs, margin, y, safeText("Projet : " + report.getProjectName()));
+            y -= leading;
+        }
         writeLine(cs, margin, y, safeText("Periode : " + report.getStart() + " -> " + report.getEnd()));
         y -= leading * 2;
         writeExpenseHeader(cs, y, xCols, headers);

@@ -23,6 +23,8 @@ spec:
             name: multi-agent-config
         - secretRef:
             name: openai-secret
+        - secretRef:
+            name: postgres-secret
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness

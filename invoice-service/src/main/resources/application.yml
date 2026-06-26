@@ -4,29 +4,32 @@ server:
 spring:
   application:
     name: invoice-service
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ia_insight}
+    username: ${POSTGRES_USER:ia_insight}
+    password: ${POSTGRES_PASSWORD:changeme}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: false
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8090/realms/ia-insight/protocol/openid-connect/certs}
-
-weaviate:
-  scheme: ${WEAVIATE_SCHEME:http}
-  host: ${WEAVIATE_HOST:?WEAVIATE_HOST is required}
-  invoice-class: ${WEAVIATE_INVOICE_CLASS:Invoice}
-  seller-profile-class: ${WEAVIATE_SELLER_PROFILE_CLASS:SellerProfile}
-  schema-init:
-    max-attempts: ${WEAVIATE_SCHEMA_INIT_MAX_ATTEMPTS:6}
-    backoff-ms: ${WEAVIATE_SCHEMA_INIT_BACKOFF_MS:10000}
+keycloak:
+  base-url: ${KEYCLOAK_BASE_URL:http://localhost:8090}
+  internal-url: ${KEYCLOAK_INTERNAL_URL:${KEYCLOAK_BASE_URL:http://localhost:8090}}
 
 openai:
   api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
-  model: ${OPENAI_MODEL:gpt-4o-mini}
+  model: ${OPENAI_MODEL:gpt-4.1-mini}
   embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
+  embedding-dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:2000}
   retry:
     max-attempts: ${OPENAI_RETRY_MAX_ATTEMPTS:4}
     base-backoff-ms: ${OPENAI_RETRY_BASE_BACKOFF_MS:1500}

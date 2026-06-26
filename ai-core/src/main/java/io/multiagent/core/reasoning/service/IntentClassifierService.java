@@ -65,7 +65,7 @@ public class IntentClassifierService {
                 %s
 
                 USER: %s
-                """.formatted(systemPrompt, examplesPrompt, userText);
+                """.formatted(systemPrompt, examplesPrompt, userText.replace("%", "%%"));
 
             // 🟢 version compatible avec TA méthode extractJSON()
             String json = openai.extractJSON(systemPrompt, fullPrompt);
@@ -95,11 +95,29 @@ public class IntentClassifierService {
     }
 
     private IntentResult fallback(String userText, String explanation) {
+        // Rule-based km detection — bypasses LLM when both providers are down
+        if (isKmExpenseText(userText)) {
+            log.info("🛤️ Intent km détecté par règle (LLM indisponible): '{}'", userText);
+            IntentResult km = new IntentResult();
+            km.setIntent("create_expense");
+            km.setConfidence(0.85);
+            km.setExplanation("Détection règle: frais km");
+            km.setOriginalText(userText);
+            return km;
+        }
         IntentResult fallback = new IntentResult();
         fallback.setIntent("error");
         fallback.setConfidence(0.0);
         fallback.setExplanation(explanation);
         fallback.setOriginalText(userText);
         return fallback;
+    }
+
+    private boolean isKmExpenseText(String text) {
+        if (text == null || text.isBlank()) return false;
+        String lower = text.toLowerCase();
+        boolean hasKmKeyword = lower.contains("km") || lower.contains("kilom");
+        boolean hasNumber = lower.matches(".*\\d+.*");
+        return hasKmKeyword && hasNumber;
     }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE cra ADD COLUMN IF NOT EXISTS client_contact_email VARCHAR(255);
