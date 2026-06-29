@@ -93,11 +93,19 @@ public class WeaviateService {
         persistChunk(id, text, null, arr);
     }
 
+    /** Seuil de similarité cosine minimum pour le RAG (OWASP LLM08 — adversarial embeddings). */
+    @org.springframework.beans.factory.annotation.Value("${ai-core.rag.min-similarity:0.70}")
+    private double ragMinSimilarity;
+
     public List<String> searchByVector(List<Double> vector, int k) {
         try {
             UUID tenantId = TenantContext.getTenantId();
             String pgVector = toPgVectorString(vector);
-            List<DocumentChunkEntity> results = documentChunkRepo.findSimilar(tenantId, pgVector, k);
+            List<DocumentChunkEntity> results =
+                    documentChunkRepo.findSimilarAboveThreshold(tenantId, pgVector, k, ragMinSimilarity);
+            if (results.isEmpty()) {
+                log.info("🛡️ [RAG] Aucun chunk avec similarité ≥ {} — contexte vide retourné", ragMinSimilarity);
+            }
             return results.stream()
                     .map(DocumentChunkEntity::getContent)
                     .filter(Objects::nonNull)
@@ -910,7 +918,9 @@ public class WeaviateService {
                     try {
                         projectRepo.findById(UUID.fromString(pid)).ifPresent(p ->
                                 proj.put("name", p.getName() != null ? p.getName() : pid));
-                    } catch (Exception ex) { /* ignore bad UUID */ }
+                    } catch (IllegalArgumentException ex) {
+                        log.debug("UUID projet invalide ignoré : {}", pid);
+                    }
                     if (!proj.containsKey("name")) proj.put("name", pid.substring(0, 8) + "…");
                     return proj;
                 })

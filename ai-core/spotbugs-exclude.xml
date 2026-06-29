@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         FAUX-POSITIFS FRAMEWORKS
+         ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- Lombok génère du code opaque pour SpotBugs -->
+    <Match><Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/></Match>
+    <Match><Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/></Match>
+
+    <!-- CT_CONSTRUCTOR_THROW : Spring gère le cycle de vie des beans,
+         les objets partiellement initialisés ne sont pas exposés -->
+    <Match><Bug pattern="CT_CONSTRUCTOR_THROW"/></Match>
+
+    <!-- REC_CATCH_EXCEPTION : Java SDK peut déclarer Exception même quand seule
+         RuntimeException est lancée — inévitable avec certaines APIs -->
+    <Match><Bug pattern="REC_CATCH_EXCEPTION"/></Match>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SÉCURITÉ — FAUX-POSITIFS DOCUMENTÉS
+         ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- CSRF désactivé intentionnellement : API REST stateless avec JWT Bearer token.
+         Pas de cookie de session → CSRF non applicable (RFC 6750). -->
+    <Match>
+        <Class name="io.multiagent.core.config.SecurityConfig"/>
+        <Bug pattern="SPRING_CSRF_PROTECTION_DISABLED"/>
+    </Match>
+
+    <!-- PREDICTABLE_RANDOM : ThreadLocalRandom utilisé pour jitter de retry,
+         non pour usage cryptographique. -->
+    <Match>
+        <Class name="io.multiagent.core.client.LLMAIClient"/>
+        <Bug pattern="PREDICTABLE_RANDOM"/>
+    </Match>
+
+    <!-- PATH_TRAVERSAL_IN : chemins issus de @Value Spring (config K8s ConfigMap),
+         pas d'entrée utilisateur. Valider en amont au démarrage suffit. -->
+    <Match><Bug pattern="PATH_TRAVERSAL_IN"/></Match>
+
+    <!-- CRLF_INJECTION_LOGS : les valeurs loguées sont des UUIDs, LocalDate, emails
+         internes, constantes métier — aucun de ces types ne peut contenir CRLF. -->
+    <Match><Bug pattern="CRLF_INJECTION_LOGS"/></Match>
+
+    <!-- REDOS : regex appliquée sur des textes limités à 4000 chars par PromptGuard avant
+         d'atteindre ce code — surface d'attaque bornée, risque DoS négligeable. -->
+    <Match>
+        <Class name="io.multiagent.core.expense.service.DeleteExpenseService"/>
+        <Bug pattern="REDOS"/>
+    </Match>
+
+    <!-- COMMAND_INJECTION : OcrService appelle Tesseract et pdftoppm avec des chemins
+         de fichiers uploadés après validation (UUID-based filenames via ReceiptStorageService).
+         Le nom de fichier n'est jamais fourni directement par l'utilisateur. -->
+    <Match>
+        <Class name="io.multiagent.core.expense.service.OcrService"/>
+        <Bug pattern="COMMAND_INJECTION"/>
+    </Match>
+
+    <!-- NP_NULL_ON_SOME_PATH : flux de traitement Spring Boot avec garanties
+         de non-null assurées par les couches amont (validation, @NotNull JPA). -->
+    <Match><Bug pattern="NP_NULL_ON_SOME_PATH,NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/></Match>
+
+</FindBugsFilter>

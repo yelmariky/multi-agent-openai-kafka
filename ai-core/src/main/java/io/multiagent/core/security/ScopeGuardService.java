@@ -42,6 +42,15 @@ public class ScopeGuardService {
     @Value("${AI_CORE_PROMPT_GUARD_SECURITY:}")
     private String securityPromptEnv;
 
+    /**
+     * Comportement en cas d'erreur LLM (panne Groq/OpenAI, quota, timeout).
+     * false (défaut) = fail-closed : le texte est BLOQUÉ — plus sûr.
+     * true = fail-open : le texte est autorisé — plus disponible, moins sûr.
+     * Configurable via ai-core.guard.scope-fail-open=true si nécessaire.
+     */
+    @Value("${ai-core.guard.scope-fail-open:false}")
+    private boolean scopeFailOpen;
+
     private String securityPrompt;
 
     // Cache : hash du texte → safe (true/false), TTL 5 min
@@ -99,10 +108,17 @@ public class ScopeGuardService {
             return safe;
 
         } catch (Exception e) {
-            // LLM indisponible, quota dépassé, JSON invalide → fail open
-            log.warn("🛡️ [SCOPE GUARD LLM] Erreur LLM ({}) — fail open, texte autorisé par défaut",
-                    e.getMessage());
-            return true;
+            if (scopeFailOpen) {
+                // Mode dégradé explicitement activé — fail-open (disponibilité > sécurité)
+                log.warn("🛡️ [SCOPE GUARD LLM] Erreur LLM ({}) — fail-open activé, texte autorisé",
+                        e.getMessage());
+                return true;
+            } else {
+                // fail-closed par défaut (OWASP LLM01) — bloquer en cas de doute
+                log.warn("🛡️ [SCOPE GUARD LLM] Erreur LLM ({}) — fail-closed, texte bloqué par précaution",
+                        e.getMessage());
+                return false;
+            }
         }
     }
 }

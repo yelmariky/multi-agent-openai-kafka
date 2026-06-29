@@ -63,11 +63,11 @@ function authHeaders(extra = {}) {
 // ============================================================
 // CONFIG API — lue depuis globalThis.APP_CONFIG (config.js)
 // ============================================================
-const DEFAULT_BASE = _cfg.apiBase || 'http://localhost:8081';
+const DEFAULT_BASE              = _cfg.apiBase          || 'http://localhost:8081';
+const DEFAULT_NOTIFICATION_BASE = _cfg.notificationBase || 'http://localhost:8084';
 
-function base() {
-  return DEFAULT_BASE.replace(/\/$/, '');
-}
+function base()      { return DEFAULT_BASE.replace(/\/$/, ''); }
+function notifBase() { return DEFAULT_NOTIFICATION_BASE.replace(/\/$/, ''); }
 
 // ============================================================
 // BOOT — login ou app

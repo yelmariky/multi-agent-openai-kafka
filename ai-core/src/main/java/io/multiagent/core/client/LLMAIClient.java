@@ -152,6 +152,7 @@ public class LLMAIClient {
                 .responseFormat(ChatCompletionCreateParams.ResponseFormat.Companion.ofJsonObject(
                         ResponseFormatJsonObject.builder().build()
                 ))
+                .maxTokens(4096L)   // OWASP LLM04 : limiter la taille de la sortie LLM
                 .build();
     }
 
@@ -278,11 +279,21 @@ public class LLMAIClient {
         return extractContentOrThrow(completion);
     }
 
+    /** Taille maximale acceptée pour une réponse LLM (OWASP LLM04 — DoS via sortie illimitée). */
+    private static final int MAX_OUTPUT_CHARS = 32_000;
+
     private String extractContentOrThrow(ChatCompletion completion) {
         String content = LLMUtils.extractChatContent(completion).trim();
         if (content.isBlank()) {
             throw new LLMClientException("LLM returned an empty JSON payload");
         }
+        // OWASP LLM04 : tronquer les réponses excessivement longues pour éviter le parsing OOM
+        if (content.length() > MAX_OUTPUT_CHARS) {
+            log.warn("⚠️ [LLM] Réponse tronquée : {} → {} chars (limite sécurité)", content.length(), MAX_OUTPUT_CHARS);
+            content = content.substring(0, MAX_OUTPUT_CHARS);
+        }
+        // Retirer les caractères de contrôle dangereux de la sortie LLM
+        content = content.replaceAll("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F﻿​]", "");
         return content;
     }
 

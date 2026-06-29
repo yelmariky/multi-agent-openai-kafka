@@ -7,6 +7,15 @@
 # Credentials locaux — ne jamais committer
 deploy/**/.env*
 
+# Secrets K8s bruts (non chiffrés) — seuls les SealedSecrets (*sealed-*.yaml) sont committables
+deploy/secrets/openai-secret.yaml
+deploy/secrets/postgres-secret.yaml
+deploy/secrets/keycloak-secret.yaml
+deploy/secrets/*-plain.yaml
+deploy/secrets/*.env
+# Variables d'environnement locales pour generate-sealed-secrets.sh
+.secrets.env
+
 target/
 **/target/
 poc/

@@ -30,6 +30,7 @@ globalThis.APP_CONFIG = {
   keycloakClientId: 'frontend-admin',
   apiBase:          'http://localhost:8081',   // ai-core direct
   invoiceBase:      'http://localhost:8083',   // invoice-service direct
+  notificationBase: 'http://localhost:8084',   // notification-service direct
 
   // --- PRODUCTION (Kong) — decommenter et adapter ---
   // keycloakUrl:      'https://auth.ia-insight.fr',
@@ -37,4 +38,5 @@ globalThis.APP_CONFIG = {
   // keycloakClientId: 'frontend-admin',
   // apiBase:          'https://api.ia-insight.fr',
   // invoiceBase:      'https://api.ia-insight.fr',
+  // notificationBase: 'https://api.ia-insight.fr',  // Kong route /notifications/*
 };

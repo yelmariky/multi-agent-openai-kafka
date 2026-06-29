@@ -26,7 +26,7 @@ public class InvoicePaymentService {
         inv.setSentDate(LocalDate.now());
         inv.setPaymentStatus("ENVOYEE");
         invoiceRepo.save(inv);
-        log.info("Invoice {} marked as ENVOYEE", id);
+        log.info("Invoice [{}] marked as ENVOYEE", id);
         return toMap(inv);
     }
 

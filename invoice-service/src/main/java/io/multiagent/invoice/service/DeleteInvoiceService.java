@@ -117,7 +117,7 @@ public class DeleteInvoiceService {
             String billingMonth      = textOrNull(node, "billingMonth");
             String sellerCompanyName = textOrNull(node, "sellerCompanyName");
 
-            return new InvoiceLookupRequest(invoiceName, sellerCompanyName, billingMonth);
+            return new InvoiceLookupRequest(billingMonth, sellerCompanyName, invoiceName);
         } catch (Exception e) {
             log.error("DeleteInvoiceService extractLookup: {}", e.getMessage(), e);
             return null;

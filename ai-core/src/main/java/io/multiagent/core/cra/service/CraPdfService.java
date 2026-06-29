@@ -234,7 +234,9 @@ public class CraPdfService {
                             label = projectRepo.findById(UUID.fromString(pid))
                                     .map(p -> safeText(p.getName()))
                                     .orElse(fallbackLabel);
-                        } catch (Exception ignored) {}
+                        } catch (IllegalArgumentException ex) {
+                            log.debug("UUID projet invalide dans CRA PDF : {}", pid);
+                        }
                     }
                     ProjectRow pr = new ProjectRow(label, grp.getValue());
                     if ("__ABSENCE__".equals(pid)) {

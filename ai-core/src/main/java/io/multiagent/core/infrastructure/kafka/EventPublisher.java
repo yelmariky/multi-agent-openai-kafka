@@ -70,4 +70,26 @@ public class EventPublisher {
                     topic, event.eventType(), e.getMessage());
         }
     }
+
+    /**
+     * Raccourci : publie une notification SSE sur platform.notifications.
+     * Utilisé par tous les domain services à la place des appels directs à NotificationService.
+     *
+     * @param target         NotificationPayload.TARGET_ADMIN ou TARGET_CONSULTANT
+     * @param consultantEmail email du destinataire (null si ADMIN)
+     * @param type           type SSE (ex: EXPENSE_APPROVED)
+     * @param message        message affiché
+     * @param refId          id de l'entité concernée
+     */
+    public void notify(String target, String consultantEmail, String type, String message, String refId) {
+        try {
+            NotificationPayload np = new NotificationPayload(target, consultantEmail, type, message, refId);
+            String payloadJson = objectMapper.writeValueAsString(np);
+            String aggregateId = consultantEmail != null ? consultantEmail : "admin";
+            DomainEvent event = new DomainEvent(type, aggregateId, consultantEmail, null, payloadJson, java.time.Instant.now());
+            publish(KafkaTopics.NOTIFICATION, event);
+        } catch (Exception e) {
+            log.warn("[Kafka] notify() sérialisation échouée type={} : {}", type, e.getMessage());
+        }
+    }
 }
