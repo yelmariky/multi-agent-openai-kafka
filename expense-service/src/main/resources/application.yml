@@ -1,0 +1,84 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: expense-service
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ia_insight}
+    username: ${POSTGRES_USER:ia_insight}
+    password: ${POSTGRES_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: false   # ai-service owns the schema
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 8MB
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka.agent-system.svc.cluster.local:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: 1
+      retries: 3
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:expense-service-${HOSTNAME:local}}
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=500,expireAfterWrite=300s
+
+keycloak:
+  base-url: ${KEYCLOAK_BASE_URL:http://localhost:8090}
+  internal-url: ${KEYCLOAK_INTERNAL_URL:http://keycloak.keycloak.svc.cluster.local:8080}
+
+openai:
+  api-key: ${OPENAI_API_KEY}
+  llm:
+    api-key: ${OPENAI_LLM_API_KEY:}
+    base-url: ${OPENAI_LLM_BASE_URL:}
+  model: ${OPENAI_MODEL:llama-3.1-8b-instant}
+  expense-model: ${OPENAI_EXPENSE_MODEL:llama-3.3-70b-versatile}
+  fallback-model: ${OPENAI_FALLBACK_MODEL:gpt-4.1-mini}
+  embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
+  embedding-dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:2000}
+  retry:
+    max-attempts: 4
+    base-backoff-ms: 1500
+    max-backoff-ms: 15000
+
+expense:
+  guard:
+    max-chars: ${EXPENSE_GUARD_MAX_CHARS:4000}
+    max-requests-per-minute: ${EXPENSE_GUARD_MAX_RPM:20}
+    scope-fail-open: ${EXPENSE_GUARD_SCOPE_FAIL_OPEN:true}
+  rag:
+    min-similarity: ${EXPENSE_RAG_MIN_SIMILARITY:0.70}
+  company-name: ${AI_CORE_COMPANY_NAME:}
+  km-rate-7cv: 0.661
+  km-annual: 4999
+
+ai-service:
+  base-url: ${AI_SERVICE_BASE_URL:http://ai-service.multi-agent.svc.cluster.local:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ["prometheus", "health", "metrics"]
+
+logging:
+  level:
+    "[io.multiagent.expense]": INFO
+    "[org.apache.catalina.core.ContainerBase]": WARN

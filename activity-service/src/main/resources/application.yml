@@ -1,0 +1,54 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: activity-service
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ia_insight}
+    username: ${POSTGRES_USER:ia_insight}
+    password: ${POSTGRES_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: false   # ai-service owns the schema
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka.agent-system.svc.cluster.local:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: 1
+      retries: 3
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:activity-service-${HOSTNAME:local}}
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+keycloak:
+  base-url: ${KEYCLOAK_BASE_URL:http://localhost:8090}
+  internal-url: ${KEYCLOAK_INTERNAL_URL:http://keycloak.keycloak.svc.cluster.local:8080}
+
+activity:
+  pdf:
+    storage-path: ${ACTIVITY_PDF_STORAGE_PATH:/data/cra}
+
+ai-service:
+  base-url: ${AI_SERVICE_BASE_URL:http://ai-service.multi-agent.svc.cluster.local:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ["prometheus", "health", "metrics"]
+
+logging:
+  level:
+    "[io.multiagent.activity]": INFO
+    "[org.apache.catalina.core.ContainerBase]": WARN

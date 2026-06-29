@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: activity-service
+  namespace: multi-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: activity-service
+  template:
+    metadata:
+      labels:
+        app: activity-service
+    spec:
+      containers:
+        - name: activity-service
+          image: dokeryelmariki/activity-service:latest
+          ports:
+            - containerPort: 8085
+          envFrom:
+            - configMapRef:
+                name: multi-agent-config
+            - secretRef:
+                name: postgres-secret
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8085
+            initialDelaySeconds: 45
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8085
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: cra-storage
+              mountPath: /data/cra
+      volumes:
+        - name: cra-storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: activity-service
+  namespace: multi-agent
+spec:
+  selector:
+    app: activity-service
+  ports:
+    - port: 8085
+      targetPort: 8085

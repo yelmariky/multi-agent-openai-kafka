@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: expense-service
+  namespace: multi-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: expense-service
+  template:
+    metadata:
+      labels:
+        app: expense-service
+    spec:
+      containers:
+        - name: expense-service
+          image: dokeryelmariki/expense-service:latest
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: multi-agent-config
+            - secretRef:
+                name: openai-secret
+            - secretRef:
+                name: postgres-secret
+          env:
+            - name: HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            initialDelaySeconds: 45
+            periodSeconds: 10
+          volumeMounts:
+            - name: receipts-storage
+              mountPath: /data/receipts
+      volumes:
+        - name: receipts-storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: expense-service
+  namespace: multi-agent
+spec:
+  selector:
+    app: expense-service
+  ports:
+    - port: 8082
+      targetPort: 8082

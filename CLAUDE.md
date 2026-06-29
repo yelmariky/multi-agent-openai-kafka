@@ -36,17 +36,26 @@ Plateforme SaaS **multi-tenant** d'automatisation d'entreprise pour ESN/cabinets
         |                      |                          |
         +--------- Kong :8000 -+--------------------------+
                        |
-            +----------+----------+
-            v                     v
-      ai-service :8081       invoice-service :8083
-            |                     |
-       PostgreSQL <---------------+   (shared DB, ai-service owns Flyway)
-       + pgvector / Kafka / Groq API / OpenAI API
-            |
-      Keycloak :8080  <- JwtIssuerAuthenticationManagerResolver (multi-realm)
+      +---------+------+--------+----------+
+      v         v               v          v
+ai-service  expense-service  activity-service  invoice-service
+  :8081        :8082              :8085           :8083
+      |            |                 |               |
+      +------------+-----------------+---------------+
+                          |
+                     PostgreSQL (shared DB, ai-service owns Flyway)
+                     + pgvector / Kafka / Groq / OpenAI
+                          |
+                    Keycloak :8080
+notification-service :8084  ← consomme platform.notifications (Kafka)
 ```
 
-**Kong routing** : `/invoices/*` -> invoice-service | tout le reste -> ai-service
+**Kong routing** :
+- `/invoices/*` → invoice-service :8083
+- `/expenses/*`, `/receipts/*`, `/reasoning/*` → expense-service :8082
+- `/cra/*`, `/leaves/*` → activity-service :8085
+- `/notifications/*` → notification-service :8084
+- tout le reste (settings, org, dashboard) → ai-service :8081
 
 **LLM fallback** : `LLMAIClient.chatJson()` essaie Groq → si KO bascule sur OpenAI `gpt-4.1-mini`. Voir `docs/PRODUCTION-KEYS.md`.
 
@@ -70,8 +79,10 @@ kubectl port-forward svc/keycloak -n keycloak 8090:8080
 kubectl port-forward svc/kafka 9092:9092 -n agent-system
 
 # Backend (env vars: OPENAI_API_KEY, POSTGRES_URL, POSTGRES_USER, POSTGRES_PASSWORD)
-cd ai-service && mvn spring-boot:run          # :8081, Flyway cree le schema
-cd invoice-service && mvn spring-boot:run  # :8083, flyway disabled
+cd ai-service       && mvn spring-boot:run   # :8081, Flyway owns schema
+cd expense-service  && mvn spring-boot:run   # :8082, flyway disabled
+cd activity-service && mvn spring-boot:run   # :8085, flyway disabled
+cd invoice-service  && mvn spring-boot:run   # :8083, flyway disabled
 
 # Frontends
 cd frontend && python server.py
@@ -80,12 +91,16 @@ cd frontend-platform && python server.py
 
 # Build & Docker
 mvn clean package -DskipTests
-cd ai-service && docker build -t dokeryelmariki/ai-service:latest . && docker push dokeryelmariki/ai-service:latest
-cd invoice-service && docker build -t dokeryelmariki/invoice-service:latest . && docker push dokeryelmariki/invoice-service:latest
+cd ai-service       && docker build -t dokeryelmariki/ai-service:latest       . && docker push dokeryelmariki/ai-service:latest
+cd expense-service  && docker build -t dokeryelmariki/expense-service:latest  . && docker push dokeryelmariki/expense-service:latest
+cd activity-service && docker build -t dokeryelmariki/activity-service:latest . && docker push dokeryelmariki/activity-service:latest
+cd invoice-service  && docker build -t dokeryelmariki/invoice-service:latest  . && docker push dokeryelmariki/invoice-service:latest
 
 # K8s deploy
-kubectl apply -f ai-service/deploy/k8s/ && kubectl rollout restart deployment/ai-service -n multi-agent
-kubectl apply -f invoice-service/deploy/k8s/ && kubectl rollout restart deployment/invoice-service -n multi-agent
+kubectl apply -f ai-service/deploy/k8s/       && kubectl rollout restart deployment/ai-service       -n multi-agent
+kubectl apply -f expense-service/deploy/k8s/  && kubectl rollout restart deployment/expense-service  -n multi-agent
+kubectl apply -f activity-service/deploy/k8s/ && kubectl rollout restart deployment/activity-service -n multi-agent
+kubectl apply -f invoice-service/deploy/k8s/  && kubectl rollout restart deployment/invoice-service  -n multi-agent
 ```
 
 ## Conventions critiques

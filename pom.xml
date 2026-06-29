@@ -11,6 +11,8 @@
 
     <modules>
         <module>ai-service</module>
+        <module>expense-service</module>
+        <module>activity-service</module>
         <module>invoice-service</module>
         <module>notification-service</module>
     </modules>
