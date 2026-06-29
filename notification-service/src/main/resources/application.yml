@@ -1,0 +1,22 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: notification-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka.agent-system.svc.cluster.local:9092}
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  mvc:
+    async:
+      request-timeout: -1   # SSE : pas de timeout côté Spring
+
+logging:
+  level:
+    "[io.multiagent.notification]": INFO
+    "[org.apache.catalina.core.ContainerBase]": WARN

@@ -111,8 +111,9 @@ public class DeleteExpenseService {
         String lower = text.toLowerCase(Locale.ROOT);
 
         // ids groupés (ex: "numéro 31 et 34 et 58", "ids 12, 13, 14")
+        // Regex simplifiée pour éviter le backtracking catastrophique (ReDOS)
         Matcher groupedIds = Pattern.compile(
-                "(?:note[s]? de frais|dépense[s]?|num(?:e|é)?ro|ids?|notes?)\\s+((?:\\d+[\\s,;etou-]*)+)"
+                "(?:note[s]? de frais|dépense[s]?|num(?:e|é)?ro|ids?|notes?)\\s+(\\d+(?:[\\s,;etou-]+\\d+)*)"
         ).matcher(lower);
         while (groupedIds.find()) {
             Matcher numberMatcher = Pattern.compile("\\d+").matcher(groupedIds.group(1));
@@ -135,7 +136,9 @@ public class DeleteExpenseService {
                 // ignorer les années probables
                 if (val >= 1900 && val <= 2100) continue;
                 addId(p, num);
-            } catch (Exception ignored) {}
+            } catch (NumberFormatException ex) {
+                log.debug("Valeur non parsable ignorée : {}", num);
+            }
         }
 
         // dates explicites YYYY-MM-DD

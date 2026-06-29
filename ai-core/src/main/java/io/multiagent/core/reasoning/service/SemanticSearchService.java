@@ -2,6 +2,7 @@ package io.multiagent.core.reasoning.service;
 
 import io.multiagent.core.client.LLMAIClient;
 import io.multiagent.core.model.ExpenseItem;
+import io.multiagent.core.security.PromptGuard;
 import io.multiagent.core.util.DateRange;
 import io.multiagent.core.util.DateProvider;
 import io.multiagent.core.service.WeaviateService;import lombok.RequiredArgsConstructor;
@@ -35,7 +36,7 @@ public class SemanticSearchService {
      * en utilisant uniquement la similarité vectorielle.
      */
     public List<String> searchTopK(String query, int k) {
-        log.info("🔍 SemanticSearchService.searchTopK(query='{}', k={})", query, k);
+        log.info("🔍 SemanticSearchService.searchTopK(query={}, k={})", PromptGuard.maskForLog(query), k);
 
         // 1️⃣ Embedding de la requête
         List<Double> vector = llm.embed(embeddingModel, query);
@@ -44,7 +45,7 @@ public class SemanticSearchService {
         return weaviateService.searchByVector(vector, k);
     }
     public List<String> searchExpensesForPeriod(String rewrittenQuery) {
-        log.info("🔎 Recherche de dépenses pour la période (rewritten) : {}", rewrittenQuery);
+        log.info("🔎 Recherche de dépenses pour la période (rewritten) : {}", PromptGuard.maskForLog(rewrittenQuery));
 
         DateRange range = extractDateRange(rewrittenQuery);
         if (range.getDays() > 31) {

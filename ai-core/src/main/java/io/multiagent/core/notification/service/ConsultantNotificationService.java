@@ -61,7 +61,7 @@ public class ConsultantNotificationService {
                 dead.add(e);
             }
         }
-        emitters.removeAll(dead);
+        if (!dead.isEmpty()) emitters.removeAll(dead);
     }
 
     public List<Notification> getUnread(String consultantName) {

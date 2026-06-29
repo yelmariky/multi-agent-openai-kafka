@@ -27,10 +27,12 @@ globalThis.APP_CONFIG = {
   keycloakRealm:    _slug,                    // realm = slug
   keycloakClientId: 'frontend-consultant',
   apiBase:          'http://localhost:8081',   // ai-core direct
+  notificationBase: 'http://localhost:8084',   // notification-service direct
 
   // --- PRODUCTION (Kong) — décommenter et adapter ---
   // keycloakUrl:      'https://auth.ia-insight.fr',
   // keycloakRealm:    _slug,
   // keycloakClientId: 'frontend-consultant',
   // apiBase:          'https://api.ia-insight.fr',
+  // notificationBase: 'https://api.ia-insight.fr',  // Kong route /notifications/*
 };

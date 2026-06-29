@@ -143,6 +143,13 @@ public class RAGService {
                     .build();
         }
 
+        // OWASP LLM02 — Valider le schéma JSON avant parsing métier
+        io.multiagent.core.security.LlmJsonValidator.ValidationResult schemaCheck =
+                io.multiagent.core.security.LlmJsonValidator.validateExpense(json);
+        if (!schemaCheck.valid()) {
+            log.warn("🛡️ [JSON-SCHEMA] Réponse LLM invalide : {}", schemaCheck.reason());
+        }
+
         // Groq/llama renvoie parfois un tableau JSON directement malgré le mode json_object
         List<ExpenseItem> items = ExpenseItem.fromJsonArray("[" + json + "]");
         if (items.isEmpty()) {
@@ -222,10 +229,22 @@ public class RAGService {
         return item;
     }
 
+    // Limites métier pour fact-checking (OWASP LLM09 — détecter les frais fictifs)
+    private static final double MAX_EXPENSE_AMOUNT        = 10_000.0;  // plafond absolu
+    private static final double WARN_AMOUNT_RESTAURANT    = 500.0;
+    private static final double WARN_AMOUNT_BOULANGERIE   = 50.0;
+    private static final double WARN_AMOUNT_CAFE          = 30.0;
+    private static final int    MAX_EXPENSE_DATE_DAYS_AGO = 730;  // 2 ans
+
     /** Enrichit, normalise et valide une expense avant indexation. Retourne une erreur si invalide, null sinon. */
     private ReasoningResult prepareExpense(ExpenseItem expense, String text, String consultantEmail) {
         enrichFromText(expense, text);
         normalizeExpense(expense, text);
+
+        // ── Fact-checking montant (OWASP LLM09) ─────────────────────────────────
+        ReasoningResult factCheckError = factCheckExpense(expense);
+        if (factCheckError != null) return factCheckError;
+
         ReasoningResult kmError = enrichKm(expense, text, consultantEmail);
         if (kmError != null) return kmError;
         if ("carte_transport".equalsIgnoreCase(expense.getType())) {
@@ -249,6 +268,61 @@ public class RAGService {
         }
         if (isBlank(expense.getCurrency())) expense.setCurrency("EUR");
         if (isBlank(expense.getAddress())) expense.setAddress("Paris, France");
+        return null;
+    }
+
+    /**
+     * Fact-checking des montants et dates extraits par le LLM.
+     * Détecte les frais fictifs ou aberrants avant indexation (OWASP LLM09).
+     * Retourne une erreur si le montant est clairement invalide, null sinon.
+     */
+    private ReasoningResult factCheckExpense(ExpenseItem e) {
+        if (e == null) return null;
+
+        // ── Validation montant ───────────────────────────────────────────────────
+        if (e.getAmount() != null) {
+            if (e.getAmount() < 0) {
+                return ReasoningResult.error("Montant négatif détecté (" + e.getAmount() + "€) — veuillez vérifier le montant saisi.");
+            }
+            if (e.getAmount() > MAX_EXPENSE_AMOUNT) {
+                return ReasoningResult.error(
+                    "Montant excessif détecté (" + e.getAmount() + "€ > " + MAX_EXPENSE_AMOUNT + "€ max par dépense). "
+                    + "Pour des montants importants, contactez votre gestionnaire.");
+            }
+            // Alertes par type (montants suspects mais non bloquants)
+            String type = e.getType() != null ? e.getType().toLowerCase() : "";
+            if (type.contains("restaurant") && e.getAmount() > WARN_AMOUNT_RESTAURANT) {
+                log.warn("⚠️ [FACT-CHECK] Montant restaurant élevé : {}€ (seuil {}€) — consultant={}",
+                    e.getAmount(), WARN_AMOUNT_RESTAURANT, e.getConsultantEmail());
+            }
+            if (type.contains("boulangerie") && e.getAmount() > WARN_AMOUNT_BOULANGERIE) {
+                log.warn("⚠️ [FACT-CHECK] Montant boulangerie élevé : {}€ (seuil {}€)",
+                    e.getAmount(), WARN_AMOUNT_BOULANGERIE);
+            }
+            if (type.contains("café") || type.contains("cafe")) {
+                if (e.getAmount() > WARN_AMOUNT_CAFE) {
+                    log.warn("⚠️ [FACT-CHECK] Montant café élevé : {}€ (seuil {}€)", e.getAmount(), WARN_AMOUNT_CAFE);
+                }
+            }
+        }
+
+        // ── Validation date ──────────────────────────────────────────────────────
+        if (e.getDate() != null && !e.getDate().isBlank()) {
+            try {
+                java.time.LocalDate expDate = java.time.LocalDate.parse(e.getDate());
+                java.time.LocalDate today   = dateProvider.todayUtc();
+                // Tolérance de 7 jours : le LLM peut légèrement se tromper sur la date (ex: J+1)
+                if (expDate.isAfter(today.plusDays(7))) {
+                    return ReasoningResult.error(
+                        "Date future détectée (" + e.getDate() + ") — une note de frais ne peut pas être dans le futur.");
+                }
+                if (expDate.isBefore(today.minusDays(MAX_EXPENSE_DATE_DAYS_AGO))) {
+                    return ReasoningResult.error(
+                        "Date trop ancienne (" + e.getDate() + ") — les dépenses de plus de 2 ans ne sont pas acceptées.");
+                }
+            } catch (Exception ignored) { /* date invalide gérée ailleurs */ }
+        }
+
         return null;
     }
 

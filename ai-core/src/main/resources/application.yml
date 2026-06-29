@@ -20,8 +20,8 @@ spring:
     locations: classpath:db/migration
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
+      max-file-size: 8MB
+      max-request-size: 8MB
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
@@ -41,9 +41,16 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
-      # acks=1 : le leader confirme la réception (compromis perf/durabilité pour du best-effort)
       acks: 1
       retries: 3
+    consumer:
+      # Chaque pod reçoit TOUS les messages Kafka (groupId unique par instance).
+      # Nécessaire car les SSE emitters sont en mémoire et non partagés entre pods.
+      # ${HOSTNAME} = nom du pod K8s (ex: ai-core-5945cb94df-jg2kp) → unique par pod.
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:ai-core-notifications-${HOSTNAME:local}}
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
 management:
   endpoints:
@@ -82,6 +89,8 @@ ai-core:
   rag:
     top-k-search: ${AI_CORE_RAG_TOP_K_SEARCH:20}
     top-k-context: ${AI_CORE_RAG_TOP_K_CONTEXT:5}
+    # OWASP LLM08 — chunks sous ce seuil cosine ignorés (protection embeddings adversariaux)
+    min-similarity: ${AI_CORE_RAG_MIN_SIMILARITY:0.70}
   reference-date: ${AI_CORE_REFERENCE_DATE:}
   expense:
     km-per-day: ${AI_CORE_EXPENSE_KM_PER_DAY:56}
@@ -92,6 +101,11 @@ ai-core:
   guard:
     max-chars: ${AI_CORE_GUARD_MAX_CHARS:4000}
     max-requests-per-minute: ${AI_CORE_GUARD_MAX_RPM:20}
+    # OWASP LLM01 — comportement si le LLM guard est indisponible
+    # true (défaut) = fail-open : la requête passe, protégée par les regex PromptGuard
+    # false = fail-closed : bloquer systématiquement (plus sûr mais réduit la disponibilité)
+    # Passer à false en prod uniquement quand la disponibilité LLM est garantie (SLA >= 99.9%)
+    scope-fail-open: ${AI_CORE_GUARD_SCOPE_FAIL_OPEN:true}
   monthly-location:
     enabled: ${MONTHLY_LOCATION_ENABLED:true}
     text: ${MONTHLY_LOCATION_TEXT:"je loue pour la domiciliation à 450 EUR ce mois-ci"}

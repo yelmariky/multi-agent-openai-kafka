@@ -24,6 +24,21 @@ public interface DocumentChunkJpaRepository extends JpaRepository<DocumentChunkE
                                          @Param("queryVector") String queryVector,
                                          @Param("limit") int limit);
 
+    /**
+     * Recherche vectorielle avec seuil de similarité cosine minimum.
+     * Distance cosine = 1 - similarité → on filtre sur distance <= (1 - minSimilarity).
+     * Protège contre les embeddings adversariaux (OWASP LLM08).
+     */
+    @Query(value = "SELECT * FROM document_chunk " +
+            "WHERE tenant_id = :tenantId " +
+            "AND (embedding <=> CAST(:queryVector AS vector)) <= (1.0 - :minSimilarity) " +
+            "ORDER BY embedding <=> CAST(:queryVector AS vector) LIMIT :limit",
+            nativeQuery = true)
+    List<DocumentChunkEntity> findSimilarAboveThreshold(@Param("tenantId") UUID tenantId,
+                                                        @Param("queryVector") String queryVector,
+                                                        @Param("limit") int limit,
+                                                        @Param("minSimilarity") double minSimilarity);
+
     @Modifying
     @Query(value = "UPDATE document_chunk SET embedding = CAST(:vector AS vector) WHERE id = :id",
             nativeQuery = true)

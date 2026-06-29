@@ -72,12 +72,12 @@ function authHeaders(extra = {}) {
 // ============================================================
 // CONFIG API — lue depuis window.APP_CONFIG (config.js)
 // ============================================================
-const DEFAULT_BASE         = _cfg.apiBase     || 'http://localhost:8081';
-const DEFAULT_INVOICE_BASE = _cfg.invoiceBase || 'http://localhost:8083';
+const DEFAULT_BASE              = _cfg.apiBase          || 'http://localhost:8081';
+const DEFAULT_INVOICE_BASE      = _cfg.invoiceBase      || 'http://localhost:8083';
+const DEFAULT_NOTIFICATION_BASE = _cfg.notificationBase || 'http://localhost:8084';
 
-function base() {
-  return DEFAULT_BASE.replace(/\/$/, '');
-}
+function base() { return DEFAULT_BASE.replace(/\/$/, ''); }
+function notifBase() { return DEFAULT_NOTIFICATION_BASE.replace(/\/$/, ''); }
 
 // En local : invoice-service ecoute sur :8083.
 // En prod  : Kong recoit tout sur le meme host et route /invoices/* vers invoice-service.

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- Lombok génère du code que SpotBugs ne peut pas analyser -->
+    <Match><Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/></Match>
+
+    <!-- ObjectMapper thread-safe partagé intentionnellement -->
+    <Match><Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/></Match>
+
+    <!-- CT_CONSTRUCTOR_THROW : Spring gère le cycle de vie -->
+    <Match><Bug pattern="CT_CONSTRUCTOR_THROW"/></Match>
+
+</FindBugsFilter>

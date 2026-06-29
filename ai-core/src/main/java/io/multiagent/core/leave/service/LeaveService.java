@@ -5,8 +5,8 @@ import io.multiagent.core.leave.entity.LeaveBalanceEntity;
 import io.multiagent.core.leave.entity.LeaveRequestEntity;
 import io.multiagent.core.leave.repository.LeaveBalanceRepository;
 import io.multiagent.core.leave.repository.LeaveRequestRepository;
-import io.multiagent.core.notification.service.ConsultantNotificationService;
-import io.multiagent.core.notification.service.NotificationService;
+import io.multiagent.core.infrastructure.kafka.EventPublisher;
+import io.multiagent.core.infrastructure.kafka.NotificationPayload;
 import io.multiagent.core.service.WeaviateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,11 +24,10 @@ import java.util.*;
 @Slf4j
 public class LeaveService {
 
-    private final LeaveRequestRepository          leaveRepo;
-    private final LeaveBalanceRepository          balanceRepo;
-    private final NotificationService             adminNotif;
-    private final ConsultantNotificationService   consultantNotif;
-    private final WeaviateService                 weaviateService;
+    private final LeaveRequestRepository leaveRepo;
+    private final LeaveBalanceRepository balanceRepo;
+    private final WeaviateService        weaviateService;
+    private final EventPublisher         eventPublisher;
 
     /** Consultant — soumet une demande de congé. */
     @Transactional
@@ -55,9 +54,10 @@ public class LeaveService {
         // Injecter immédiatement les jours comme absences ⏳ (en attente) dans le CRA
         weaviateService.applyPendingLeaveAbsences(consultantEmail, start, end, tenantId);
 
-        // Notifier l'admin
+        // Notifier l'admin via Kafka → notification-service → SSE admin
         String typeLabel = leaveTypeLabel(type);
-        adminNotif.push("LEAVE_REQUESTED", consultantEmail, consultantEmail,
+        eventPublisher.notify(NotificationPayload.TARGET_ADMIN, consultantEmail,
+                "LEAVE_REQUESTED",
                 consultantEmail + " a demandé " + days + "j de " + typeLabel
                         + " du " + start + " au " + end + ".",
                 entity.getId().toString());
@@ -86,7 +86,8 @@ public class LeaveService {
                 + " du " + entity.getStartDate() + " au " + entity.getEndDate()
                 + " (" + entity.getDaysCount().stripTrailingZeros().toPlainString() + "j) a été approuvée"
                 + " et ajoutée à votre CRA.";
-        consultantNotif.push(entity.getConsultantEmail(), "LEAVE_APPROVED", approvedMsg, entity.getId().toString());
+        eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
+                entity.getConsultantEmail(), "LEAVE_APPROVED", approvedMsg, entity.getId().toString());
 
         return toMap(entity);
     }
@@ -111,7 +112,8 @@ public class LeaveService {
                 + " a été refusée"
                 + (reason != null && !reason.isBlank() ? " : " + reason : ".")
                 + " Les absences ont été retirées de votre CRA.";
-        consultantNotif.push(entity.getConsultantEmail(), "LEAVE_REFUSED", msg, entity.getId().toString());
+        eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
+                entity.getConsultantEmail(), "LEAVE_REFUSED", msg, entity.getId().toString());
 
         return toMap(entity);
     }

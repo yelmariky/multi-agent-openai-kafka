@@ -120,6 +120,38 @@ public class PromptGuard {
         return GuardResult.allow(sanitized);
     }
 
+    // ── Validation de sortie LLM (OWASP LLM02) ────────────────────────────────
+
+    /**
+     * Valide et assainit la sortie brute d'un LLM avant de la traiter côté métier.
+     *
+     * <p>Protections :
+     * <ul>
+     *   <li>Taille maximale (évite OOM sur réponses pathologiques)</li>
+     *   <li>Retrait des caractères de contrôle injectés dans la sortie</li>
+     *   <li>Détection de tentatives de jailbreak dans la réponse (prompt leaking)</li>
+     * </ul>
+     *
+     * @param output texte brut retourné par le LLM
+     * @return texte sanitisé, jamais null
+     */
+    public String sanitizeOutput(String output) {
+        if (output == null) return "";
+
+        // Retirer les caractères de contrôle (null bytes, zero-width, BOM)
+        String sanitized = output.replaceAll(
+                "[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F﻿​‌‍⁠]", "");
+
+        // Détecter si le LLM a leaké le prompt système dans sa réponse (prompt extraction)
+        String lower = sanitized.toLowerCase();
+        if (lower.contains("system prompt") || lower.contains("instructions:") ||
+            lower.contains("you are a") || lower.contains("tu es un")) {
+            log.warn("🛡️ [GUARD OUTPUT] Réponse LLM suspecte (possible prompt leaking détecté)");
+        }
+
+        return sanitized.trim();
+    }
+
     // ── Résultat immuable ─────────────────────────────────────────────────────
 
     public record GuardResult(boolean allowed, String sanitizedText, String rejectionReason) {
@@ -144,5 +176,21 @@ public class PromptGuard {
 
     private static String truncate(String s, int max) {
         return s.length() <= max ? s : s.substring(0, max) + "…";
+    }
+
+    /**
+     * Masque le texte utilisateur pour les logs — évite d'exposer des données personnelles
+     * ou des tentatives d'injection dans les fichiers de log (OWASP LLM01 / GDPR).
+     * Conserve les 4 premiers et 4 derniers caractères pour le débogage.
+     *
+     * @param text texte brut de l'utilisateur
+     * @return version masquée sûre pour les logs
+     */
+    public static String maskForLog(String text) {
+        if (text == null)       return "[null]";
+        if (text.isBlank())     return "[empty]";
+        int len = text.length();
+        if (len <= 8) return "[" + len + " chars]";
+        return text.substring(0, 4) + "…[" + (len - 8) + " chars masqués]…" + text.substring(len - 4);
     }
 }

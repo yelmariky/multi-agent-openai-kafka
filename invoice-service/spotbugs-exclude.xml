@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- Entités JPA : champs non initialisés normaux avec Hibernate -->
+    <Match><Class name="~.*Entity"/><Bug category="STYLE"/></Match>
+
+    <!-- Lombok génère du code que SpotBugs ne peut pas analyser -->
+    <Match><Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/></Match>
+
+    <!-- ObjectMapper thread-safe partagé intentionnellement -->
+    <Match><Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/></Match>
+
+    <!-- CSRF désactivé intentionnellement : API REST stateless avec JWT, pas de cookie de session -->
+    <Match>
+        <Class name="io.multiagent.invoice.config.SecurityConfig"/>
+        <Bug pattern="SPRING_CSRF_PROTECTION_DISABLED"/>
+    </Match>
+
+    <!-- CT_CONSTRUCTOR_THROW : Spring gère le cycle de vie, non exploitable via finalizer -->
+    <Match><Bug pattern="CT_CONSTRUCTOR_THROW"/></Match>
+
+    <!-- PREDICTABLE_RANDOM : ThreadLocalRandom pour jitter de retry, non crypto -->
+    <Match>
+        <Class name="io.multiagent.invoice.client.LLMAIClient"/>
+        <Bug pattern="PREDICTABLE_RANDOM"/>
+    </Match>
+
+    <!-- CRLF_INJECTION_LOGS : UUID et LocalDate ne peuvent pas contenir CRLF -->
+    <Match>
+        <Class name="io.multiagent.invoice.service.InvoicePaymentService"/>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+    </Match>
+    <Match>
+        <Class name="io.multiagent.invoice.controller.InvoiceController"/>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+    </Match>
+
+    <!-- UWF_UNWRITTEN_FIELD : champ géré par Hibernate via réflexion -->
+    <Match>
+        <Class name="io.multiagent.invoice.entity.SellerProfileEntity"/>
+        <Bug pattern="UWF_UNWRITTEN_FIELD"/>
+    </Match>
+
+    <!-- BX_UNBOXING_IMMEDIATELY_REBOXED : pattern compilateur Java, non risqué -->
+    <Match>
+        <Class name="io.multiagent.invoice.service.InvoiceService"/>
+        <Bug pattern="BX_UNBOXING_IMMEDIATELY_REBOXED"/>
+    </Match>
+
+    <!-- PATH_TRAVERSAL_IN : storagePath vient d'un @Value Spring (config applicative),
+         pas d'une entrée utilisateur — SpotBugs ne peut pas faire la distinction -->
+    <Match>
+        <Class name="io.multiagent.invoice.service.InvoiceService"/>
+        <Bug pattern="PATH_TRAVERSAL_IN"/>
+    </Match>
+
+</FindBugsFilter>

@@ -10,11 +10,9 @@ import io.multiagent.core.model.CraDayEntry;
 import io.multiagent.core.model.CraRequest;
 import io.multiagent.core.model.ExpenseItem;
 import io.multiagent.core.service.WeaviateService;
-import io.multiagent.core.notification.service.NotificationService;
-import io.multiagent.core.notification.service.ConsultantNotificationService;
+import io.multiagent.core.infrastructure.kafka.NotificationPayload;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -31,13 +29,8 @@ import java.util.UUID;
 public class CraService {
 
     private final WeaviateService weaviateService;
-    private final NotificationService notificationService;
-    private final ConsultantNotificationService consultantNotificationService;
     private final LeaveRequestRepository leaveRepo;
-
-    // Kafka best-effort : null si le broker n'est pas disponible en dev local
-    @Autowired(required = false)
-    private EventPublisher eventPublisher;
+    private final EventPublisher eventPublisher;
 
     /**
      * Upsert a CRA in Weaviate. Sets status = BROUILLON if null/blank.
@@ -120,20 +113,13 @@ public class CraService {
                 cra.clientValidationDate()
         );
         CraRequest submitted = save(toSubmit);
-        notificationService.push(
+        eventPublisher.notify(NotificationPayload.TARGET_ADMIN, submitted.consultant(),
                 "CRA_SUBMITTED",
-                submitted.consultant(),
-                null,
                 "CRA soumis par " + submitted.consultant() + " pour " + submitted.billingMonth(),
-                submitted.id()
-        );
-        if (eventPublisher != null) {
-            eventPublisher.publish(
-                    KafkaTopics.CRA_SUBMITTED,
-                    new DomainEvent("CRA_SUBMITTED", submitted.id(), null,
-                            submitted.company(), craPayload(submitted), Instant.now())
-            );
-        }
+                submitted.id());
+        eventPublisher.publish(KafkaTopics.CRA_SUBMITTED,
+                new DomainEvent("CRA_SUBMITTED", submitted.id(), null,
+                        submitted.company(), craPayload(submitted), Instant.now()));
         return submitted;
     }
 
@@ -163,19 +149,13 @@ public class CraService {
                 cra.clientValidationDate()
         );
         CraRequest validated = save(toValidate);
-        consultantNotificationService.push(
-                validated.consultant(),
+        eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT, validated.consultant(),
                 "CRA_VALIDATED",
                 "Votre CRA de " + validated.billingMonth() + " a été validé par " + validatedBy + ".",
-                validated.id()
-        );
-        if (eventPublisher != null) {
-            eventPublisher.publish(
-                    KafkaTopics.CRA_VALIDATED,
-                    new DomainEvent("CRA_VALIDATED", validated.id(), null,
-                            validated.company(), craPayloadWithExtra(validated, "validatedBy", validatedBy), Instant.now())
-            );
-        }
+                validated.id());
+        eventPublisher.publish(KafkaTopics.CRA_VALIDATED,
+                new DomainEvent("CRA_VALIDATED", validated.id(), null,
+                        validated.company(), craPayloadWithExtra(validated, "validatedBy", validatedBy), Instant.now()));
         return validated;
     }
 
@@ -203,20 +183,14 @@ public class CraService {
                 cra.clientValidationDate()
         );
         CraRequest refused = save(toRefuse);
-        consultantNotificationService.push(
-                refused.consultant(),
+        eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT, refused.consultant(),
                 "CRA_REFUSED",
                 "Votre CRA de " + refused.billingMonth() + " a été refusé"
                         + (reason != null && !reason.isBlank() ? " : " + reason : "."),
-                refused.id()
-        );
-        if (eventPublisher != null) {
-            eventPublisher.publish(
-                    KafkaTopics.CRA_REFUSED,
-                    new DomainEvent("CRA_REFUSED", refused.id(), null,
-                            refused.company(), craPayloadWithExtra(refused, "reason", reason), Instant.now())
-            );
-        }
+                refused.id());
+        eventPublisher.publish(KafkaTopics.CRA_REFUSED,
+                new DomainEvent("CRA_REFUSED", refused.id(), null,
+                        refused.company(), craPayloadWithExtra(refused, "reason", reason), Instant.now()));
         return refused;
     }
 

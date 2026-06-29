@@ -49,9 +49,22 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable())
+            .csrf(csrf -> csrf.disable())   // API REST stateless JWT — CSRF non applicable (RFC 6750)
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .cors(cors -> cors.configure(http))
+            // ── OWASP Security Headers ──────────────────────────────────────────────
+            .headers(h -> h
+                .frameOptions(f -> f.deny())                           // X-Frame-Options: DENY
+                .contentTypeOptions(c -> {})                           // X-Content-Type-Options: nosniff
+                .referrerPolicy(r ->
+                    r.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
+                        .ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                .addHeaderWriter((req, res) ->
+                    res.setHeader("Content-Security-Policy",
+                        "default-src 'none'; frame-ancestors 'none'"))
+                .addHeaderWriter((req, res) ->
+                    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()"))
+            )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
                 .requestMatchers("/admin/notifications/stream", "/consultant/notifications/stream").permitAll()

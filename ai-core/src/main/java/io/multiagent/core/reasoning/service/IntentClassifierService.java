@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.multiagent.core.client.LLMAIClient;
+import io.multiagent.core.security.LlmJsonValidator;
+import io.multiagent.core.security.PromptGuard;
 import io.multiagent.core.model.IntentResult;
 import io.multiagent.core.exception.LLMClientException;
 import jakarta.annotation.PostConstruct;
@@ -69,7 +71,16 @@ public class IntentClassifierService {
 
             // 🟢 version compatible avec TA méthode extractJSON()
             String json = openai.extractJSON(systemPrompt, fullPrompt);
-            log.info("classify: {}",json);
+
+            // OWASP LLM02 — Valider le schéma JSON de l'intent avant parsing
+            LlmJsonValidator.ValidationResult schemaCheck = LlmJsonValidator.validateIntent(json);
+            if (!schemaCheck.valid()) {
+                log.warn("🛡️ [JSON-SCHEMA] Intent JSON invalide : {}", schemaCheck.reason());
+            }
+
+            log.debug("classify result: intent={} confidence={}",
+                mapper.readTree(json).path("intent").asText("?"),
+                mapper.readTree(json).path("confidence").asDouble());
             JsonNode node = mapper.readTree(json);
 
             IntentResult r = new IntentResult();
@@ -97,7 +108,7 @@ public class IntentClassifierService {
     private IntentResult fallback(String userText, String explanation) {
         // Rule-based km detection — bypasses LLM when both providers are down
         if (isKmExpenseText(userText)) {
-            log.info("🛤️ Intent km détecté par règle (LLM indisponible): '{}'", userText);
+            log.info("🛤️ Intent km détecté par règle (LLM indisponible): {}", PromptGuard.maskForLog(userText));
             IntentResult km = new IntentResult();
             km.setIntent("create_expense");
             km.setConfidence(0.85);

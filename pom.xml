@@ -12,5 +12,6 @@
     <modules>
         <module>ai-core</module>
         <module>invoice-service</module>
+        <module>notification-service</module>
     </modules>
 </project>
