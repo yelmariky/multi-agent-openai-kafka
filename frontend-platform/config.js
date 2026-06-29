@@ -12,7 +12,7 @@ globalThis.APP_CONFIG = {
   keycloakUrl:      'http://localhost:8090',
   keycloakRealm:    'platform',
   keycloakClientId: 'frontend-platform',
-  apiBase:          'http://localhost:8081',   // ai-core direct
+  apiBase:          'http://localhost:8081',   // ai-service direct
 
   // --- PRODUCTION (Kong) — décommenter et adapter ---
   // keycloakUrl:      'https://auth.ia-insight.fr',

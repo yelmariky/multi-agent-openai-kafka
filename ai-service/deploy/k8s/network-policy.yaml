@@ -1,16 +1,16 @@
-# NetworkPolicy — Isolation réseau pour ai-core
-# Seul Kong (namespace 'gateway') peut appeler ai-core en HTTP.
+# NetworkPolicy — Isolation réseau pour ai-service
+# Seul Kong (namespace 'gateway') peut appeler ai-service en HTTP.
 # Tout autre pod (même dans le cluster) est bloqué au niveau réseau K8s.
 # Prérequis : le CNI doit supporter NetworkPolicy (Calico, Cilium, Weave).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ai-core-ingress
+  name: ai-service-ingress
   namespace: multi-agent
 spec:
   podSelector:
     matchLabels:
-      app: ai-core
+      app: ai-service
   policyTypes:
     - Ingress
     - Egress

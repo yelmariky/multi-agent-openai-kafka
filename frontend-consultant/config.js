@@ -4,9 +4,9 @@
 // MULTI-TENANT : le slug est extrait de l'URL (/{slug}/...).
 // Il correspond au realm Keycloak et identifie le tenant.
 //
-// DEV local (sans Kong) : le frontend appelle ai-core directement.
+// DEV local (sans Kong) : le frontend appelle ai-service directement.
 // PRODUCTION (avec Kong) : un seul point d'entrée Kong.
-//   apiBase = URL publique de Kong (routes /expenses/*, /cra/*, etc. → ai-core)
+//   apiBase = URL publique de Kong (routes /expenses/*, /cra/*, etc. → ai-service)
 //
 // IMPORTANT : keycloakUrl doit correspondre exactement à l'issuer Keycloak
 // déclaré dans KEYCLOAK_ISSUER_URI des ConfigMaps K8s (claim "iss" du JWT).
@@ -26,7 +26,7 @@ globalThis.APP_CONFIG = {
   keycloakUrl:      'http://localhost:8090',
   keycloakRealm:    _slug,                    // realm = slug
   keycloakClientId: 'frontend-consultant',
-  apiBase:          'http://localhost:8081',   // ai-core direct
+  apiBase:          'http://localhost:8081',   // ai-service direct
   notificationBase: 'http://localhost:8084',   // notification-service direct
 
   // --- PRODUCTION (Kong) — décommenter et adapter ---

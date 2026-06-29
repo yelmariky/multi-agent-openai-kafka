@@ -7,7 +7,7 @@
 // DEV local (sans Kong) : les deux frontends appellent les services directement.
 // PRODUCTION (avec Kong) : un seul point d'entree, Kong route selon le path :
 //   - /invoices/*  -> invoice-service
-//   - /expenses/*, /cra/*, /reasoning/*, /admin/*, /settings/* -> ai-core
+//   - /expenses/*, /cra/*, /reasoning/*, /admin/*, /settings/* -> ai-service
 //   Dans ce cas, apiBase = invoiceBase = URL publique de Kong.
 //
 // IMPORTANT : keycloakUrl doit correspondre exactement a l'issuer Keycloak
@@ -28,7 +28,7 @@ globalThis.APP_CONFIG = {
   keycloakUrl:      'http://localhost:8090',
   keycloakRealm:    _slug,                    // realm = slug
   keycloakClientId: 'frontend-admin',
-  apiBase:          'http://localhost:8081',   // ai-core direct
+  apiBase:          'http://localhost:8081',   // ai-service direct
   invoiceBase:      'http://localhost:8083',   // invoice-service direct
   notificationBase: 'http://localhost:8084',   // notification-service direct
 

@@ -6,9 +6,10 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.multiagent</groupId>
-    <artifactId>ai-core</artifactId>
+    <artifactId>ai-service</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
+    <name>ai-service</name>
 
     <!-- Java requirements -->
     <properties>

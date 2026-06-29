@@ -19,7 +19,7 @@ Plateforme SaaS **multi-tenant** d'automatisation d'entreprise pour ESN/cabinets
 | LLM principal | Groq — `llama-3.1-8b-instant` (intent/rewrite) + `llama-4-scout-17b` (RAG) — gratuit |
 | LLM fallback | OpenAI `gpt-4.1-mini` — si Groq indisponible (`com.openai:openai-java:4.8.0`) |
 | DB + Vector | PostgreSQL 16 + pgvector (colonnes `vector(2000)`, index HNSW cosine) |
-| ORM | Spring Data JPA + Flyway (ai-core owns schema, invoice-service `flyway.enabled=false`) |
+| ORM | Spring Data JPA + Flyway (ai-service owns schema, invoice-service `flyway.enabled=false`) |
 | Embedding | OpenAI `text-embedding-3-large` (toujours OpenAI — Groq ne supporte pas les embeddings) |
 | Messaging | Apache Kafka KRaft (namespace `agent-system`) |
 | Backend | Spring Boot 3.3.4, Java 21, Maven multi-module |
@@ -38,15 +38,15 @@ Plateforme SaaS **multi-tenant** d'automatisation d'entreprise pour ESN/cabinets
                        |
             +----------+----------+
             v                     v
-      ai-core :8081       invoice-service :8083
+      ai-service :8081       invoice-service :8083
             |                     |
-       PostgreSQL <---------------+   (shared DB, ai-core owns Flyway)
+       PostgreSQL <---------------+   (shared DB, ai-service owns Flyway)
        + pgvector / Kafka / Groq API / OpenAI API
             |
       Keycloak :8080  <- JwtIssuerAuthenticationManagerResolver (multi-realm)
 ```
 
-**Kong routing** : `/invoices/*` -> invoice-service | tout le reste -> ai-core
+**Kong routing** : `/invoices/*` -> invoice-service | tout le reste -> ai-service
 
 **LLM fallback** : `LLMAIClient.chatJson()` essaie Groq → si KO bascule sur OpenAI `gpt-4.1-mini`. Voir `docs/PRODUCTION-KEYS.md`.
 
@@ -58,7 +58,7 @@ Plateforme SaaS **multi-tenant** d'automatisation d'entreprise pour ESN/cabinets
 - URL slug : `localhost:3000/{slug}/` -> realm Keycloak `{slug}`
 - `TenantFilter` (OncePerRequestFilter) : JWT `iss` -> realm -> Organization -> `TenantContext` (ThreadLocal)
 - Toutes les requetes JPA filtrent par `tenant_id`
-- `TenantFilter` existe dans ai-core ET invoice-service
+- `TenantFilter` existe dans ai-service ET invoice-service
 - Console plateforme (`frontend-platform/` :3002) : realm `platform`, role `platform_admin`
 
 ## Commandes essentielles
@@ -70,7 +70,7 @@ kubectl port-forward svc/keycloak -n keycloak 8090:8080
 kubectl port-forward svc/kafka 9092:9092 -n agent-system
 
 # Backend (env vars: OPENAI_API_KEY, POSTGRES_URL, POSTGRES_USER, POSTGRES_PASSWORD)
-cd ai-core && mvn spring-boot:run          # :8081, Flyway cree le schema
+cd ai-service && mvn spring-boot:run          # :8081, Flyway cree le schema
 cd invoice-service && mvn spring-boot:run  # :8083, flyway disabled
 
 # Frontends
@@ -80,20 +80,20 @@ cd frontend-platform && python server.py
 
 # Build & Docker
 mvn clean package -DskipTests
-cd ai-core && docker build -t dokeryelmariki/ai-core:latest . && docker push dokeryelmariki/ai-core:latest
+cd ai-service && docker build -t dokeryelmariki/ai-service:latest . && docker push dokeryelmariki/ai-service:latest
 cd invoice-service && docker build -t dokeryelmariki/invoice-service:latest . && docker push dokeryelmariki/invoice-service:latest
 
 # K8s deploy
-kubectl apply -f ai-core/deploy/k8s/ && kubectl rollout restart deployment/ai-core -n multi-agent
+kubectl apply -f ai-service/deploy/k8s/ && kubectl rollout restart deployment/ai-service -n multi-agent
 kubectl apply -f invoice-service/deploy/k8s/ && kubectl rollout restart deployment/invoice-service -n multi-agent
 ```
 
 ## Conventions critiques
 
 - **CORS** : toujours `WebMvcConfigurer.addCorsMappings()` dans `WebCorsConfig.java` — jamais `CorsConfigurationSource` bean seul
-- **Prompts LLM** : tous dans `ai-core/deploy/k8s/configMap.yaml` (`AI_CORE_PROMPT_*`). Apres modif : `kubectl apply` + restart pod
+- **Prompts LLM** : tous dans `ai-service/deploy/k8s/configMap.yaml` (`AI_CORE_PROMPT_*`). Apres modif : `kubectl apply` + restart pod
 - **copyExpense()** : propager `consultantEmail` (et tout nouveau champ) dans `expandKmMonthly()`
-- **Flyway** : ai-core owns schema (`flyway.enabled=true`), invoice-service `flyway.enabled=false`
+- **Flyway** : ai-service owns schema (`flyway.enabled=true`), invoice-service `flyway.enabled=false`
 - **PromptGuard** : tout nouvel endpoint texte libre doit être couvert — ne jamais ajouter à `EXCLUDED_PREFIXES` sauf binaire/multipart
 
 ## Reference docs (lire a la demande)
@@ -101,7 +101,7 @@ kubectl apply -f invoice-service/deploy/k8s/ && kubectl rollout restart deployme
 | Fichier | Contenu |
 |---|---|
 | `docs/DEPLOYMENT.md` | Procedure de deploiement K8s obligatoire avant livraison |
-| `docs/ENDPOINTS.md` | Tous les endpoints ai-core + invoice-service |
+| `docs/ENDPOINTS.md` | Tous les endpoints ai-service + invoice-service |
 | `docs/SECURITY.md` | Keycloak RBAC, PromptGuard LLM, SSE token, config.js frontend |
 | `docs/PRODUCTION-KEYS.md` | Creation clés API prod — permissions OpenAI + Groq + fallback |
 | `docs/PITCH.md` | Présentation projet clients/investisseurs (10 slides PowerPoint) |

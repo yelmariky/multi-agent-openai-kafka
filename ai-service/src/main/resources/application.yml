@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: ai-core
+    name: ai-service
   datasource:
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ia_insight}
     username: ${POSTGRES_USER:ia_insight}
