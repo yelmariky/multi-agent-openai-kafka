@@ -57,7 +57,7 @@ public class ConsultantProfileEntity {
 
     @Enumerated(jakarta.persistence.EnumType.STRING)
     @Column(name = "vehicle_type", length = 20)
-    private io.multiagent.core.model.VehicleType vehicleType = io.multiagent.core.model.VehicleType.CAR;
+    private io.multiagent.expense.model.VehicleType vehicleType = io.multiagent.expense.model.VehicleType.CAR;
 
     @Column(name = "fiscal_power")
     private Integer fiscalPower = 7;

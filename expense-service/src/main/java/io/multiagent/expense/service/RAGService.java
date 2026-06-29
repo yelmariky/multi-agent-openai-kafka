@@ -57,8 +57,8 @@ public class RAGService {
     private final ExpenseIdGenerator idGenerator;
     private final ExpensePdfService expensePdfService;
     private final NotificationService notificationService;
-    private final io.multiagent.core.settings.repository.ConsultantProfileJpaRepository consultantProfileRepo;
-    private final io.multiagent.core.expense.repository.ExpenseJpaRepository expenseRepo;
+    private final io.multiagent.expense.settings.repository.ConsultantProfileJpaRepository consultantProfileRepo;
+    private final io.multiagent.expense.repository.ExpenseJpaRepository expenseRepo;
 
     // Kafka best-effort : null si le broker n'est pas disponible en dev local
     @Autowired(required = false)
@@ -144,8 +144,8 @@ public class RAGService {
         }
 
         // OWASP LLM02 — Valider le schéma JSON avant parsing métier
-        io.multiagent.core.security.LlmJsonValidator.ValidationResult schemaCheck =
-                io.multiagent.core.security.LlmJsonValidator.validateExpense(json);
+        io.multiagent.expense.security.LlmJsonValidator.ValidationResult schemaCheck =
+                io.multiagent.expense.security.LlmJsonValidator.validateExpense(json);
         if (!schemaCheck.valid()) {
             log.warn("🛡️ [JSON-SCHEMA] Réponse LLM invalide : {}", schemaCheck.reason());
         }
@@ -568,18 +568,18 @@ public class RAGService {
         }
     }
 
-    private record VehicleProfile(io.multiagent.core.model.VehicleType vehicleType, int fiscalPower, int kmAnnual) {}
+    private record VehicleProfile(io.multiagent.expense.model.VehicleType vehicleType, int fiscalPower, int kmAnnual) {}
 
     private VehicleProfile resolveVehicleProfile(String consultantEmail) {
-        if (isBlank(consultantEmail)) return new VehicleProfile(io.multiagent.core.model.VehicleType.CAR, 7, kmAnnual);
+        if (isBlank(consultantEmail)) return new VehicleProfile(io.multiagent.expense.model.VehicleType.CAR, 7, kmAnnual);
         return consultantProfileRepo
                 .findByTenantIdAndEmailIgnoreCase(
-                        io.multiagent.core.infrastructure.tenant.TenantContext.getTenantId(), consultantEmail)
+                        io.multiagent.expense.infrastructure.tenant.TenantContext.getTenantId(), consultantEmail)
                 .map(p -> new VehicleProfile(
-                        p.getVehicleType() != null ? p.getVehicleType() : io.multiagent.core.model.VehicleType.CAR,
+                        p.getVehicleType() != null ? p.getVehicleType() : io.multiagent.expense.model.VehicleType.CAR,
                         p.getFiscalPower() != null ? p.getFiscalPower() : 7,
                         p.getKmAnnual() != null ? p.getKmAnnual() : kmAnnual))
-                .orElse(new VehicleProfile(io.multiagent.core.model.VehicleType.CAR, 7, kmAnnual));
+                .orElse(new VehicleProfile(io.multiagent.expense.model.VehicleType.CAR, 7, kmAnnual));
     }
 
     /**
@@ -594,7 +594,7 @@ public class RAGService {
 
         VehicleProfile vp = resolveVehicleProfile(consultantEmail);
 
-        if (vp.vehicleType() == io.multiagent.core.model.VehicleType.NONE) {
+        if (vp.vehicleType() == io.multiagent.expense.model.VehicleType.NONE) {
             log.warn("⚠️ Frais km refusés : consultant {} n’a pas de véhicule enregistré", consultantEmail);
             return ReasoningResult.error(
                     "Votre profil n’indique aucun véhicule personnel. " +
@@ -640,7 +640,7 @@ public class RAGService {
         LocalDate expenseDate = resolveDate(e.getDate());
         LocalDate start = expenseDate.withDayOfMonth(1);
         LocalDate end   = expenseDate.withDayOfMonth(expenseDate.lengthOfMonth());
-        java.util.UUID tenantId = io.multiagent.core.infrastructure.tenant.TenantContext.getTenantId();
+        java.util.UUID tenantId = io.multiagent.expense.infrastructure.tenant.TenantContext.getTenantId();
 
         String conflictType = "frais_km".equalsIgnoreCase(type) ? "carte_transport" : "frais_km";
         boolean hasConflict = expenseRepo.existsByMonthAndType(tenantId, consultantEmail, conflictType, start, end);
@@ -686,10 +686,10 @@ public class RAGService {
         return list;
     }
 
-    private Set<LocalDate> resolveAbsentDates(List<io.multiagent.core.model.ExpenseItem.AbsencePeriod> periods) {
+    private Set<LocalDate> resolveAbsentDates(List<io.multiagent.expense.model.ExpenseItem.AbsencePeriod> periods) {
         Set<LocalDate> absent = new HashSet<>();
         if (periods == null || periods.isEmpty()) return absent;
-        for (io.multiagent.core.model.ExpenseItem.AbsencePeriod p : periods) {
+        for (io.multiagent.expense.model.ExpenseItem.AbsencePeriod p : periods) {
             if (p.getFrom() == null || p.getTo() == null) continue;
             try {
                 LocalDate from = LocalDate.parse(p.getFrom());
@@ -746,12 +746,12 @@ public class RAGService {
     }
 
     /** Calcule le taux €/km selon le type de véhicule (barème fiscal 2025). */
-    private double computeCostPerKm(int kmAnnual, io.multiagent.core.model.VehicleType vehicleType) {
-        if (vehicleType == io.multiagent.core.model.VehicleType.MOTORCYCLE) {
+    private double computeCostPerKm(int kmAnnual, io.multiagent.expense.model.VehicleType vehicleType) {
+        if (vehicleType == io.multiagent.expense.model.VehicleType.MOTORCYCLE) {
             return computeMotoCostPerKm(kmAnnual);
         }
         double rate = computeVoitureCostPerKm(kmAnnual);
-        if (vehicleType == io.multiagent.core.model.VehicleType.ELECTRIC_CAR) rate *= 1.20;
+        if (vehicleType == io.multiagent.expense.model.VehicleType.ELECTRIC_CAR) rate *= 1.20;
         return rate;
     }
 

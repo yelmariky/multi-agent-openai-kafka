@@ -226,7 +226,7 @@ public class ExpenseExcelService {
     private List<java.time.LocalDate> computeKmDates(ExpenseReportResponse report) {
         java.util.Set<java.time.LocalDate> unique = new java.util.HashSet<>();
         if (report.getExpenses() != null) {
-            for (io.multiagent.core.model.ExpenseItem e : report.getExpenses()) {
+            for (io.multiagent.expense.model.ExpenseItem e : report.getExpenses()) {
                 if (!"frais_km".equalsIgnoreCase(nvl(e.getType(), ""))) {
                     continue;
                 }

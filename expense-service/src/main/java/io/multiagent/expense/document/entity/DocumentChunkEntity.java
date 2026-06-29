@@ -31,6 +31,9 @@ public class DocumentChunkEntity {
     @Column(columnDefinition = "TEXT")
     private String content;
 
+    @Column(columnDefinition = "vector(2000)")
+    private String embedding;
+
     @Column(name = "created_at")
     private Instant createdAt;
 
