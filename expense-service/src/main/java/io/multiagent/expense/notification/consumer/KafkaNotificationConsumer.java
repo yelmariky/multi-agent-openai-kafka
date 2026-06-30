@@ -27,7 +27,6 @@ public class KafkaNotificationConsumer {
 
     @KafkaListener(
             topics = KafkaTopics.NOTIFICATION,
-            groupId = "ai-core-notifications",
             containerFactory = "kafkaListenerContainerFactory"
     )
     public void onNotification(String message) {

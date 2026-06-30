@@ -30,7 +30,6 @@ public class NotificationKafkaConsumer {
 
     @KafkaListener(
             topics = "platform.notifications",
-            groupId = "notification-service",
             containerFactory = "kafkaListenerContainerFactory"
     )
     public void onNotification(String message) {
