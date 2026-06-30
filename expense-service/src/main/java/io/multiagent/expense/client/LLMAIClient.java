@@ -13,12 +13,16 @@ import com.openai.models.completions.CompletionCreateParams;
 import com.openai.models.embeddings.CreateEmbeddingResponse;
 import com.openai.models.embeddings.Embedding;
 import com.openai.models.embeddings.EmbeddingCreateParams;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import com.openai.errors.RateLimitException;
 import io.multiagent.expense.exception.LLMClientException;
 import io.multiagent.expense.model.ReRankScore;
 import io.multiagent.expense.util.LLMUtils;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -51,6 +55,14 @@ public class LLMAIClient {
     // true si chatClient != client (Groq/autre provider configuré) → fallback OpenAI disponible
     private final boolean hasFallback;
     private final String fallbackLlmModel;
+
+    /**
+     * Circuit breaker sur le provider LLM principal (Groq).
+     * Évite de payer 4 tentatives × backoff exponentiel (~22s) à chaque appel
+     * quand Groq est en panne prolongée — bascule directement sur OpenAI fallback
+     * une fois le circuit ouvert, jusqu'à la fenêtre de demi-ouverture.
+     */
+    private final CircuitBreaker chatCircuitBreaker;
 
     public LLMAIClient(
             @Value("${openai.api-key}") String apiKey,
@@ -96,6 +108,20 @@ public class LLMAIClient {
         this.baseBackoffMs = Math.max(100, baseBackoffMs);
         this.maxBackoffMs = Math.max(this.baseBackoffMs, maxBackoffMs);
 
+        // Circuit breaker Groq : ouvre après 50% d'échecs sur 5 appels min,
+        // reste ouvert 30s avant de retester (half-open avec 2 appels d'essai).
+        CircuitBreakerConfig cbConfig = CircuitBreakerConfig.custom()
+                .failureRateThreshold(50)
+                .minimumNumberOfCalls(5)
+                .slidingWindowSize(10)
+                .waitDurationInOpenState(Duration.ofSeconds(30))
+                .permittedNumberOfCallsInHalfOpenState(2)
+                .build();
+        this.chatCircuitBreaker = CircuitBreaker.of("groq-chat", cbConfig);
+        this.chatCircuitBreaker.getEventPublisher()
+                .onStateTransition(event -> log.warn("🔌 [CircuitBreaker groq-chat] {} → {}",
+                        event.getStateTransition().getFromState(), event.getStateTransition().getToState()));
+
         log.info("LLMClient initialized — model={}, embedding={}", llmModel, embeddingModel);
     }
 
@@ -119,13 +145,25 @@ public class LLMAIClient {
     public ChatCompletion chatJson(String model, String system, String user) {
 
         String targetModel = resolveModel(model, this.llmModel);
-
         ChatCompletionCreateParams params = buildChatParams(targetModel, system, user);
 
-        try {
+        if (!hasFallback) {
+            // Un seul provider configuré (pas de Groq) — pas de circuit breaker nécessaire
             return safeCall("chat.json(model=" + targetModel + ")", () -> chatClient.chat().completions().create(params));
+        }
+
+        try {
+            // Circuit breaker autour du provider principal (Groq) + ses 4 tentatives internes
+            return chatCircuitBreaker.executeSupplier(() ->
+                    safeCall("chat.json(model=" + targetModel + ")", () -> chatClient.chat().completions().create(params)));
+        } catch (CallNotPermittedException cnpe) {
+            // Circuit ouvert : Groq court-circuité sans retry — bascule immédiate (économise ~22s)
+            log.warn("🔌 [CircuitBreaker OUVERT] Groq court-circuité, bascule directe sur OpenAI fallback model={}",
+                    fallbackLlmModel);
+            ChatCompletionCreateParams fallbackParams = buildChatParams(fallbackLlmModel, system, user);
+            return safeCall("chat.json.fallback(model=" + fallbackLlmModel + ")",
+                    () -> client.chat().completions().create(fallbackParams));
         } catch (LLMClientException ex) {
-            if (!hasFallback) throw ex;
             log.warn("⚠️ LLM provider indisponible ({}), bascule sur OpenAI fallback model={}: {}",
                     targetModel, fallbackLlmModel, ex.getMessage());
             ChatCompletionCreateParams fallbackParams = buildChatParams(fallbackLlmModel, system, user);
