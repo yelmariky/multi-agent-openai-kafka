@@ -1,0 +1,40 @@
+# ============================================================
+# IA-INSIGHT — sécurisation Apache (hébergement IONOS)
+# ============================================================
+
+# 1. Interdire le listing des répertoires
+Options -Indexes
+
+# 2. Bloquer l'accès aux fichiers sensibles (docs internes, fichiers cachés)
+<FilesMatch "^\.|\.(md|log|bak|json)$">
+  Require all denied
+</FilesMatch>
+
+# 3. En-têtes de sécurité
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+  Header always set Content-Security-Policy "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+  # HSTS — n'activer qu'une fois le HTTPS confirmé fonctionnel sur le domaine
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>
+
+# 4. Forcer HTTPS
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+</IfModule>
+
+# 5. Page d'erreur : renvoyer vers l'accueil
+ErrorDocument 404 /index.html
+
+# 6. Cache navigateur pour les assets statiques
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 7 days"
+  ExpiresByType application/javascript "access plus 7 days"
+  ExpiresByType image/svg+xml "access plus 30 days"
+</IfModule>

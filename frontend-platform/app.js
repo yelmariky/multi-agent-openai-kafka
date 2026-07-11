@@ -105,7 +105,156 @@ function initApp() {
     document.getElementById('new-admin-email').placeholder = `admin@${slug || 'tenant'}.local`;
   });
 
+  // Billing SaaS
+  document.getElementById('billing-refresh-btn').addEventListener('click', loadBilling);
+  document.getElementById('billing-run-btn').addEventListener('click', runBillingNow);
+  document.getElementById('billing-save').addEventListener('click', saveBillingModal);
+  document.getElementById('billing-cancel').addEventListener('click', closeBillingModal);
+  document.getElementById('billing-close').addEventListener('click', closeBillingModal);
+  document.getElementById('billing-offer').addEventListener('change', () => {
+    document.getElementById('billing-price-label').style.display =
+      document.getElementById('billing-offer').value === 'ENTERPRISE' ? '' : 'none';
+  });
+
   loadTenants();
+  loadBilling();
+}
+
+// ============================================================
+// BILLING — abonnements SaaS & MRR
+// ============================================================
+const OFFER_MONTHLY = { ESSENTIEL: 29, CROISSANCE: 49 };
+const fmtEur = v => v == null ? '—'
+  : new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(v);
+
+async function loadBilling() {
+  const statusEl = document.getElementById('billing-status');
+  const kpisEl   = document.getElementById('billing-kpis');
+  const listEl   = document.getElementById('billing-list');
+  setStatus(statusEl, 'Chargement...');
+  try {
+    const res = await fetch(`${base()}/platform/billing/overview`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+
+    kpisEl.innerHTML = `
+      <div class="billing-kpi accent"><span class="bk-label">MRR (HT)</span><span class="bk-value">${fmtEur(d.totalMrrHt)}</span></div>
+      <div class="billing-kpi"><span class="bk-label">ARR (HT)</span><span class="bk-value">${fmtEur(d.totalArrHt)}</span></div>
+      <div class="billing-kpi"><span class="bk-label">Organisations abonnées</span><span class="bk-value">${d.organizations.filter(o => o.sub_active).length} / ${d.organizations.length}</span></div>`;
+
+    listEl.innerHTML = d.organizations.map(o => {
+      const subscribed = o.sub_active === true;
+      return `
+      <div class="tenant-row">
+        <div class="status-dot ${subscribed ? 'active' : 'inactive'}" title="${subscribed ? 'Abonné' : 'Sans abonnement actif'}"></div>
+        <div class="tenant-info">
+          <p class="tenant-name">${escapeHtml(o.name)}</p>
+          <div class="tenant-meta">
+            <span>${o.consultant_count} consultant(s) facturable(s)</span>
+            ${subscribed ? `<span>Offre <code>${escapeHtml(o.offer)}</code> · ${escapeHtml((o.billing_period || '').toLowerCase())}</span>` : '<span>Aucune offre affectée</span>'}
+            ${subscribed && o.next_invoice_date ? `<span>Prochaine facture : ${escapeHtml(o.next_invoice_date)}</span>` : ''}
+          </div>
+        </div>
+        <span class="plan-badge ${subscribed ? 'pro' : 'starter'}">${subscribed ? 'MRR ' + fmtEur(o.mrrHt) : '—'}</span>
+        <div class="tenant-actions">
+          <button class="btn-edit" data-action="billing-edit" data-org='${escapeHtml(JSON.stringify(o))}'>${subscribed ? 'Modifier l\'offre' : 'Affecter une offre'}</button>
+          ${subscribed ? `<button class="btn-danger" data-action="billing-suspend" data-id="${o.id}" data-name="${escapeHtml(o.name)}">Suspendre</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    document.querySelectorAll('[data-action="billing-edit"]').forEach(btn =>
+      btn.addEventListener('click', () => openBillingModal(JSON.parse(btn.dataset.org))));
+    document.querySelectorAll('[data-action="billing-suspend"]').forEach(btn =>
+      btn.addEventListener('click', () => suspendBilling(btn.dataset.id, btn.dataset.name)));
+
+    setStatus(statusEl, '', '');
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+function openBillingModal(org) {
+  document.getElementById('billing-org-id').value    = org.id;
+  document.getElementById('billing-org-name').value  = org.name;
+  document.getElementById('billing-offer').value     = org.offer || 'CROISSANCE';
+  document.getElementById('billing-period').value    = org.billing_period || 'ANNUEL';
+  document.getElementById('billing-price').value     = org.negotiated_monthly_price_ht || '';
+  document.getElementById('billing-address').value   = '';
+  document.getElementById('billing-rcs').value       = '';
+  document.getElementById('billing-start').value     = org.next_invoice_date || new Date().toISOString().slice(0, 10);
+  document.getElementById('billing-price-label').style.display =
+    document.getElementById('billing-offer').value === 'ENTERPRISE' ? '' : 'none';
+  setStatus(document.getElementById('billing-modal-status'), '');
+  document.getElementById('billing-modal').style.display = '';
+}
+
+function closeBillingModal() {
+  document.getElementById('billing-modal').style.display = 'none';
+}
+
+async function saveBillingModal() {
+  const statusEl = document.getElementById('billing-modal-status');
+  const offer = document.getElementById('billing-offer').value;
+  const body = {
+    organizationId: document.getElementById('billing-org-id').value,
+    offer,
+    billingPeriod: document.getElementById('billing-period').value,
+    negotiatedMonthlyPriceHt: offer === 'ENTERPRISE'
+      ? parseFloat(document.getElementById('billing-price').value) || null : null,
+    clientAddress: document.getElementById('billing-address').value.trim() || null,
+    clientRcs: document.getElementById('billing-rcs').value.trim() || null,
+    startDate: document.getElementById('billing-start').value
+  };
+  if (!body.startDate) { setStatus(statusEl, 'Date de début obligatoire.', 'err'); return; }
+  setStatus(statusEl, 'Enregistrement...');
+  try {
+    const res = await fetch(`${base()}/platform/billing/subscription`, {
+      method: 'PUT',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    closeBillingModal();
+    loadBilling();
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+async function suspendBilling(orgId, name) {
+  if (!confirm(`Suspendre la facturation automatique de « ${name} » ?\n(L'accès au service n'est pas coupé.)`)) return;
+  const statusEl = document.getElementById('billing-status');
+  try {
+    const res = await fetch(`${base()}/platform/billing/subscription/${orgId}/suspend`, {
+      method: 'PUT', headers: authHeaders()
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    loadBilling();
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+async function runBillingNow() {
+  if (!confirm('Générer maintenant les factures des abonnements arrivés à échéance ?')) return;
+  const statusEl = document.getElementById('billing-status');
+  const invoiceBase = ((globalThis.APP_CONFIG || {}).invoiceBase || 'http://localhost:8083').replace(/\/$/, '');
+  setStatus(statusEl, 'Facturation en cours...');
+  try {
+    const res = await fetch(`${invoiceBase}/invoices/subscription/run-billing`, {
+      method: 'POST', headers: authHeaders()
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const results = await res.json();
+    const invoiced = results.filter(r => r.status === 'INVOICED').length;
+    const skipped  = results.filter(r => r.status !== 'INVOICED').length;
+    setStatus(statusEl, `${invoiced} facture(s) générée(s)${skipped ? `, ${skipped} ignorée(s)/en erreur` : ''}.`, 'ok');
+    loadBilling();
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
 }
 
 // ============================================================

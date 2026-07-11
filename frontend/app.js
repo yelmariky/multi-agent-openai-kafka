@@ -293,8 +293,57 @@ function startApp() {
 
 // app.js est injecte dynamiquement apres le chargement de keycloak.js —
 // DOMContentLoaded a deja tire, on invoque directement.
+function showOrgNotFound(slug) {
+  document.body.innerHTML = `
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+      body { margin:0; font-family:'Space Grotesk',system-ui; }
+    </style>
+    <div style="
+      min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(44,229,167,.13), transparent 34%),
+        radial-gradient(circle at 82% 4%,  rgba(122,215,255,.11), transparent 30%),
+        #0d1017;
+    ">
+      <div style="width:100%;max-width:480px;text-align:center;">
+        <div style="
+          width:60px;height:60px;border-radius:16px;margin:0 auto 24px;
+          background:linear-gradient(135deg,rgba(239,68,68,.18),rgba(239,68,68,.08));
+          border:1px solid rgba(239,68,68,.3);
+          display:flex;align-items:center;justify-content:center;font-size:26px;
+        ">🏢</div>
+        <h1 style="font-size:22px;font-weight:700;color:#ecf1ff;margin:0 0 10px;">Organisation introuvable</h1>
+        <p style="color:#a8b3c6;font-size:14px;margin:0 0 20px;line-height:1.6;">
+          Aucune organisation ne correspond au slug<br>
+          <code style="
+            display:inline-block;margin-top:6px;padding:4px 12px;border-radius:8px;
+            background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);
+            color:#fca5a5;font-size:13px;font-family:monospace;
+          ">${slug}</code>
+        </p>
+        <p style="color:#64748b;font-size:13px;margin:0 0 32px;">
+          Vérifiez l'orthographe ou contactez votre administrateur.
+        </p>
+        <a href="/tenant-select.html" style="
+          display:inline-flex;align-items:center;gap:8px;
+          background:#2ce5a7;color:#0d1017;font-weight:700;font-size:14px;
+          border-radius:10px;padding:11px 24px;text-decoration:none;
+        ">
+          ← Choisir une autre organisation
+        </a>
+      </div>
+    </div>`;
+}
+
 (async () => {
   try {
+    const realmUrl = `${_cfg.keycloakUrl}/realms/${encodeURIComponent(TENANT_SLUG)}`;
+    const realmCheck = await fetch(realmUrl).catch(() => null);
+    if (!realmCheck || !realmCheck.ok) {
+      showOrgNotFound(TENANT_SLUG);
+      return;
+    }
     await initKeycloak();
     startApp();
   } catch (e) {
@@ -306,8 +355,8 @@ function startApp() {
           <div style="font-size:2.5rem;margin-bottom:1rem">⚠️</div>
           <h2 style="color:#2ce5a7;margin-bottom:.5rem">Service d'authentification indisponible</h2>
           <p style="color:#8892a4">
-            La connexion au serveur d'authentification a echoue.<br>
-            Veuillez contacter votre administrateur systeme.
+            La connexion au serveur d'authentification a échoué.<br>
+            Veuillez contacter votre administrateur système.
           </p>
         </div>
       </div>`;
@@ -690,6 +739,7 @@ function initConsultants(user) {
     document.getElementById('cons-add-form').style.display = '';
     document.getElementById('cons-add-btn').style.display  = 'none';
     setAddMode('existing');
+    loadBillingPreview();
     const companyInput = document.getElementById('cons-new-company');
     if (companyInput && !companyInput.value) companyInput.value = tenantName();
     // Load Keycloak users into dropdown
@@ -721,6 +771,29 @@ function initConsultants(user) {
     document.getElementById('cons-add-form').style.display = 'none';
     document.getElementById('cons-add-btn').style.display  = '';
   });
+
+  // Impact tarifaire de l'ajout d'un consultant (abonnement du tenant — comptage dynamique)
+  async function loadBillingPreview() {
+    const el = document.getElementById('cons-billing-preview');
+    if (!el) return;
+    el.style.display = 'none';
+    try {
+      const res = await fetch(`${base()}/billing/preview`, { headers: authHeaders() });
+      if (!res.ok) return;
+      const p = await res.json();
+      if (!p.subscribed) return;
+      const fmt = v => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2 }).format(v);
+      const billingNote = p.billingPeriod === 'MENSUEL'
+        ? (p.nextInvoiceDate ? ` — pris en compte à la facture du ${escapeHtml(p.nextInvoiceDate)}.` : '.')
+        : ` — un ajustement prorata (mois restants de la période) sera facturé automatiquement.`;
+      el.innerHTML =
+        `Offre <strong>${escapeHtml(p.offer)}</strong> (${escapeHtml(p.billingPeriod.toLowerCase())}) — ` +
+        `${p.billableConsultants} consultant(s) facturable(s) soit ${fmt(p.currentMonthlyHt)}&nbsp;€ HT/mois. ` +
+        `Avec ce consultant&nbsp;: <strong style="color:var(--accent)">${fmt(p.projectedMonthlyHt)}&nbsp;€ HT/mois</strong>` +
+        billingNote;
+      el.style.display = '';
+    } catch { /* aperçu non bloquant */ }
+  }
 
   // Edit form
   document.getElementById('cons-edit-save').addEventListener('click', async () => {

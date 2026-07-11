@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conception Septembre 2026 — IA-INSIGHT Platform</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Space Grotesk',system-ui;font-size:11pt;line-height:1.65;color:#1a1a2e;background:#fff}
+:root{--p:#0891b2;--g:#16a34a;--o:#d97706;--r:#dc2626;--v:#7c3aed;--m:#64748b;--l:#f0f9ff;--b:#e2e8f0;--d:#0f172a}
+.page{max-width:920px;margin:0 auto;padding:0 40px}
+.cover{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+  background:linear-gradient(135deg,#0f172a 0%,#0c4a6e 50%,#0891b2 100%);
+  color:#fff;padding:80px 60px;page-break-after:always}
+.cover-eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 16px;
+  font-size:10pt;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:28px}
+.cover-month{font-size:13pt;color:#67e8f9;font-weight:600;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase}
+.cover h1{font-size:38pt;font-weight:800;line-height:1.1;margin-bottom:12px}
+.cover h1 em{color:#2ce5a7;font-style:normal}
+.cover-sub{font-size:14pt;color:#94a3b8;margin-bottom:44px;max-width:580px}
+.cover-tags{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:48px}
+.tag{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 14px;font-size:9.5pt;color:#cbd5e1}
+.cover-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid rgba(255,255,255,.12);padding-top:28px}
+.meta-item{padding:0 24px 0 0}
+.meta-label{font-size:8.5pt;color:#475569;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+.meta-val{font-size:12pt;font-weight:600;color:#e2e8f0}
+.section{padding:52px 0 28px;page-break-before:always}
+.section:first-of-type{page-break-before:auto}
+.eyebrow{font-size:9pt;font-weight:700;color:var(--p);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+h2.stitle{font-size:22pt;font-weight:800;color:var(--d);margin-bottom:22px;padding-bottom:12px;border-bottom:3px solid var(--p)}
+h3{font-size:13pt;font-weight:700;color:var(--d);margin:26px 0 11px}
+h4{font-size:11pt;font-weight:600;color:var(--p);margin:18px 0 8px}
+p{margin-bottom:11px;color:#334155}
+.sprint-card{border:1px solid var(--b);border-radius:14px;overflow:hidden;margin:28px 0;page-break-inside:avoid}
+.sprint-head{padding:22px 28px;display:flex;align-items:center;gap:20px}
+.sh-s5{background:linear-gradient(135deg,#064e3b,#0891b2)}
+.sh-s6{background:linear-gradient(135deg,#1e1b4b,#4338ca)}
+.sprint-num{font-size:32pt;font-weight:900;color:rgba(255,255,255,.2);line-height:1;min-width:52px}
+.sprint-head-info h3{font-size:15pt;color:#fff;margin:0 0 3px}
+.sprint-head-info p{font-size:9.5pt;color:rgba(255,255,255,.65);margin:0}
+.sprint-body{padding:24px 28px}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:10pt}
+th{background:var(--d);color:#fff;padding:9px 14px;text-align:left;font-weight:600;font-size:9.5pt}
+td{padding:8px 14px;border-bottom:1px solid var(--b);vertical-align:top}
+tr:nth-child(even) td{background:var(--l)}
+.ul{list-style:none;margin:10px 0}
+.ul li{display:flex;gap:9px;padding:6px 0;border-bottom:1px solid var(--b);font-size:10.5pt;color:#334155}
+.ul li:last-child{border-bottom:none}
+.ul li::before{content:"→";color:var(--p);font-weight:700;flex-shrink:0}
+.check li::before{content:"✓";color:var(--g)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:14px 0}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:14px 0}
+.box{background:var(--l);border:1px solid var(--b);border-radius:10px;padding:16px}
+.kpi{text-align:center}
+.kpi .v{font-size:26pt;font-weight:800;color:var(--p)}
+.kpi .l{font-size:8.5pt;color:var(--m);text-transform:uppercase;letter-spacing:.8px}
+.note{border-left:4px solid var(--p);background:var(--l);padding:14px 18px;margin:16px 0;border-radius:0 8px 8px 0}
+.note.g{border-color:var(--g);background:#f0fdf4}
+.note.o{border-color:var(--o);background:#fffbeb}
+.note.r{border-color:var(--r);background:#fef2f2}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:9pt;font-weight:600}
+.bg{background:#dcfce7;color:#15803d}.bb{background:#dbeafe;color:#1d4ed8}
+.bo{background:#ffedd5;color:#c2410c}.bv{background:#f3e8ff;color:#7e22ce}
+.br{background:#fee2e2;color:#b91c1c}
+.dod{background:var(--d);color:#e2e8f0;border-radius:10px;padding:20px 24px;margin:18px 0}
+.dod h4{color:#2ce5a7;margin-bottom:10px}
+.dod ul{list-style:none}
+.dod li{padding:4px 0;font-size:10pt;display:flex;gap:8px}
+.dod li::before{content:"✓";color:#2ce5a7;flex-shrink:0}
+.sla-box{border:2px solid var(--p);border-radius:12px;padding:20px;margin:14px 0;background:var(--l)}
+.sla-box h4{color:var(--p);margin-bottom:12px}
+.metric-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--b);font-size:10.5pt}
+.metric-row:last-child{border-bottom:none}
+.metric-val{font-weight:700;color:var(--d)}
+.footer{margin-top:60px;padding:20px 0;border-top:1px solid var(--b);text-align:center;color:var(--m);font-size:9pt}
+@media print{
+  body{font-size:10pt}
+  .cover,.section{page-break-before:always;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .sprint-card{page-break-inside:avoid}
+  .sprint-head,.dod{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{margin:18mm 14mm}
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-eyebrow">📅 Dossier de Conception Mensuel</div>
+  <div class="cover-month">Septembre 2026 — Mois 3 / 4</div>
+  <h1>Facturation complète<br><em>& Observabilité</em></h1>
+  <p class="cover-sub">Livrer le workflow de facturation end-to-end (CRA validé → facture envoyée → paiement suivi), et déployer la stack d'observabilité complète (métriques, logs, alertes, SLA).</p>
+  <div class="cover-tags">
+    <span class="tag">🧾 Facturation PDF/Excel</span>
+    <span class="tag">💶 Suivi paiements</span>
+    <span class="tag">📊 Prometheus/Grafana</span>
+    <span class="tag">🔔 Alerting PagerDuty</span>
+    <span class="tag">📈 SLA 99.5%</span>
+    <span class="tag">🪵 Structured Logging</span>
+  </div>
+  <div class="cover-meta">
+    <div class="meta-item"><div class="meta-label">Sprints</div><div class="meta-val">S5 + S6</div></div>
+    <div class="meta-item"><div class="meta-label">Durée</div><div class="meta-val">4 semaines</div></div>
+    <div class="meta-item"><div class="meta-label">Statut</div><div class="meta-val">📋 Planifié</div></div>
+    <div class="meta-item"><div class="meta-label">Équipe</div><div class="meta-val">3 devs + 1 DevOps</div></div>
+  </div>
+</div>
+
+<div class="page">
+
+<!-- ══════════════════════════════════════════
+     CONCEPTION DU PROJET (commun aux 4 mois)
+══════════════════════════════════════════ -->
+
+<!-- SOMMAIRE -->
+<div class="section" style="page-break-before:auto">
+  <h2 class="stitle" style="border-color:#334155">Sommaire</h2>
+  <table>
+    <thead><tr><th>#</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Contexte &amp; Besoin métier</td></tr>
+      <tr><td>2</td><td>Solution proposée &amp; Périmètre</td></tr>
+      <tr><td>3</td><td>Architecture technique</td></tr>
+      <tr><td>4</td><td>Roadmap globale — 8 sprints / 4 mois</td></tr>
+      <tr><td>5</td><td>Sprints du mois — Septembre 2026</td></tr>
+      <tr><td>6</td><td>Sprint Review &amp; Rétrospective</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 1. CONTEXTE -->
+<div class="section">
+  <div class="eyebrow">Section 1</div>
+  <h2 class="stitle">Contexte &amp; Besoin métier</h2>
+  <h3>Le problème des ESN aujourd'hui</h3>
+  <p>Les ESN et cabinets de conseil IT gèrent des dizaines à des centaines de consultants disséminés chez leurs clients. Chaque mois, ce modèle génère une charge administrative considérable :</p>
+  <div class="g3" style="margin:20px 0">
+    <div class="box kpi"><div class="v">3h</div><div class="l">Perdues par consultant/mois en admin</div></div>
+    <div class="box kpi"><div class="v">23%</div><div class="l">Notes de frais avec erreurs</div></div>
+    <div class="box kpi"><div class="v">8j</div><div class="l">Délai moyen facturation post-CRA</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Processus</th><th>Situation actuelle</th><th>Impact</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Notes de frais</strong></td><td>Saisie manuelle Excel, scan PDF par email</td><td>Erreurs, pièces perdues, retards remboursement</td></tr>
+      <tr><td><strong>CRA mensuel</strong></td><td>Feuille Excel partagée ou formulaire papier</td><td>Retards validation → retards facturation client</td></tr>
+      <tr><td><strong>Facturation client</strong></td><td>Factures Word/Excel manuelles</td><td>Risques TVA, numérotation incohérente</td></tr>
+      <tr><td><strong>Gestion congés</strong></td><td>Email ou HR tool déconnecté des outils métier</td><td>Calcul frais km erroné si absences non remontées</td></tr>
+      <tr><td><strong>Visibilité manager</strong></td><td>Aucun tableau de bord temps réel</td><td>Arbitrages retardés, perte de contexte</td></tr>
+    </tbody>
+  </table>
+  <div class="g2" style="margin-top:16px">
+    <div>
+      <h4>Besoins consultant</h4>
+      <ul class="ul">
+        <li>Saisir une note de frais en langage naturel</li>
+        <li>Photographier un justificatif → OCR automatique</li>
+        <li>Frais km avec exclusion automatique absences/congés</li>
+        <li>Soumettre son CRA depuis n'importe quel appareil</li>
+        <li>Notifications temps réel sur les décisions admin</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Besoins manager / admin</h4>
+      <ul class="ul">
+        <li>Valider/refuser frais et CRA en 1 clic</li>
+        <li>Génération automatique de factures PDF post-CRA</li>
+        <li>Tableau de bord global : frais, CRA, factures</li>
+        <li>Console multi-tenant : piloter plusieurs ESN</li>
+        <li>Conformité RGPD &amp; audit trail LLM</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 2. SOLUTION -->
+<div class="section">
+  <div class="eyebrow">Section 2</div>
+  <h2 class="stitle">Solution proposée &amp; Périmètre</h2>
+  <div class="note g">
+    <strong>Vision produit :</strong> Plateforme SaaS multi-tenant d'automatisation administrative pour ESN. L'utilisateur parle à un assistant IA en français naturel — il s'occupe du reste.
+  </div>
+  <div class="g2">
+    <div>
+      <h4>✅ Dans le périmètre</h4>
+      <ul class="ul check">
+        <li>Notes de frais — saisie libre, OCR, frais km</li>
+        <li>CRA mensuel — workflow BROUILLON→SOUMIS→VALIDÉ</li>
+        <li>Congés CP/RTT — demandes &amp; solde</li>
+        <li>Facturation — PDF &amp; Excel client</li>
+        <li>Notifications SSE temps réel</li>
+        <li>Pipeline RAG pgvector + LLM Groq/OpenAI</li>
+        <li>Multi-tenant Keycloak realm-per-tenant</li>
+        <li>Gouvernance IA (audit, PII masking, token budget)</li>
+        <li>Conformité RGPD (droit à l'oubli, portabilité)</li>
+        <li>AWS Production (EKS, RDS, MSK, DR)</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Stack technique</h4>
+      <table>
+        <tr><th>Couche</th><th>Technologie</th></tr>
+        <tr><td>LLM principal</td><td>Groq — llama-3.1-8b + gpt-oss-120b</td></tr>
+        <tr><td>LLM fallback</td><td>OpenAI gpt-4.1-mini (circuit breaker)</td></tr>
+        <tr><td>Embeddings</td><td>OpenAI text-embedding-3-large</td></tr>
+        <tr><td>DB + Vector</td><td>PostgreSQL 16 + pgvector</td></tr>
+        <tr><td>Auth</td><td>Keycloak 24 realm-per-tenant</td></tr>
+        <tr><td>Messaging</td><td>Apache Kafka KRaft</td></tr>
+        <tr><td>Backend</td><td>Spring Boot 3.3 / Java 21</td></tr>
+        <tr><td>Cloud</td><td>AWS EKS + RDS + MSK</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 3. ARCHITECTURE -->
+<div class="section">
+  <div class="eyebrow">Section 3</div>
+  <h2 class="stitle">Architecture technique</h2>
+  <div style="background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8.5pt;padding:20px 24px;border-radius:10px;margin:16px 0;white-space:pre;line-height:1.55;overflow-x:auto">Internet → Route 53 → WAF → ALB (HTTPS)
+                               │
+                      Kong / Ingress K8s
+          ┌────────────┬────────┴────────┬──────────────┐
+          ▼            ▼                 ▼              ▼
+    ai-service    expense-service  activity-service  invoice-service
+      :8081          :8082             :8085            :8083
+          └────────────┴────────┬────────┴──────────────┘
+                                ▼
+                  PostgreSQL 16 + pgvector | Kafka | Keycloak 24
+                                │
+                    notification-service :8084 (SSE hub)
+                                │
+   frontend/:3000   frontend-consultant/:3001   frontend-platform/:3002</div>
+  <div class="g2">
+    <div>
+      <h4>Multi-tenant</h4>
+      <p>Chaque organisation = 1 realm Keycloak. <code>TenantFilter</code> extrait le realm du JWT → <code>TenantContext</code> (ThreadLocal UUID). Toutes les requêtes JPA filtrent par <code>tenant_id</code>.</p>
+    </div>
+    <div>
+      <h4>Résilience LLM</h4>
+      <p>Groq primaire. Sur 5 échecs / 10 appels → circuit ouvert resilience4j → bascule immédiate OpenAI gpt-4.1-mini. Refermeture 30s. SSE broadcast via Kafka (group-id unique par pod <code>${HOSTNAME}</code>).</p>
+    </div>
+  </div>
+</div>
+
+<!-- 4. ROADMAP -->
+<div class="section">
+  <div class="eyebrow">Section 4</div>
+  <h2 class="stitle">Roadmap globale — 8 Sprints / 4 Mois</h2>
+  <table>
+    <thead><tr><th>Sprint</th><th>Mois</th><th>Thème</th><th>Valeur livrée</th></tr></thead>
+    <tbody>
+      <tr style="background:#dbeafe"><td><strong>S1</strong></td><td>Juillet</td><td>Consolidation architecture + Kong</td><td>Architecture propre, routing vers chaque service</td></tr>
+      <tr style="background:#dbeafe"><td><strong>S2</strong></td><td>Juillet</td><td>UX Design System &amp; 3 frontends</td><td>Expérience unifiée, mobile WCAG AA</td></tr>
+      <tr style="background:#f3e8ff"><td><strong>S3</strong></td><td>Août</td><td>Gouvernance IA — Audit, PII Masking</td><td>0 PII vers LLM, traçabilité complète</td></tr>
+      <tr style="background:#f3e8ff"><td><strong>S4</strong></td><td>Août</td><td>Sécurité RGPD &amp; Versioning modèles</td><td>DPIA validé, droit à l'oubli</td></tr>
+      <tr style="background:#f0f9ff"><td><strong>S5</strong></td><td>Septembre</td><td>Facturation end-to-end</td><td>Cycle CRA → Facture → Paiement</td></tr>
+      <tr style="background:#f0f9ff"><td><strong>S6</strong></td><td>Septembre</td><td>Observabilité &amp; SLA</td><td>Grafana, alerting, runbooks</td></tr>
+      <tr style="background:#fffbeb"><td><strong>S7</strong></td><td>Octobre</td><td>AWS Architecture &amp; Terraform</td><td>EKS, RDS, MSK, Secrets Manager</td></tr>
+      <tr style="background:#fffbeb"><td><strong>S8</strong></td><td>Octobre</td><td>Production Deployment &amp; Go-Live</td><td>AWS prod, client pilote, SLA 99.9%</td></tr>
+    </tbody>
+  </table>
+  <div style="background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8pt;padding:14px 24px;border-radius:10px;margin:14px 0;white-space:pre;line-height:1.8">Sem:  W1  W2  W3  W4  W5  W6  W7  W8  W9 W10 W11 W12 W13 W14 W15 W16
+S1    ████████
+S2            ████████
+S3                    ████████
+S4                            ████████
+S5                                    ████████
+S6                                            ████████
+S7                                                    ████████
+S8                                                            ████████
+      └── Juillet ───┘└──── Août ───────┘└─ Septembre ────┘└── Octobre ─────┘</div>
+</div>
+
+
+<!-- ══ SECTION MENSUELLE ══ -->
+<div class="section">
+  <div class="eyebrow">Contexte du mois</div>
+  <h2 class="stitle">Maturation produit & visibilité opérationnelle</h2>
+  <p>Après la sécurisation de la gouvernance IA (Août), Septembre est le mois de la <strong>maturité produit</strong> : le cycle de facturation est complet et l'équipe dispose d'une visibilité totale sur la santé du système en production. C'est la condition sine qua non avant d'aborder la migration AWS en Octobre.</p>
+  <div class="g3">
+    <div class="box kpi"><div class="v">8j</div><div class="l">Délai moyen facturation actuel</div></div>
+    <div class="box kpi"><div class="v">0</div><div class="l">Dashboards de monitoring</div></div>
+    <div class="box kpi"><div class="v">&lt;1h</div><div class="l">MTTD cible (détection incidents)</div></div>
+  </div>
+</div>
+
+<!-- SPRINT 5 -->
+<div class="section">
+  <div class="sprint-card">
+    <div class="sprint-head sh-s5">
+      <div class="sprint-num">S5</div>
+      <div class="sprint-head-info">
+        <h3>Facturation complète — Workflow CRA → Facture → Paiement</h3>
+        <p>Semaines 9-10 · Septembre 2026 · Responsable : Tech Lead Backend</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Workflow cible end-to-end</h4>
+      <table>
+        <thead><tr><th>Étape</th><th>Déclencheur</th><th>Action</th><th>Service</th></tr></thead>
+        <tbody>
+          <tr><td>1. CRA validé</td><td>Admin clique "Valider CRA"</td><td>Statut → VALIDÉ, event cra.validated publié</td><td>activity-service</td></tr>
+          <tr><td>2. Suggestion facture</td><td>Notification SSE à l'admin</td><td>Bouton "Générer la facture" apparaît dans le dashboard</td><td>frontend/</td></tr>
+          <tr><td>3. Génération</td><td>Admin clique "Générer"</td><td>PDF + Excel créés, facture en statut BROUILLON</td><td>invoice-service</td></tr>
+          <tr><td>4. Validation facture</td><td>Admin vérifie les données</td><td>Compléter clientCompanyName, unitPriceHt si manquants</td><td>frontend/</td></tr>
+          <tr><td>5. Envoi</td><td>Admin clique "Marquer Envoyée"</td><td>Statut → ENVOYÉE, date d'envoi loggée</td><td>invoice-service</td></tr>
+          <tr><td>6. Paiement</td><td>Admin reçoit le virement</td><td>Statut → PAYÉE, date de paiement + montant reçu</td><td>invoice-service</td></tr>
+          <tr><td>7. Relance</td><td>Scheduler J+30 sans paiement</td><td>Notification admin : relancer le client</td><td>invoice-service</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Règles de calcul des dates (BUSINESS-RULES)</h4>
+      <table>
+        <thead><tr><th>CRA period</th><th>invoiceDate</th><th>paymentDueDate (45j)</th></tr></thead>
+        <tbody>
+          <tr><td>Juin 2026</td><td>2026-07-01</td><td>2026-08-15</td></tr>
+          <tr><td>Juillet 2026</td><td>2026-08-01</td><td>2026-09-15</td></tr>
+          <tr><td>Août 2026</td><td>2026-09-01</td><td>2026-10-16 (sam → lun)</td></tr>
+        </tbody>
+      </table>
+
+      <div class="g2">
+        <div>
+          <h4>User stories Sprint 5</h4>
+          <ul class="ul">
+            <li>En tant qu'admin, après validation d'un CRA, je vois une notification "Générer la facture pour {consultant} — {mois}" dans mon dashboard</li>
+            <li>En tant qu'admin, je génère la facture en 1 clic — les données seller sont pré-remplies depuis le profil, je complète uniquement le client et le TJM si absents</li>
+            <li>En tant qu'admin, je marque une facture comme "Envoyée" et la date d'envoi est enregistrée automatiquement</li>
+            <li>En tant qu'admin, je marque une facture comme "Payée" avec le montant reçu — l'écart par rapport au montant facturé est calculé</li>
+            <li>En tant qu'admin, je reçois une alerte 30 jours après l'envoi si la facture n'est pas encore payée</li>
+            <li>En tant que platform_admin, je consulte le chiffre d'affaires total par tenant et par mois</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Livrables techniques</h4>
+          <ul class="ul check">
+            <li>InvoiceScheduler.java : job @Scheduled quotidien vérifiant les factures non payées à J+30</li>
+            <li>Invoice statuts : BROUILLON → ENVOYÉE → PAYÉE | ANNULÉE</li>
+            <li>Endpoint PATCH /invoices/{id}/mark-sent (date_envoi)</li>
+            <li>Endpoint PATCH /invoices/{id}/mark-paid (montant_reçu, date_paiement)</li>
+            <li>Dashboard admin : liste factures par statut + indicateurs CA mensuel</li>
+            <li>Notification SSE "Facture en attente de génération" post-validation CRA</li>
+            <li>Export comptabilité : CSV factures par période (pour comptable externe)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="dod">
+        <h4>Definition of Done — Sprint 5</h4>
+        <ul>
+          <li>Workflow complet testé : CRA validé → facture générée → envoyée → payée (parcours E2E)</li>
+          <li>invoiceDate = 1er du mois suivant le CRA (test unitaire)</li>
+          <li>paymentDueDate = invoiceDate + 45j avec gestion week-end (test unitaire)</li>
+          <li>Scheduler relance : déclenché en test avec délai artificiel, alerte SSE reçue</li>
+          <li>Export CSV comptabilité : format validé par un comptable (test d'acceptation)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPRINT 6 -->
+  <div class="sprint-card">
+    <div class="sprint-head sh-s6">
+      <div class="sprint-num">S6</div>
+      <div class="sprint-head-info">
+        <h3>Observabilité, SLA & Performance</h3>
+        <p>Semaines 11-12 · Septembre 2026 · Responsable : DevOps + Tech Lead</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Stack d'observabilité cible</h4>
+      <table>
+        <thead><tr><th>Composant</th><th>Outil</th><th>Rôle</th><th>Déploiement</th></tr></thead>
+        <tbody>
+          <tr><td>Métriques</td><td>Prometheus + Micrometer</td><td>Collecte métriques JVM, HTTP, Kafka, LLM</td><td>namespace monitoring (K8s)</td></tr>
+          <tr><td>Dashboards</td><td>Grafana</td><td>Visualisation temps réel + alertes visuelles</td><td>namespace monitoring</td></tr>
+          <tr><td>Logs structurés</td><td>Loki + Logback JSON</td><td>Centralisation logs JSON de tous les pods</td><td>namespace monitoring</td></tr>
+          <tr><td>Alerting</td><td>Alertmanager</td><td>Routage alertes → email/Slack/PagerDuty</td><td>namespace monitoring</td></tr>
+          <tr><td>Tracing</td><td>OpenTelemetry (partiel)</td><td>Traces distribuées inter-services</td><td>Side-car dans multi-agent</td></tr>
+          <tr><td>Uptime</td><td>Probe Kubernetes</td><td>Liveness + Readiness probes</td><td>Déjà en place — à enrichir</td></tr>
+        </tbody>
+      </table>
+
+      <h4>SLA cibles à définir et monitorer</h4>
+      <div class="sla-box">
+        <h4>Service Level Objectives (SLO)</h4>
+        <div class="metric-row"><span>Disponibilité globale plateforme</span><span class="metric-val">≥ 99.5% / mois (3.6h downtime max)</span></div>
+        <div class="metric-row"><span>Latence p95 API (hors LLM)</span><span class="metric-val">≤ 300ms</span></div>
+        <div class="metric-row"><span>Latence p95 appels LLM Groq</span><span class="metric-val">≤ 3s (Groq normal)</span></div>
+        <div class="metric-row"><span>Latence p95 appels LLM fallback OpenAI</span><span class="metric-val">≤ 8s</span></div>
+        <div class="metric-row"><span>Délai notification SSE (CRA validé → reçu)</span><span class="metric-val">≤ 2s (p95)</span></div>
+        <div class="metric-row"><span>Taux d'erreur HTTP 5xx</span><span class="metric-val">≤ 0.1%</span></div>
+        <div class="metric-row"><span>Taux succès extraction LLM (JSON valide)</span><span class="metric-val">≥ 95%</span></div>
+        <div class="metric-row"><span>MTTD (Mean Time To Detect)</span><span class="metric-val">≤ 1h</span></div>
+        <div class="metric-row"><span>MTTR (Mean Time To Recover)</span><span class="metric-val">≤ 4h</span></div>
+      </div>
+
+      <h4>Dashboards Grafana à créer</h4>
+      <div class="g2">
+        <div>
+          <ul class="ul check">
+            <li><strong>Platform Overview</strong> : SLA uptime, req/s, erreurs 5xx, CPU/RAM par pod</li>
+            <li><strong>LLM Intelligence</strong> : latence par modèle, tokens/min, coût estimé, taux fallback, taux d'erreur JSON</li>
+            <li><strong>Business KPIs</strong> : notes de frais créées/jour, CRA soumis/validés, factures générées/payées</li>
+            <li><strong>Kafka Health</strong> : lag consumer, throughput, partition distribution</li>
+          </ul>
+        </div>
+        <div>
+          <ul class="ul">
+            <li>Alertes Prometheus : pod restart > 3/h → CRITICAL, latence p95 > 1s → WARNING</li>
+            <li>Log format JSON unifié : timestamp, level, service, tenant_id, trace_id, message</li>
+            <li>Corrélation logs → traces → métriques (Grafana Explore)</li>
+            <li>Retention : métriques 30j, logs 15j, traces 7j</li>
+          </ul>
+        </div>
+      </div>
+
+      <h4>User stories Sprint 6</h4>
+      <ul class="ul">
+        <li>En tant que DevOps, je reçois une alerte Slack en moins de 5 minutes si un pod crashe ou si la latence LLM dépasse 5s</li>
+        <li>En tant que Tech Lead, je consulte sur Grafana la latence p95 LLM des 7 derniers jours ventilée par modèle (Groq vs OpenAI fallback)</li>
+        <li>En tant que platform_admin, je consulte le nombre de notes de frais créées par tenant sur le mois courant</li>
+        <li>En tant que DevOps, tous les logs des 5 microservices sont centralisés dans Loki avec trace_id permettant de reconstituer une requête cross-service</li>
+        <li>En tant que Tech Lead, je dispose d'un runbook pour chaque type d'alerte critique (pod down, DB connexions saturées, circuit breaker ouvert)</li>
+      </ul>
+
+      <div class="dod">
+        <h4>Definition of Done — Sprint 6</h4>
+        <ul>
+          <li>Prometheus scrape toutes les métriques /actuator/prometheus des 5 services</li>
+          <li>4 dashboards Grafana opérationnels et importés via ConfigMap</li>
+          <li>Test alerte : tuer un pod → alerte Slack reçue en &lt; 5 min</li>
+          <li>Logs JSON de tous les services centralisés dans Loki</li>
+          <li>SLO Error Budget calculé et visible sur le dashboard Platform Overview</li>
+          <li>Runbook pour 5 alertes critiques documenté dans docs/RUNBOOK-OPS.md</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="eyebrow">Fin de mois</div>
+  <h2 class="stitle">Sprint Review & Rétrospective Septembre</h2>
+  <div class="g2">
+    <div>
+      <h3>Démos à préparer</h3>
+      <ul class="ul">
+        <li>Parcours complet : valider CRA → générer facture → marquer envoyée → marquer payée</li>
+        <li>Dashboard Grafana LLM : montrer une période avec fallback Groq→OpenAI</li>
+        <li>Simuler un crash pod → montrer l'alerte Slack reçue</li>
+        <li>Rechercher une requête dans Loki avec son trace_id</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Go / No-Go AWS (Octobre)</h3>
+      <div class="note g">
+        <strong>Critères Go pour Octobre :</strong><br>
+        ✓ Workflow facturation complet livré<br>
+        ✓ SLO définis et mesurables<br>
+        ✓ Observabilité opérationnelle<br>
+        ✓ DPIA validé (livré en Août)<br>
+        ✓ 0 CVE critique dans OWASP scan
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">IA-INSIGHT Platform · Dossier de conception Septembre 2026 · Confidentiel</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conception Octobre 2026 — IA-INSIGHT Platform</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Space Grotesk',system-ui;font-size:11pt;line-height:1.65;color:#1a1a2e;background:#fff}
+:root{--p:#d97706;--g:#16a34a;--o:#d97706;--r:#dc2626;--v:#7c3aed;--m:#64748b;--l:#fffbeb;--b:#e2e8f0;--d:#0f172a;--aws:#ff9900}
+.page{max-width:920px;margin:0 auto;padding:0 40px}
+.cover{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+  background:linear-gradient(135deg,#0f172a 0%,#1c1917 50%,#92400e 100%);
+  color:#fff;padding:80px 60px;page-break-after:always}
+.cover-eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 16px;
+  font-size:10pt;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:28px}
+.cover-month{font-size:13pt;color:#fcd34d;font-weight:600;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase}
+.cover h1{font-size:38pt;font-weight:800;line-height:1.1;margin-bottom:12px}
+.cover h1 em{color:#ff9900;font-style:normal}
+.cover-sub{font-size:14pt;color:#94a3b8;margin-bottom:44px;max-width:580px}
+.cover-tags{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:48px}
+.tag{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 14px;font-size:9.5pt;color:#cbd5e1}
+.cover-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid rgba(255,255,255,.12);padding-top:28px}
+.meta-item{padding:0 24px 0 0}
+.meta-label{font-size:8.5pt;color:#475569;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+.meta-val{font-size:12pt;font-weight:600;color:#e2e8f0}
+.section{padding:52px 0 28px;page-break-before:always}
+.section:first-of-type{page-break-before:auto}
+.eyebrow{font-size:9pt;font-weight:700;color:var(--aws);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+h2.stitle{font-size:22pt;font-weight:800;color:var(--d);margin-bottom:22px;padding-bottom:12px;border-bottom:3px solid var(--aws)}
+h3{font-size:13pt;font-weight:700;color:var(--d);margin:26px 0 11px}
+h4{font-size:11pt;font-weight:600;color:#92400e;margin:18px 0 8px}
+p{margin-bottom:11px;color:#334155}
+.sprint-card{border:1px solid var(--b);border-radius:14px;overflow:hidden;margin:28px 0;page-break-inside:avoid}
+.sprint-head{padding:22px 28px;display:flex;align-items:center;gap:20px}
+.sh-s7{background:linear-gradient(135deg,#1c1917,#ff9900)}
+.sh-s8{background:linear-gradient(135deg,#14532d,#16a34a)}
+.sprint-num{font-size:32pt;font-weight:900;color:rgba(255,255,255,.2);line-height:1;min-width:52px}
+.sprint-head-info h3{font-size:15pt;color:#fff;margin:0 0 3px}
+.sprint-head-info p{font-size:9.5pt;color:rgba(255,255,255,.65);margin:0}
+.sprint-body{padding:24px 28px}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:10pt}
+th{background:var(--d);color:#fff;padding:9px 14px;text-align:left;font-weight:600;font-size:9.5pt}
+td{padding:8px 14px;border-bottom:1px solid var(--b);vertical-align:top}
+tr:nth-child(even) td{background:#fafaf9}
+.ul{list-style:none;margin:10px 0}
+.ul li{display:flex;gap:9px;padding:6px 0;border-bottom:1px solid var(--b);font-size:10.5pt;color:#334155}
+.ul li:last-child{border-bottom:none}
+.ul li::before{content:"→";color:#92400e;font-weight:700;flex-shrink:0}
+.check li::before{content:"✓";color:var(--g)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:14px 0}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:14px 0}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin:14px 0}
+.box{background:var(--l);border:1px solid var(--b);border-radius:10px;padding:16px}
+.kpi{text-align:center}
+.kpi .v{font-size:26pt;font-weight:800;color:var(--aws)}
+.kpi .l{font-size:8.5pt;color:var(--m);text-transform:uppercase;letter-spacing:.8px}
+.note{border-left:4px solid var(--aws);background:var(--l);padding:14px 18px;margin:16px 0;border-radius:0 8px 8px 0}
+.note.g{border-color:var(--g);background:#f0fdf4}
+.note.r{border-color:var(--r);background:#fef2f2}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:9pt;font-weight:600}
+.bg{background:#dcfce7;color:#15803d}.bb{background:#dbeafe;color:#1d4ed8}
+.bo{background:#ffedd5;color:#c2410c}.bv{background:#f3e8ff;color:#7e22ce}
+.br{background:#fee2e2;color:#b91c1c}.baws{background:#fff3cd;color:#92400e}
+.dod{background:var(--d);color:#e2e8f0;border-radius:10px;padding:20px 24px;margin:18px 0}
+.dod h4{color:#ff9900;margin-bottom:10px}
+.dod ul{list-style:none}
+.dod li{padding:4px 0;font-size:10pt;display:flex;gap:8px}
+.dod li::before{content:"✓";color:#ff9900;flex-shrink:0}
+.aws-service{display:flex;align-items:flex-start;gap:14px;padding:14px 0;border-bottom:1px solid var(--b)}
+.aws-service:last-child{border-bottom:none}
+.aws-icon{font-size:22px;flex-shrink:0;margin-top:2px}
+.aws-name{font-weight:700;color:var(--d);font-size:11pt}
+.aws-sub{font-size:9.5pt;color:var(--m);margin-top:2px}
+.aws-instance{display:inline-block;background:#fff3cd;color:#92400e;border:1px solid #fcd34d;border-radius:6px;padding:1px 8px;font-size:9pt;font-weight:600;margin-top:4px}
+.cost-table td:last-child{font-weight:700;color:var(--g)}
+.cost-total td{background:#0f172a!important;color:#fff;font-weight:700}
+.cost-total td:last-child{color:#ff9900}
+.arch-diagram{background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8.5pt;
+  padding:20px 24px;border-radius:10px;margin:16px 0;white-space:pre;line-height:1.6;overflow-x:auto}
+.footer{margin-top:60px;padding:20px 0;border-top:1px solid var(--b);text-align:center;color:var(--m);font-size:9pt}
+@media print{
+  body{font-size:10pt}
+  .cover,.section{page-break-before:always;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .sprint-card{page-break-inside:avoid}
+  .sprint-head,.dod,.arch-diagram{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{margin:18mm 14mm}
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-eyebrow">📅 Dossier de Conception Mensuel</div>
+  <div class="cover-month">Octobre 2026 — Mois 4 / 4</div>
+  <h1>AWS Production<br><em>& Go-Live</em></h1>
+  <p class="cover-sub">Migrer l'infrastructure vers AWS (EKS, RDS, MSK, ALB, Secrets Manager), déployer en production multi-région avec haute disponibilité, disaster recovery et qualification finale.</p>
+  <div class="cover-tags">
+    <span class="tag">☁️ AWS EKS</span>
+    <span class="tag">🗄 RDS PostgreSQL + pgvector</span>
+    <span class="tag">📨 Amazon MSK (Kafka)</span>
+    <span class="tag">🔐 AWS Secrets Manager</span>
+    <span class="tag">⚖️ ALB + WAF</span>
+    <span class="tag">🔁 Disaster Recovery</span>
+    <span class="tag">✅ Go-Live</span>
+  </div>
+  <div class="cover-meta">
+    <div class="meta-item"><div class="meta-label">Sprints</div><div class="meta-val">S7 + S8</div></div>
+    <div class="meta-item"><div class="meta-label">Durée</div><div class="meta-val">4 semaines</div></div>
+    <div class="meta-item"><div class="meta-label">Statut</div><div class="meta-val">📋 Planifié</div></div>
+    <div class="meta-item"><div class="meta-label">Équipe</div><div class="meta-val">2 devs + 2 DevOps/Cloud</div></div>
+  </div>
+</div>
+
+<div class="page">
+
+<!-- ══════════════════════════════════════════
+     CONCEPTION DU PROJET (commun aux 4 mois)
+══════════════════════════════════════════ -->
+
+<!-- SOMMAIRE -->
+<div class="section" style="page-break-before:auto">
+  <h2 class="stitle" style="border-color:#334155">Sommaire</h2>
+  <table>
+    <thead><tr><th>#</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Contexte &amp; Besoin métier</td></tr>
+      <tr><td>2</td><td>Solution proposée &amp; Périmètre</td></tr>
+      <tr><td>3</td><td>Architecture technique</td></tr>
+      <tr><td>4</td><td>Roadmap globale — 8 sprints / 4 mois</td></tr>
+      <tr><td>5</td><td>Sprints du mois — Octobre 2026</td></tr>
+      <tr><td>6</td><td>Sprint Review &amp; Rétrospective</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 1. CONTEXTE -->
+<div class="section">
+  <div class="eyebrow">Section 1</div>
+  <h2 class="stitle">Contexte &amp; Besoin métier</h2>
+  <h3>Le problème des ESN aujourd'hui</h3>
+  <p>Les ESN et cabinets de conseil IT gèrent des dizaines à des centaines de consultants disséminés chez leurs clients. Chaque mois, ce modèle génère une charge administrative considérable :</p>
+  <div class="g3" style="margin:20px 0">
+    <div class="box kpi"><div class="v">3h</div><div class="l">Perdues par consultant/mois en admin</div></div>
+    <div class="box kpi"><div class="v">23%</div><div class="l">Notes de frais avec erreurs</div></div>
+    <div class="box kpi"><div class="v">8j</div><div class="l">Délai moyen facturation post-CRA</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Processus</th><th>Situation actuelle</th><th>Impact</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Notes de frais</strong></td><td>Saisie manuelle Excel, scan PDF par email</td><td>Erreurs, pièces perdues, retards remboursement</td></tr>
+      <tr><td><strong>CRA mensuel</strong></td><td>Feuille Excel partagée ou formulaire papier</td><td>Retards validation → retards facturation client</td></tr>
+      <tr><td><strong>Facturation client</strong></td><td>Factures Word/Excel manuelles</td><td>Risques TVA, numérotation incohérente</td></tr>
+      <tr><td><strong>Gestion congés</strong></td><td>Email ou HR tool déconnecté des outils métier</td><td>Calcul frais km erroné si absences non remontées</td></tr>
+      <tr><td><strong>Visibilité manager</strong></td><td>Aucun tableau de bord temps réel</td><td>Arbitrages retardés, perte de contexte</td></tr>
+    </tbody>
+  </table>
+  <div class="g2" style="margin-top:16px">
+    <div>
+      <h4>Besoins consultant</h4>
+      <ul class="ul">
+        <li>Saisir une note de frais en langage naturel</li>
+        <li>Photographier un justificatif → OCR automatique</li>
+        <li>Frais km avec exclusion automatique absences/congés</li>
+        <li>Soumettre son CRA depuis n'importe quel appareil</li>
+        <li>Notifications temps réel sur les décisions admin</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Besoins manager / admin</h4>
+      <ul class="ul">
+        <li>Valider/refuser frais et CRA en 1 clic</li>
+        <li>Génération automatique de factures PDF post-CRA</li>
+        <li>Tableau de bord global : frais, CRA, factures</li>
+        <li>Console multi-tenant : piloter plusieurs ESN</li>
+        <li>Conformité RGPD &amp; audit trail LLM</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 2. SOLUTION -->
+<div class="section">
+  <div class="eyebrow">Section 2</div>
+  <h2 class="stitle">Solution proposée &amp; Périmètre</h2>
+  <div class="note g">
+    <strong>Vision produit :</strong> Plateforme SaaS multi-tenant d'automatisation administrative pour ESN. L'utilisateur parle à un assistant IA en français naturel — il s'occupe du reste.
+  </div>
+  <div class="g2">
+    <div>
+      <h4>✅ Dans le périmètre</h4>
+      <ul class="ul check">
+        <li>Notes de frais — saisie libre, OCR, frais km</li>
+        <li>CRA mensuel — workflow BROUILLON→SOUMIS→VALIDÉ</li>
+        <li>Congés CP/RTT — demandes &amp; solde</li>
+        <li>Facturation — PDF &amp; Excel client</li>
+        <li>Notifications SSE temps réel</li>
+        <li>Pipeline RAG pgvector + LLM Groq/OpenAI</li>
+        <li>Multi-tenant Keycloak realm-per-tenant</li>
+        <li>Gouvernance IA (audit, PII masking, token budget)</li>
+        <li>Conformité RGPD (droit à l'oubli, portabilité)</li>
+        <li>AWS Production (EKS, RDS, MSK, DR)</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Stack technique</h4>
+      <table>
+        <tr><th>Couche</th><th>Technologie</th></tr>
+        <tr><td>LLM principal</td><td>Groq — llama-3.1-8b + gpt-oss-120b</td></tr>
+        <tr><td>LLM fallback</td><td>OpenAI gpt-4.1-mini (circuit breaker)</td></tr>
+        <tr><td>Embeddings</td><td>OpenAI text-embedding-3-large</td></tr>
+        <tr><td>DB + Vector</td><td>PostgreSQL 16 + pgvector</td></tr>
+        <tr><td>Auth</td><td>Keycloak 24 realm-per-tenant</td></tr>
+        <tr><td>Messaging</td><td>Apache Kafka KRaft</td></tr>
+        <tr><td>Backend</td><td>Spring Boot 3.3 / Java 21</td></tr>
+        <tr><td>Cloud</td><td>AWS EKS + RDS + MSK</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 3. ARCHITECTURE -->
+<div class="section">
+  <div class="eyebrow">Section 3</div>
+  <h2 class="stitle">Architecture technique</h2>
+  <div style="background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8.5pt;padding:20px 24px;border-radius:10px;margin:16px 0;white-space:pre;line-height:1.55;overflow-x:auto">Internet → Route 53 → WAF → ALB (HTTPS)
+                               │
+                      Kong / Ingress K8s
+          ┌────────────┬────────┴────────┬──────────────┐
+          ▼            ▼                 ▼              ▼
+    ai-service    expense-service  activity-service  invoice-service
+      :8081          :8082             :8085            :8083
+          └────────────┴────────┬────────┴──────────────┘
+                                ▼
+                  PostgreSQL 16 + pgvector | Kafka | Keycloak 24
+                                │
+                    notification-service :8084 (SSE hub)
+                                │
+   frontend/:3000   frontend-consultant/:3001   frontend-platform/:3002</div>
+  <div class="g2">
+    <div>
+      <h4>Multi-tenant</h4>
+      <p>Chaque organisation = 1 realm Keycloak. <code>TenantFilter</code> extrait le realm du JWT → <code>TenantContext</code> (ThreadLocal UUID). Toutes les requêtes JPA filtrent par <code>tenant_id</code>.</p>
+    </div>
+    <div>
+      <h4>Résilience LLM</h4>
+      <p>Groq primaire. Sur 5 échecs / 10 appels → circuit ouvert resilience4j → bascule immédiate OpenAI gpt-4.1-mini. Refermeture 30s. SSE broadcast via Kafka (group-id unique par pod <code>${HOSTNAME}</code>).</p>
+    </div>
+  </div>
+</div>
+
+<!-- 4. ROADMAP -->
+<div class="section">
+  <div class="eyebrow">Section 4</div>
+  <h2 class="stitle">Roadmap globale — 8 Sprints / 4 Mois</h2>
+  <table>
+    <thead><tr><th>Sprint</th><th>Mois</th><th>Thème</th><th>Valeur livrée</th></tr></thead>
+    <tbody>
+      <tr style="background:#dbeafe"><td><strong>S1</strong></td><td>Juillet</td><td>Consolidation architecture + Kong</td><td>Architecture propre, routing vers chaque service</td></tr>
+      <tr style="background:#dbeafe"><td><strong>S2</strong></td><td>Juillet</td><td>UX Design System &amp; 3 frontends</td><td>Expérience unifiée, mobile WCAG AA</td></tr>
+      <tr style="background:#f3e8ff"><td><strong>S3</strong></td><td>Août</td><td>Gouvernance IA — Audit, PII Masking</td><td>0 PII vers LLM, traçabilité complète</td></tr>
+      <tr style="background:#f3e8ff"><td><strong>S4</strong></td><td>Août</td><td>Sécurité RGPD &amp; Versioning modèles</td><td>DPIA validé, droit à l'oubli</td></tr>
+      <tr style="background:#f0f9ff"><td><strong>S5</strong></td><td>Septembre</td><td>Facturation end-to-end</td><td>Cycle CRA → Facture → Paiement</td></tr>
+      <tr style="background:#f0f9ff"><td><strong>S6</strong></td><td>Septembre</td><td>Observabilité &amp; SLA</td><td>Grafana, alerting, runbooks</td></tr>
+      <tr style="background:#fffbeb"><td><strong>S7</strong></td><td>Octobre</td><td>AWS Architecture &amp; Terraform</td><td>EKS, RDS, MSK, Secrets Manager</td></tr>
+      <tr style="background:#fffbeb"><td><strong>S8</strong></td><td>Octobre</td><td>Production Deployment &amp; Go-Live</td><td>AWS prod, client pilote, SLA 99.9%</td></tr>
+    </tbody>
+  </table>
+  <div style="background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8pt;padding:14px 24px;border-radius:10px;margin:14px 0;white-space:pre;line-height:1.8">Sem:  W1  W2  W3  W4  W5  W6  W7  W8  W9 W10 W11 W12 W13 W14 W15 W16
+S1    ████████
+S2            ████████
+S3                    ████████
+S4                            ████████
+S5                                    ████████
+S6                                            ████████
+S7                                                    ████████
+S8                                                            ████████
+      └── Juillet ───┘└──── Août ───────┘└─ Septembre ────┘└── Octobre ─────┘</div>
+</div>
+
+
+<!-- ══ SECTION MENSUELLE ══ -->
+<div class="section">
+  <div class="eyebrow">Contexte du mois</div>
+  <h2 class="stitle">De Kubernetes local à AWS Production</h2>
+  <p>L'infrastructure actuelle tourne sur un cluster Kubernetes local (ou on-premise). Octobre opère la transition vers <strong>AWS (eu-west-3 Paris)</strong> avec une architecture cloud-native HA, Disaster Recovery cross-région, et toutes les certifications de sécurité nécessaires à la commercialisation B2B.</p>
+
+  <div class="g3">
+    <div class="box kpi"><div class="v">99.9%</div><div class="l">SLA cible AWS production</div></div>
+    <div class="box kpi"><div class="v">eu-west-3</div><div class="l">Région primaire (Paris)</div></div>
+    <div class="box kpi"><div class="v">RTO 4h</div><div class="l">Recovery Time Objective</div></div>
+  </div>
+
+  <div class="note">
+    <strong>Prérequis Go (hérités de Septembre) :</strong> SLO définis et mesurables ✓ · DPIA validé ✓ · 0 CVE critique ✓ · Workflow facturation complet ✓ · Dashboards observabilité opérationnels ✓
+  </div>
+</div>
+
+<!-- SPRINT 7 -->
+<div class="section">
+  <div class="sprint-card">
+    <div class="sprint-head sh-s7">
+      <div class="sprint-num">S7</div>
+      <div class="sprint-head-info">
+        <h3>AWS Architecture & Infrastructure as Code</h3>
+        <p>Semaines 13-14 · Octobre 2026 · Responsable : Cloud Architect + DevOps</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Architecture AWS cible</h4>
+      <div class="arch-diagram">  Internet
+      │
+      ▼
+  Route 53  (DNS géré)  api.ia-insight.fr / auth.ia-insight.fr
+      │
+      ▼
+  AWS WAF  (protection DDoS, règles OWASP)
+      │
+      ▼
+  Application Load Balancer  (ALB, HTTPS, certificat ACM)
+      │
+      ├────────────────────────────────┐
+      ▼                                ▼
+  EKS Cluster eu-west-3           EKS Cluster eu-west-1 (DR)
+  (Paris — primaire)              (Irlande — standby)
+  ┌──────────────────────┐
+  │  Node Group SYSTEM   │  t3.medium × 2  (Keycloak, Ingress, monitoring)
+  │  Node Group APP      │  c5.xlarge × 3-8 (5 microservices, auto-scaling)
+  │  Node Group KAFKA    │  m5.large  × 3   (si MSK non utilisé)
+  └──────────────────────┘
+      │
+      ├─── Amazon RDS PostgreSQL 16 Multi-AZ
+      │    db.r5.large · 200 GB gp3 · pgvector · Read Replica (analytics)
+      │
+      ├─── Amazon MSK (Kafka KRaft)
+      │    kafka.m5.large × 3 brokers · 3 AZ · replication-factor 3
+      │
+      ├─── Amazon S3
+      │    ia-insight-invoices · ia-insight-receipts · ia-insight-backups
+      │
+      ├─── AWS Secrets Manager
+      │    OPENAI_API_KEY · GROQ_API_KEY · DB credentials · Keycloak admin
+      │
+      └─── Amazon CloudWatch + Grafana Cloud
+           Métriques, logs (CloudWatch Logs → Loki), alertes</div>
+
+      <h4>Services AWS retenus & justification</h4>
+
+      <div class="aws-service">
+        <div class="aws-icon">🖥</div>
+        <div>
+          <div class="aws-name">Amazon EKS (Elastic Kubernetes Service)</div>
+          <div class="aws-sub">Cluster managé — pas de gestion du control plane. Compatible avec tous nos manifests K8s existants (0 réécriture).</div>
+          <div><span class="aws-instance">System: t3.medium × 2</span> <span class="aws-instance">App: c5.xlarge × 3→8</span> <span class="aws-instance">Auto Scaling Group</span></div>
+        </div>
+      </div>
+      <div class="aws-service">
+        <div class="aws-icon">🗄</div>
+        <div>
+          <div class="aws-name">Amazon RDS for PostgreSQL 16 — Multi-AZ</div>
+          <div class="aws-sub">Failover automatique &lt;60s. Extension pgvector supportée. Snapshots quotidiens 7j. Chiffrement at-rest KMS.</div>
+          <div><span class="aws-instance">Prod: db.r5.large (2vCPU, 16GB)</span> <span class="aws-instance">Dev/Staging: db.t3.medium</span> <span class="aws-instance">200GB gp3</span></div>
+        </div>
+      </div>
+      <div class="aws-service">
+        <div class="aws-icon">📨</div>
+        <div>
+          <div class="aws-name">Amazon MSK — Managed Kafka</div>
+          <div class="aws-sub">Kafka KRaft managé. Remplace notre Kafka K8s auto-géré. Même API, zéro changement applicatif. Brokers en 3 AZ.</div>
+          <div><span class="aws-instance">kafka.m5.large × 3 brokers</span> <span class="aws-instance">200GB EBS par broker</span> <span class="aws-instance">TLS activé</span></div>
+        </div>
+      </div>
+      <div class="aws-service">
+        <div class="aws-icon">🔐</div>
+        <div>
+          <div class="aws-name">AWS Secrets Manager</div>
+          <div class="aws-sub">Remplace Sealed Secrets (Bitnami). Rotation automatique des credentials. Intégration native EKS via IRSA (IAM Roles for Service Accounts).</div>
+          <div><span class="aws-instance">Secrets: OPENAI_API_KEY, GROQ_API_KEY, DB creds, Keycloak admin</span></div>
+        </div>
+      </div>
+      <div class="aws-service">
+        <div class="aws-icon">⚖️</div>
+        <div>
+          <div class="aws-name">Application Load Balancer + AWS WAF</div>
+          <div class="aws-sub">Remplace Kong en entrée. Règles WAF OWASP Core Rule Set. Certificat SSL via ACM (auto-renewal). Path routing vers les services via Ingress K8s.</div>
+          <div><span class="aws-instance">ALB avec AWS WAF v2</span> <span class="aws-instance">ACM TLS auto-renew</span> <span class="aws-instance">Target groups par service</span></div>
+        </div>
+      </div>
+      <div class="aws-service">
+        <div class="aws-icon">📦</div>
+        <div>
+          <div class="aws-name">Amazon S3 + ECR</div>
+          <div class="aws-sub">S3 : stockage objets (factures PDF, justificatifs OCR, backups DB). ECR : registre Docker privé pour les 5 images microservices.</div>
+          <div><span class="aws-instance">S3 Standard-IA (factures &gt;30j)</span> <span class="aws-instance">S3 Glacier (archives &gt;1an)</span> <span class="aws-instance">ECR scan vulnérabilités</span></div>
+        </div>
+      </div>
+
+      <h4>Estimation des coûts AWS (mensuel)</h4>
+      <table class="cost-table">
+        <thead><tr><th>Service</th><th>Config</th><th>Dev/Staging</th><th>Production</th></tr></thead>
+        <tbody>
+          <tr><td>EKS Control Plane</td><td>1 cluster</td><td>$73</td><td>$73 × 2 (+ DR)</td></tr>
+          <tr><td>EC2 Worker Nodes</td><td>t3.medium × 2 + c5.xlarge × 3</td><td>$120</td><td>$380 (× 3 nodes min)</td></tr>
+          <tr><td>RDS PostgreSQL Multi-AZ</td><td>db.r5.large 200GB</td><td>$80 (t3.medium)</td><td>$380</td></tr>
+          <tr><td>Amazon MSK</td><td>kafka.m5.large × 3</td><td>$150 (t3.small×3)</td><td>$450</td></tr>
+          <tr><td>ALB + WAF</td><td>Standard</td><td>$25</td><td>$80</td></tr>
+          <tr><td>S3 (stockage)</td><td>~50GB/mois</td><td>$5</td><td>$25</td></tr>
+          <tr><td>Secrets Manager</td><td>10 secrets</td><td>$5</td><td>$10</td></tr>
+          <tr><td>CloudWatch / Logs</td><td>Standard</td><td>$20</td><td>$60</td></tr>
+          <tr><td>ECR</td><td>5 images</td><td>$5</td><td>$10</td></tr>
+          <tr><td>Route 53 + ACM</td><td>—</td><td>$5</td><td>$10</td></tr>
+          <tr class="cost-total"><td colspan="2"><strong>TOTAL ESTIMÉ</strong></td><td><strong>~$490/mois</strong></td><td><strong>~$1 480/mois</strong></td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:9.5pt;color:#64748b;">* Estimations basées sur us-east-1 pricing, eu-west-3 Paris ~10% plus cher. Compute Savings Plans (-30%) et Reserved Instances (-40%) réduisent significativement en engagement 1 an.</p>
+
+      <h4>Infrastructure as Code — Terraform</h4>
+      <div class="g2">
+        <div>
+          <ul class="ul check">
+            <li>Module EKS : cluster, node groups, IRSA, addons (CoreDNS, EBS CSI)</li>
+            <li>Module RDS : instance Multi-AZ, subnet group, security groups, parameter group pgvector</li>
+            <li>Module MSK : cluster, config Kafka, security groups</li>
+            <li>Module ALB + WAF : listener rules, WAF ACL, ACM cert</li>
+            <li>Module S3 : buckets avec versioning, lifecycle policies, encryption KMS</li>
+            <li>Module Secrets Manager : secrets avec rotation policies</li>
+          </ul>
+        </div>
+        <div>
+          <ul class="ul">
+            <li>State Terraform dans S3 + DynamoDB lock</li>
+            <li>Workspaces : dev / staging / prod</li>
+            <li>CI/CD Terraform : plan sur PR, apply sur merge main</li>
+            <li>Tagging AWS obligatoire : Environment, Project, CostCenter, Owner</li>
+            <li>Budget AWS Budgets : alerte si dépense > 120% prévu</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="dod">
+        <h4>Definition of Done — Sprint 7</h4>
+        <ul>
+          <li>Terraform plan sans erreur sur les 6 modules</li>
+          <li>EKS cluster opérationnel en eu-west-3 : kubectl get nodes → 5 nodes Ready</li>
+          <li>RDS accessible depuis les pods EKS, pgvector extension activée</li>
+          <li>MSK cluster : les 5 topics principaux créés, consumer groups actifs</li>
+          <li>Secrets Manager : les 5 microservices lisent leurs secrets via IRSA sans credentials hardcodés</li>
+          <li>Budget AWS configuré avec alerte à $1 800/mois</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPRINT 8 -->
+  <div class="sprint-card">
+    <div class="sprint-head sh-s8">
+      <div class="sprint-num">S8</div>
+      <div class="sprint-head-info">
+        <h3>Production Deployment, Disaster Recovery & Go-Live</h3>
+        <p>Semaines 15-16 · Octobre 2026 · Responsable : DevOps + Tech Lead + Product Owner</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Plan de déploiement Production (Blue/Green)</h4>
+      <table>
+        <thead><tr><th>Phase</th><th>Action</th><th>Validation</th><th>Rollback</th></tr></thead>
+        <tbody>
+          <tr><td><strong>J-7</strong></td><td>Déploiement environnement staging (clone prod)</td><td>Smoke-test.sh 100% vert</td><td>Détruire stack staging</td></tr>
+          <tr><td><strong>J-5</strong></td><td>Tests de charge : 100 utilisateurs simultanés</td><td>p95 &lt;300ms, 0 error 5xx</td><td>Scale down si instable</td></tr>
+          <tr><td><strong>J-3</strong></td><td>Dry-run migration données vers RDS AWS</td><td>pg_dump / pg_restore validé, 0 perte</td><td>Restaurer depuis backup</td></tr>
+          <tr><td><strong>J-1</strong></td><td>Freeze des nouvelles features</td><td>Git tag v1.0.0</td><td>—</td></tr>
+          <tr><td><strong>J0 (nuit)</strong></td><td>Migration données prod + bascule DNS</td><td>Tous les services UP, SSE fonctionnel</td><td>Revenir sur DNS K8s local</td></tr>
+          <tr><td><strong>J+1</strong></td><td>Monitoring intensif 24h</td><td>0 alerte critique, SLA respecté</td><td>Rollback DNS disponible &lt;5min</td></tr>
+          <tr><td><strong>J+7</strong></td><td>Déclaration Go-Live officielle</td><td>Client ESN pilote validé</td><td>—</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Disaster Recovery (DR)</h4>
+      <div class="g2">
+        <div>
+          <h4>Stratégie Warm Standby</h4>
+          <ul class="ul">
+            <li><strong>Région DR</strong> : eu-west-1 (Irlande) — latence &lt;30ms depuis Paris</li>
+            <li><strong>RDS</strong> : Cross-Region Read Replica → promotion en &lt;10min en cas de panne Paris</li>
+            <li><strong>MSK</strong> : MirrorMaker 2 réplique les topics critiques (platform.notifications, cra.*) vers Irlande</li>
+            <li><strong>S3</strong> : Cross-Region Replication activée (RPO = 15min)</li>
+            <li><strong>EKS DR</strong> : cluster standby avec 0 pods (scale-up en 5min via Terraform apply)</li>
+            <li><strong>DNS failover</strong> : Route 53 Health Check → bascule automatique si Paris KO >2min</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Objectifs RTO / RPO</h4>
+          <table>
+            <thead><tr><th>Métrique</th><th>Cible</th></tr></thead>
+            <tbody>
+              <tr><td>RTO (Recovery Time Objective)</td><td>≤ 4 heures</td></tr>
+              <tr><td>RPO (Recovery Point Objective)</td><td>≤ 15 minutes</td></tr>
+              <tr><td>Exercice DR (test)</td><td>1× par trimestre</td></tr>
+              <tr><td>Backup RDS</td><td>Quotidien, rétention 30j</td></tr>
+              <tr><td>Snapshot manuel pré-release</td><td>Avant chaque déploiement</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <h4>Checklist Go-Live finale</h4>
+      <div class="g2">
+        <div>
+          <h4>✅ Technique</h4>
+          <ul class="ul check">
+            <li>TLS HTTPS sur tous les endpoints publics (ACM)</li>
+            <li>WAF activé avec Core Rule Set OWASP</li>
+            <li>0 secret hardcodé dans le code ou les manifests</li>
+            <li>Toutes les images Docker scannées (ECR scan + Trivy)</li>
+            <li>NetworkPolicy K8s : services isolés, pas d'accès inter-namespaces non autorisés</li>
+            <li>HPA configuré (ai-service, expense-service : CPU > 70%)</li>
+            <li>PodDisruptionBudget : min 1 pod disponible par service</li>
+            <li>Probes liveness/readiness sur les 5 services</li>
+            <li>Smoke-test.sh 15/15 vert en production</li>
+            <li>Migration données : 0 perte, hash vérifié (MD5 source = destination)</li>
+          </ul>
+        </div>
+        <div>
+          <h4>✅ Business & Légal</h4>
+          <ul class="ul check">
+            <li>DPIA signé DPO et archivé</li>
+            <li>CGU et Politique de confidentialité publiées</li>
+            <li>Contrat de traitement des données (DPA) signé avec le client pilote</li>
+            <li>Mentions légales accessibles depuis les 3 frontends</li>
+            <li>Registre des traitements à jour</li>
+            <li>Procédure de réponse aux demandes RGPD documentée</li>
+            <li>SLA contractuel défini avec le client pilote (99.5%)</li>
+            <li>Support L1/L2 : runbook, escalade, horaires</li>
+          </ul>
+        </div>
+      </div>
+
+      <h4>Formation équipe client pilote</h4>
+      <table>
+        <thead><tr><th>Public</th><th>Durée</th><th>Contenu</th><th>Format</th></tr></thead>
+        <tbody>
+          <tr><td>Consultants</td><td>1h</td><td>Saisir une note de frais, soumettre un CRA, demander des congés</td><td>Démo live + vidéo replay</td></tr>
+          <tr><td>Managers/Admins</td><td>2h</td><td>Workflow approbation, génération factures, rapports, console tenants</td><td>Atelier pratique</td></tr>
+          <tr><td>IT Client</td><td>1h</td><td>Keycloak SSO, création comptes, RGPD droits utilisateurs</td><td>Documentation + Q&A</td></tr>
+        </tbody>
+      </table>
+
+      <div class="dod">
+        <h4>Definition of Done — Sprint 8 = Go-Live</h4>
+        <ul>
+          <li>Tous les endpoints répondent sur api.ia-insight.fr (HTTPS 200/401)</li>
+          <li>Client pilote ESN connecté avec son realm Keycloak dédié</li>
+          <li>1ère note de frais créée en production par un vrai consultant</li>
+          <li>1er CRA soumis et validé avec notification SSE reçue en &lt;2s</li>
+          <li>Dashboard Grafana : SLA uptime 100% sur les premières 24h</li>
+          <li>0 incident critique dans les 7 premiers jours</li>
+          <li>Rétrospective projet complète documentée</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BILAN 4 MOIS -->
+<div class="section">
+  <div class="eyebrow">Bilan du programme</div>
+  <h2 class="stitle">Récapitulatif des 8 Sprints — 4 Mois</h2>
+
+  <table>
+    <thead><tr><th>Sprint</th><th>Mois</th><th>Thème</th><th>Valeur livrée</th><th>Statut final</th></tr></thead>
+    <tbody>
+      <tr><td><strong>S1</strong></td><td>Juillet</td><td>Consolidation microservices + Kong</td><td>Architecture propre, routing correct</td><td><span class="badge bg">✓ Livré</span></td></tr>
+      <tr><td><strong>S2</strong></td><td>Juillet</td><td>UX Design System & Responsive</td><td>Expérience unifiée, mobile fonctionnel</td><td><span class="badge bg">✓ Livré</span></td></tr>
+      <tr><td><strong>S3</strong></td><td>Août</td><td>Gouvernance IA & PII Masking</td><td>Audit trail complet, 0 PII fuite</td><td><span class="badge bg">✓ Livré</span></td></tr>
+      <tr><td><strong>S4</strong></td><td>Août</td><td>Sécurité RGPD & Versioning modèles</td><td>DPIA validé, droit à l'oubli opérationnel</td><td><span class="badge bg">✓ Livré</span></td></tr>
+      <tr><td><strong>S5</strong></td><td>Septembre</td><td>Facturation end-to-end</td><td>Cycle CRA→Facture→Paiement complet</td><td><span class="badge bg">✓ Livré</span></td></tr>
+      <tr><td><strong>S6</strong></td><td>Septembre</td><td>Observabilité & SLA</td><td>Grafana, alerting, SLO mesurables</td><td><span class="badge bg">✓ Livré</span></td></tr>
+      <tr><td><strong>S7</strong></td><td>Octobre</td><td>AWS Architecture & Terraform</td><td>Infrastructure AWS production ready</td><td><span class="badge bg">✓ Livré</span></td></tr>
+      <tr><td><strong>S8</strong></td><td>Octobre</td><td>Production Deployment & Go-Live</td><td>Plateforme en production, client pilote</td><td><span class="badge bg">✓ Livré</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note g" style="margin-top:28px;">
+    <strong>🎉 Objectif atteint :</strong> En 4 mois, la plateforme IA-INSIGHT est passée d'un monolithe K8s local à une architecture microservices cloud-native sur AWS, conforme RGPD, avec gouvernance IA, facturation automatisée et SLA 99.9% garanti. Prête pour la commercialisation B2B auprès des ESN.
+  </div>
+</div>
+
+<div class="footer">IA-INSIGHT Platform · Dossier de conception Octobre 2026 · Confidentiel — Version finale Go-Live</div>
+</div>
+</body>
+</html>

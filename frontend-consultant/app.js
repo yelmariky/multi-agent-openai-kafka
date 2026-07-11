@@ -143,8 +143,58 @@ function showApp(user) {
 // ============================================================
 document.getElementById('logout-btn')?.addEventListener('click', () => clearSession());
 
+function showOrgNotFound(slug) {
+  document.body.innerHTML = `
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+      body { margin:0; font-family:'Space Grotesk',system-ui; }
+    </style>
+    <div style="
+      min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(44,229,167,.13), transparent 34%),
+        radial-gradient(circle at 82% 4%,  rgba(122,215,255,.11), transparent 30%),
+        #0d1017;
+    ">
+      <div style="width:100%;max-width:480px;text-align:center;">
+        <div style="
+          width:60px;height:60px;border-radius:16px;margin:0 auto 24px;
+          background:linear-gradient(135deg,rgba(239,68,68,.18),rgba(239,68,68,.08));
+          border:1px solid rgba(239,68,68,.3);
+          display:flex;align-items:center;justify-content:center;font-size:26px;
+        ">🏢</div>
+        <h1 style="font-size:22px;font-weight:700;color:#ecf1ff;margin:0 0 10px;">Organisation introuvable</h1>
+        <p style="color:#a8b3c6;font-size:14px;margin:0 0 20px;line-height:1.6;">
+          Aucune organisation ne correspond au slug<br>
+          <code style="
+            display:inline-block;margin-top:6px;padding:4px 12px;border-radius:8px;
+            background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);
+            color:#fca5a5;font-size:13px;font-family:monospace;
+          ">${slug}</code>
+        </p>
+        <p style="color:#64748b;font-size:13px;margin:0 0 32px;">
+          Vérifiez l'orthographe ou contactez votre administrateur.
+        </p>
+        <a href="/tenant-select.html" style="
+          display:inline-flex;align-items:center;gap:8px;
+          background:#2ce5a7;color:#0d1017;font-weight:700;font-size:14px;
+          border-radius:10px;padding:11px 24px;text-decoration:none;
+          transition:opacity .15s;
+        ">
+          ← Choisir une autre organisation
+        </a>
+      </div>
+    </div>`;
+}
+
 (async () => {
   try {
+    const realmUrl = `${_cfg.keycloakUrl}/realms/${encodeURIComponent(TENANT_SLUG)}`;
+    const realmCheck = await fetch(realmUrl).catch(() => null);
+    if (!realmCheck || !realmCheck.ok) {
+      showOrgNotFound(TENANT_SLUG);
+      return;
+    }
     await initKeycloak();
     const user = getSession();
     if (user) showApp(user);
@@ -1566,7 +1616,6 @@ let notesAbsences = []; // [{ from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }]
 
 function initNotes(user) {
   document.getElementById('notes-load-absences').addEventListener('click', () => loadAbsencesForNotes(user));
-  document.getElementById('notes-add-absence').addEventListener('click',   addNotesAbsence);
   document.getElementById('notes-submit').addEventListener('click',        () => submitNotesSaisie(user));
   document.getElementById('notes-upload-btn').addEventListener('click',    () => uploadJustificatif(user));
   document.getElementById('notes-report-load').addEventListener('click',   () => loadNotesReport(user));
@@ -1787,12 +1836,64 @@ async function mergeApprovedLeaves(existing, user, monthStr) {
   return [...existing, ...extra].sort((a, b) => a.from.localeCompare(b.from));
 }
 
+/** Fusionne des entrées jour-par-jour en plages continues ({from, to}[]). */
+function mergeConsecutiveDays(periods) {
+  if (!periods.length) return [];
+  const sorted = [...periods].sort((a, b) => a.from.localeCompare(b.from));
+  const ranges = [];
+  let cur = { from: sorted[0].from, to: sorted[0].to };
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(cur.to);
+    const next = new Date(sorted[i].from);
+    prev.setDate(prev.getDate() + 1);
+    if (prev >= next) {
+      if (sorted[i].to > cur.to) cur.to = sorted[i].to;
+    } else {
+      ranges.push(cur);
+      cur = { from: sorted[i].from, to: sorted[i].to };
+    }
+  }
+  ranges.push(cur);
+  return ranges;
+}
+
+function fmtDate(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 function renderNotesAbsences() {
-  const list = document.getElementById('notes-absences-list');
+  const summary = document.getElementById('notes-absences-summary');
+  const list    = document.getElementById('notes-absences-list');
+
   if (!notesAbsences.length) {
-    list.innerHTML = '<p class="muted-sm">Aucune absence. Ajoutez une période si besoin.</p>';
+    summary.innerHTML = '<p class="muted-sm">Aucune absence trouvée pour ce mois.</p>';
+    list.style.display = 'none';
     return;
   }
+
+  const n      = notesAbsences.length;
+  const ranges = mergeConsecutiveDays(notesAbsences);
+  const label  = ranges.length === 1 && ranges[0].from === ranges[0].to
+    ? fmtDate(ranges[0].from)
+    : ranges.map(r => r.from === r.to ? fmtDate(r.from) : `${fmtDate(r.from)} – ${fmtDate(r.to)}`).join(', ');
+
+  summary.innerHTML = `
+    <div class="absence-summary-pill">
+      <span class="absence-summary-check">✓</span>
+      <span class="absence-summary-text">${n} jour${n > 1 ? 's' : ''} d'absence — ${label}</span>
+      <button class="absence-summary-toggle" type="button">Modifier ▾</button>
+    </div>`;
+
+  summary.querySelector('.absence-summary-toggle').addEventListener('click', function () {
+    const open = list.style.display !== 'none';
+    list.style.display = open ? 'none' : '';
+    this.textContent = open ? 'Modifier ▾' : 'Réduire ▴';
+    if (!open) renderAbsenceList(list);
+  });
+}
+
+function renderAbsenceList(list) {
   list.innerHTML = notesAbsences.map((p, i) => `
     <div class="absence-period-row" data-idx="${i}">
       <input type="date" class="abs-from" value="${p.from}" data-idx="${i}">
@@ -1802,24 +1903,18 @@ function renderNotesAbsences() {
     </div>`).join('');
 
   list.querySelectorAll('.abs-from').forEach(inp => {
-    inp.addEventListener('change', () => { notesAbsences[+inp.dataset.idx].from = inp.value; });
+    inp.addEventListener('change', () => { notesAbsences[+inp.dataset.idx].from = inp.value; renderNotesAbsences(); });
   });
   list.querySelectorAll('.abs-to').forEach(inp => {
-    inp.addEventListener('change', () => { notesAbsences[+inp.dataset.idx].to = inp.value; });
+    inp.addEventListener('change', () => { notesAbsences[+inp.dataset.idx].to = inp.value; renderNotesAbsences(); });
   });
   list.querySelectorAll('.btn-remove-abs').forEach(btn => {
     btn.addEventListener('click', () => {
       notesAbsences.splice(+btn.dataset.idx, 1);
       renderNotesAbsences();
+      if (notesAbsences.length) renderAbsenceList(list);
     });
   });
-}
-
-function addNotesAbsence() {
-  const today = new Date().toISOString().substring(0, 10);
-  notesAbsences.push({ from: today, to: today });
-  renderNotesAbsences();
-  document.getElementById('notes-absences-section').style.display = '';
 }
 
 function buildAbsenceInjection() {

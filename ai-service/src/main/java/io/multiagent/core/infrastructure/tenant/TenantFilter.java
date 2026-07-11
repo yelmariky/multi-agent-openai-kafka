@@ -48,9 +48,19 @@ public class TenantFilter extends OncePerRequestFilter {
                 String issuer = jwt.getIssuer() != null ? jwt.getIssuer().toString() : null;
                 String realm = extractRealmFromIssuer(issuer);
                 if (realm != null) {
-                    organizationRepository.findByKeycloakRealm(realm).ifPresent(org ->
-                            TenantContext.set(org.getId(), realm)
-                    );
+                    var orgOpt = organizationRepository.findByKeycloakRealm(realm);
+                    if (orgOpt.isPresent()) {
+                        var org = orgOpt.get();
+                        if (Boolean.FALSE.equals(org.getActive())) {
+                            log.warn("[TenantFilter] Accès refusé — organisation désactivée realm={}", realm);
+                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.setContentType("application/json;charset=UTF-8");
+                            response.getWriter().write(
+                                "{\"error\":\"Organisation désactivée. Contactez votre administrateur.\"}");
+                            return;
+                        }
+                        TenantContext.set(org.getId(), realm);
+                    }
                 }
             }
             filterChain.doFilter(request, response);

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <base href="/">
   <title>Espace consultant</title>
+  <link rel="icon" type="image/svg+xml" href="logo-mark.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -48,6 +49,7 @@
   <!-- ====== ÉCRAN DE CONNEXION ====== -->
   <div id="login-screen" class="login-screen">
     <div class="login-card">
+      <img src="logo-mark.svg" alt="IA-INSIGHT" width="52" height="52" style="display:block;margin:0 0 16px">
       <p class="eyebrow" id="login-tenant-name">—</p>
       <h1>Espace consultant</h1>
       <p class="login-lede">Connectez-vous avec votre adresse email professionnelle.</p>
@@ -74,10 +76,13 @@
 
     <!-- HEADER -->
     <header>
-      <div class="header-brand">
+      <div class="header-brand" style="display:flex;align-items:flex-start;gap:14px">
+        <img src="logo-mark.svg" alt="IA-INSIGHT" width="44" height="44" style="flex-shrink:0;margin-top:3px">
+        <div>
         <p class="eyebrow" id="header-tenant-name">—</p>
         <h1>Espace Consultant — Bonjour, <span id="user-display-name">—</span></h1>
         <p class="lede">Gérez vos CRA et consultez vos absences.</p>
+        </div>
       </div>
       <div class="header-config">
         <div class="user-meta">
@@ -300,14 +305,13 @@
               </button>
             </div>
             <div id="notes-absences-section" style="display:none; margin-top:12px">
-              <p class="eyebrow">Périodes d'absence (éditables — injectées dans le texte km)</p>
-              <div id="notes-absences-list"></div>
-              <button id="notes-add-absence" class="btn-ghost" style="margin-top:8px; font-size:13px">+ Ajouter une période</button>
+              <div id="notes-absences-summary"></div>
+              <div id="notes-absences-list" style="display:none; margin-top:8px"></div>
             </div>
             <div class="actions-row" style="margin-top:12px">
               <button id="notes-submit" class="btn-primary">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                Analyser et créer
+                Créer une note de frais
               </button>
             </div>
             <div id="notes-status" class="status"></div>

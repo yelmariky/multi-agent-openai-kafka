@@ -2,9 +2,12 @@ package io.multiagent.invoice.controller;
 
 import io.multiagent.invoice.model.InvoiceLookupRequest;
 import io.multiagent.invoice.model.SimpleInvoiceRequest;
+import io.multiagent.invoice.model.SubscriptionInvoiceRequest;
 import io.multiagent.invoice.service.DeleteInvoiceService;
 import io.multiagent.invoice.service.InvoiceService;
 import io.multiagent.invoice.service.InvoicePaymentService;
+import io.multiagent.invoice.service.SubscriptionBillingScheduler;
+import io.multiagent.invoice.service.SubscriptionInvoiceService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -23,17 +26,23 @@ public class InvoiceController {
 
     private static final String ATTACHMENT_PREFIX = "attachment; filename=\"";
 
-    private final InvoiceService        invoiceService;
-    private final DeleteInvoiceService  deleteInvoiceService;
-    private final InvoicePaymentService invoicePaymentService;
+    private final InvoiceService             invoiceService;
+    private final DeleteInvoiceService       deleteInvoiceService;
+    private final InvoicePaymentService      invoicePaymentService;
+    private final SubscriptionInvoiceService subscriptionInvoiceService;
+    private final SubscriptionBillingScheduler subscriptionBillingScheduler;
 
     public InvoiceController(
             InvoiceService invoiceService,
             DeleteInvoiceService deleteInvoiceService,
-            InvoicePaymentService invoicePaymentService) {
-        this.invoiceService        = invoiceService;
-        this.deleteInvoiceService  = deleteInvoiceService;
-        this.invoicePaymentService = invoicePaymentService;
+            InvoicePaymentService invoicePaymentService,
+            SubscriptionInvoiceService subscriptionInvoiceService,
+            SubscriptionBillingScheduler subscriptionBillingScheduler) {
+        this.invoiceService               = invoiceService;
+        this.deleteInvoiceService         = deleteInvoiceService;
+        this.invoicePaymentService        = invoicePaymentService;
+        this.subscriptionInvoiceService   = subscriptionInvoiceService;
+        this.subscriptionBillingScheduler = subscriptionBillingScheduler;
     }
 
     @GetMapping("/report")
@@ -55,6 +64,38 @@ public class InvoiceController {
                     generated.pdfPath().toString(), generated.excelPath().toString()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("Failed to generate invoice: " + e.getMessage());
+        }
+    }
+
+    /** Déclenche immédiatement la facturation des abonnements dus (sinon : cron quotidien 06h00).
+     *  Réservé au platform_admin — renvoie le résumé par organisation. */
+    @PostMapping("/subscription/run-billing")
+    public ResponseEntity<Object> runBilling() {
+        try {
+            return ResponseEntity.ok(subscriptionBillingScheduler.runBilling());
+        } catch (Exception e) {
+            log.error("runBilling failed: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body("Billing run failed: " + e.getMessage());
+        }
+    }
+
+    /** Facture d'abonnement SaaS — grille officielle (29€/49€, -20% annuel) ou prix négocié Enterprise.
+     *  Renvoie directement le PDF ; la facture est persistée comme les autres (suivi de paiement inclus). */
+    @PostMapping(value = "/subscription", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> generateSubscription(@RequestBody SubscriptionInvoiceRequest request) {
+        try {
+            var generated = subscriptionInvoiceService.generate(request);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.CONTENT_DISPOSITION, ATTACHMENT_PREFIX + generated.pdfPath().getFileName() + "\"");
+            return ResponseEntity.ok().headers(headers).body(generated.pdfBytes());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(("{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}")
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            log.error("generateSubscription failed for request={}: {}", request, e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 

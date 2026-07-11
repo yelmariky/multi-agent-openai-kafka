@@ -139,6 +139,7 @@ data:
     {
       "realm": "platform",
       "displayName": "IA-INSIGHT Platform Console",
+      "loginTheme": "ia-insight",
       "enabled": true,
       "sslRequired": "none",
       "registrationAllowed": false,

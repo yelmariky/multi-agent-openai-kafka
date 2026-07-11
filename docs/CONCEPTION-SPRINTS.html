@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document de Conception — IA-INSIGHT Platform</title>
+<style>
+  /* ── Typographie & reset ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 11pt;
+    line-height: 1.65;
+    color: #1a1a2e;
+    background: #fff;
+  }
+
+  /* ── Couleurs thème ── */
+  :root {
+    --primary:   #2563eb;
+    --accent:    #0ea5e9;
+    --success:   #16a34a;
+    --warning:   #d97706;
+    --danger:    #dc2626;
+    --muted:     #64748b;
+    --light:     #f1f5f9;
+    --border:    #e2e8f0;
+    --dark:      #0f172a;
+  }
+
+  /* ── Mise en page ── */
+  .page { max-width: 900px; margin: 0 auto; padding: 0 40px; }
+
+  /* ── Couverture ── */
+  .cover {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #0ea5e9 100%);
+    color: #fff;
+    padding: 80px 60px;
+    page-break-after: always;
+  }
+  .cover-badge {
+    display: inline-block;
+    background: rgba(14,165,233,0.25);
+    border: 1px solid rgba(14,165,233,0.5);
+    color: #7dd3fc;
+    font-size: 10pt;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 4px 14px;
+    border-radius: 20px;
+    margin-bottom: 32px;
+  }
+  .cover h1 {
+    font-size: 36pt;
+    font-weight: 800;
+    line-height: 1.15;
+    margin-bottom: 16px;
+  }
+  .cover h1 span { color: #38bdf8; }
+  .cover-sub {
+    font-size: 15pt;
+    color: #94a3b8;
+    margin-bottom: 48px;
+    max-width: 620px;
+  }
+  .cover-meta {
+    display: flex;
+    gap: 48px;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    padding-top: 32px;
+  }
+  .cover-meta-item label {
+    display: block;
+    font-size: 9pt;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 4px;
+  }
+  .cover-meta-item span { font-size: 12pt; color: #e2e8f0; font-weight: 600; }
+
+  /* ── Sommaire ── */
+  .toc {
+    padding: 60px 0;
+    page-break-after: always;
+  }
+  .toc h2 { font-size: 20pt; color: var(--dark); margin-bottom: 32px; }
+  .toc ol { list-style: none; counter-reset: toc; }
+  .toc ol > li {
+    counter-increment: toc;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px dotted var(--border);
+    font-size: 12pt;
+  }
+  .toc ol > li::before {
+    content: counter(toc) ".";
+    color: var(--primary);
+    font-weight: 700;
+    min-width: 24px;
+  }
+  .toc ol > li span { color: var(--muted); font-size: 10pt; margin-left: auto; }
+
+  /* ── Sections ── */
+  .section { padding: 56px 0 32px; page-break-before: always; }
+  .section:first-of-type { page-break-before: auto; }
+
+  .section-number {
+    font-size: 9pt;
+    font-weight: 700;
+    color: var(--primary);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  h2.section-title {
+    font-size: 22pt;
+    font-weight: 800;
+    color: var(--dark);
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 3px solid var(--primary);
+  }
+  h3 {
+    font-size: 13pt;
+    font-weight: 700;
+    color: var(--dark);
+    margin: 28px 0 12px;
+  }
+  h4 {
+    font-size: 11pt;
+    font-weight: 600;
+    color: var(--primary);
+    margin: 20px 0 8px;
+  }
+  p { margin-bottom: 12px; }
+
+  /* ── Callouts ── */
+  .callout {
+    border-left: 4px solid var(--primary);
+    background: var(--light);
+    padding: 16px 20px;
+    margin: 20px 0;
+    border-radius: 0 8px 8px 0;
+  }
+  .callout.warning { border-color: var(--warning); background: #fffbeb; }
+  .callout.success { border-color: var(--success); background: #f0fdf4; }
+  .callout strong { color: var(--dark); }
+
+  /* ── Tableaux ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 10pt;
+  }
+  th {
+    background: var(--dark);
+    color: #fff;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9.5pt;
+  }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--light); }
+  tr:hover td { background: #e0f2fe; }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 9pt;
+    font-weight: 600;
+  }
+  .badge-blue   { background: #dbeafe; color: #1d4ed8; }
+  .badge-green  { background: #dcfce7; color: #15803d; }
+  .badge-orange { background: #ffedd5; color: #c2410c; }
+  .badge-purple { background: #f3e8ff; color: #7e22ce; }
+  .badge-red    { background: #fee2e2; color: #b91c1c; }
+
+  /* ── Sprint cards ── */
+  .sprint-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 32px 0;
+    page-break-inside: avoid;
+  }
+  .sprint-header {
+    padding: 20px 28px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .sprint-header.s1 { background: linear-gradient(135deg, #1e40af, #2563eb); }
+  .sprint-header.s2 { background: linear-gradient(135deg, #065f46, #059669); }
+  .sprint-header.s3 { background: linear-gradient(135deg, #6b21a8, #9333ea); }
+  .sprint-header.s4 { background: linear-gradient(135deg, #9a3412, #ea580c); }
+  .sprint-num {
+    font-size: 28pt;
+    font-weight: 900;
+    color: rgba(255,255,255,0.3);
+    line-height: 1;
+    min-width: 48px;
+  }
+  .sprint-title-block h3 {
+    font-size: 16pt;
+    color: #fff;
+    margin: 0 0 4px;
+  }
+  .sprint-title-block p {
+    font-size: 10pt;
+    color: rgba(255,255,255,0.7);
+    margin: 0;
+  }
+  .sprint-body { padding: 24px 28px; }
+
+  /* ── User stories ── */
+  .story-list { list-style: none; margin: 12px 0; }
+  .story-list li {
+    display: flex;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 10.5pt;
+  }
+  .story-list li:last-child { border-bottom: none; }
+  .story-list li::before { content: "→"; color: var(--primary); font-weight: 700; flex-shrink: 0; }
+
+  /* ── Grille 2 colonnes ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0; }
+
+  .kpi-box {
+    background: var(--light);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+  }
+  .kpi-box .kpi-value { font-size: 24pt; font-weight: 800; color: var(--primary); }
+  .kpi-box .kpi-label { font-size: 9pt; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+  /* ── Diagramme ASCII ── */
+  .diagram {
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: 'Courier New', monospace;
+    font-size: 9pt;
+    padding: 24px 28px;
+    border-radius: 10px;
+    margin: 20px 0;
+    white-space: pre;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+
+  /* ── Checklist ── */
+  .checklist { list-style: none; margin: 12px 0; }
+  .checklist li { padding: 5px 0; font-size: 10.5pt; }
+  .checklist li::before { content: "✓ "; color: var(--success); font-weight: 700; }
+
+  /* ── Risques ── */
+  .risk-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 8px 0;
+  }
+  .risk-h { background: #fee2e2; }
+  .risk-m { background: #ffedd5; }
+  .risk-l { background: #f0fdf4; }
+  .risk-level { font-weight: 700; font-size: 9pt; min-width: 60px; padding-top: 2px; }
+  .risk-h .risk-level { color: #b91c1c; }
+  .risk-m .risk-level { color: #c2410c; }
+  .risk-l .risk-level { color: #15803d; }
+
+  /* ── Pied de page ── */
+  .footer {
+    margin-top: 80px;
+    padding: 24px 0;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--muted);
+    font-size: 9pt;
+  }
+
+  /* ── Impression ── */
+  @media print {
+    body { font-size: 10pt; }
+    .cover { page-break-after: always; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .section { page-break-before: always; }
+    .sprint-card { page-break-inside: avoid; }
+    .sprint-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .diagram { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { margin: 20mm 15mm; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     COUVERTURE
+══════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-badge">Document de Conception</div>
+  <h1>IA-INSIGHT<br><span>Platform</span></h1>
+  <p class="cover-sub">Plateforme SaaS multi-tenant d'automatisation administrative pour ESN &amp; cabinets de conseil IT — propulsée par l'intelligence artificielle</p>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <label>Version</label>
+      <span>1.0</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Date</label>
+      <span>Juillet 2026</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Durée totale</label>
+      <span>20 semaines · 4 sprints</span>
+    </div>
+    <div class="cover-meta-item">
+      <label>Statut</label>
+      <span>Sprint 3 / 4 en cours</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+
+<!-- ══════════════════════════════════════════════════
+     SOMMAIRE
+══════════════════════════════════════════════════ -->
+<div class="toc">
+  <h2>Sommaire</h2>
+  <ol>
+    <li>Contexte &amp; Besoin <span>p. 3</span></li>
+    <li>Solution proposée &amp; périmètre <span>p. 4</span></li>
+    <li>Architecture technique <span>p. 5</span></li>
+    <li>Sprint 1 — Fondations &amp; authentification multi-tenant <span>p. 7</span></li>
+    <li>Sprint 2 — Modules métier (Notes de frais, CRA, Congés) <span>p. 9</span></li>
+    <li>Sprint 3 — Intelligence artificielle &amp; automatisation <span>p. 11</span></li>
+    <li>Sprint 4 — Facturation, microservices &amp; mise en production <span>p. 13</span></li>
+    <li>Analyse des risques <span>p. 15</span></li>
+    <li>Roadmap &amp; jalons <span>p. 16</span></li>
+  </ol>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     1. CONTEXTE & BESOIN
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 1</div>
+  <h2 class="section-title">Contexte &amp; Besoin</h2>
+
+  <h3>1.1 Le problème des ESN aujourd'hui</h3>
+  <p>Les entreprises de services numériques (ESN) et cabinets de conseil IT gèrent des dizaines à des centaines de consultants disséminés chez leurs clients. Chaque mois, ce modèle génère une charge administrative considérable :</p>
+
+  <div class="grid-3" style="margin: 24px 0;">
+    <div class="kpi-box">
+      <div class="kpi-value">3h</div>
+      <div class="kpi-label">perdues par consultant/mois en admin</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-value">23%</div>
+      <div class="kpi-label">des notes de frais contiennent des erreurs</div>
+    </div>
+    <div class="kpi-box">
+      <div class="kpi-value">8j</div>
+      <div class="kpi-label">de délai moyen facturation après validation CRA</div>
+    </div>
+  </div>
+
+  <h4>Processus actuels — points de friction identifiés</h4>
+  <table>
+    <thead>
+      <tr><th>Processus</th><th>Situation actuelle</th><th>Impact</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Notes de frais</strong></td>
+        <td>Saisie manuelle dans Excel, scan PDF par email</td>
+        <td>Erreurs de saisie, pièces justificatives perdues, retards de remboursement</td>
+      </tr>
+      <tr>
+        <td><strong>CRA mensuel</strong></td>
+        <td>Feuille Excel partagée ou formulaire papier</td>
+        <td>Retards de validation → retards de facturation client</td>
+      </tr>
+      <tr>
+        <td><strong>Facturation client</strong></td>
+        <td>Factures générées manuellement dans Word/Excel</td>
+        <td>Risques TVA, numérotation incohérente, délais allongés</td>
+      </tr>
+      <tr>
+        <td><strong>Gestion des congés</strong></td>
+        <td>Email ou HR tool déconnecté des outils métier</td>
+        <td>Calcul frais km erroné si absences non remontées</td>
+      </tr>
+      <tr>
+        <td><strong>Visibilité manager</strong></td>
+        <td>Aucun tableau de bord temps réel</td>
+        <td>Arbitrages retardés, perte de contexte entre managers</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>1.2 Besoins exprimés</h3>
+  <div class="callout">
+    <strong>Objectif principal :</strong> réduire à moins de 30 minutes par mois le temps administratif de chaque consultant, tout en donnant aux managers une visibilité complète et temps réel sur l'activité.
+  </div>
+
+  <h4>Besoins côté consultant</h4>
+  <ul class="story-list">
+    <li>Saisir une note de frais en langage naturel sans formulaire complexe</li>
+    <li>Photographier un justificatif (ticket restaurant, facture hôtel) et laisser l'IA extraire les données</li>
+    <li>Calculer automatiquement les frais kilométriques en excluant les jours d'absence/congés</li>
+    <li>Soumettre son CRA mensuel en quelques clics depuis n'importe quel appareil</li>
+    <li>Être notifié immédiatement lorsque son CRA ou sa note de frais est validé(e) ou refusé(e)</li>
+    <li>Gérer ses demandes de congés (CP, RTT) et suivre son solde en temps réel</li>
+  </ul>
+
+  <h4>Besoins côté manager / administrateur</h4>
+  <ul class="story-list">
+    <li>Valider ou refuser les notes de frais avec un commentaire, en un clic</li>
+    <li>Valider les CRA mensuels avec déclenchement automatique de la facturation</li>
+    <li>Générer des factures client PDF/Excel conformes (TVA, délai paiement 45j)</li>
+    <li>Accéder à un tableau de bord global : frais, CRA, factures par consultant/période</li>
+    <li>Piloter plusieurs entités depuis une console plateforme unique</li>
+  </ul>
+
+  <h4>Contraintes techniques imposées</h4>
+  <ul class="story-list">
+    <li>Isolation totale des données entre clients (multi-tenant)</li>
+    <li>Disponibilité 24/7, déployable sur Kubernetes</li>
+    <li>Coût LLM minimal : modèle open-source en priorité, OpenAI en fallback uniquement</li>
+    <li>Sécurité OWASP — notamment protection contre les injections de prompts LLM</li>
+  </ul>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     2. SOLUTION PROPOSÉE
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 2</div>
+  <h2 class="section-title">Solution proposée &amp; périmètre</h2>
+
+  <h3>2.1 Vue d'ensemble</h3>
+  <p>IA-INSIGHT Platform est une application SaaS <strong>multi-tenant</strong> décomposée en microservices, avec un cœur d'intelligence artificielle basé sur des modèles LLM open-source (Groq) et un pipeline RAG (Retrieval-Augmented Generation) sur pgvector.</p>
+
+  <div class="callout success">
+    <strong>Différenciation clé :</strong> l'utilisateur parle à un assistant IA en français naturel — "j'ai mangé au restaurant pour 28€ le 3 juillet" — et la plateforme extrait, valide, et enregistre la note de frais sans aucun formulaire.
+  </div>
+
+  <h3>2.2 Périmètre fonctionnel</h3>
+  <div class="grid-2">
+    <div>
+      <h4>✅ Dans le périmètre</h4>
+      <ul class="checklist">
+        <li>Notes de frais — saisie libre, OCR, frais km</li>
+        <li>CRA mensuel — workflow complet</li>
+        <li>Congés CP/RTT — demandes &amp; solde</li>
+        <li>Facturation — PDF &amp; Excel client</li>
+        <li>Notifications SSE temps réel</li>
+        <li>Pipeline RAG — historique &amp; contexte</li>
+        <li>Multi-tenant Keycloak</li>
+        <li>Console plateforme (super-admin)</li>
+        <li>Sécurité LLM (PromptGuard)</li>
+      </ul>
+    </div>
+    <div>
+      <h4>❌ Hors périmètre v1</h4>
+      <ul style="list-style:none;">
+        <li style="padding:5px 0; color:#64748b;">✗ Application mobile native</li>
+        <li style="padding:5px 0; color:#64748b;">✗ Intégration ERP (SAP, Sage)</li>
+        <li style="padding:5px 0; color:#64748b;">✗ Signature électronique</li>
+        <li style="padding:5px 0; color:#64748b;">✗ Comptabilité analytique</li>
+        <li style="padding:5px 0; color:#64748b;">✗ Paiement en ligne</li>
+        <li style="padding:5px 0; color:#64748b;">✗ Portail client externe</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>2.3 Profils utilisateurs</h3>
+  <table>
+    <thead><tr><th>Profil</th><th>Interface</th><th>Rôle Keycloak</th><th>Actions principales</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Consultant</strong></td><td>frontend-consultant :3001</td><td><code>consultant</code></td><td>Saisir frais, soumettre CRA, demander congés</td></tr>
+      <tr><td><strong>Admin ESN</strong></td><td>frontend :3000</td><td><code>admin</code></td><td>Approuver frais, valider CRA, émettre factures</td></tr>
+      <tr><td><strong>Super-admin</strong></td><td>frontend-platform :3002</td><td><code>platform_admin</code></td><td>Gérer les tenants, provisionner les organisations</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     3. ARCHITECTURE TECHNIQUE
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 3</div>
+  <h2 class="section-title">Architecture technique</h2>
+
+  <h3>3.1 Vue macro — microservices</h3>
+  <div class="diagram">┌─────────────────────────────────────────────────────────────────────┐
+│                        CLIENTS (navigateur)                         │
+│   frontend/ :3000        frontend-consultant/ :3001                 │
+│   (admin ESN)            (consultant)           frontend-platform/  │
+│                                                 :3002 (super-admin) │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       │  HTTPS
+                       ▼
+              ┌─────────────────┐
+              │  Kong API GW    │  :8000  (DB-less, namespace kong)
+              │  JWT validation │
+              └────────┬────────┘
+         ┌─────────────┼──────────────────────┐
+         │             │                      │
+         ▼             ▼                      ▼
+  ┌────────────┐ ┌────────────┐       ┌─────────────────┐
+  │ ai-service │ │  expense-  │       │ activity-service │
+  │   :8081    │ │  service   │       │     :8085        │
+  │ (settings, │ │   :8082    │       │ (CRA, congés)    │
+  │  org, RAG, │ │ (frais,OCR │       └────────┬─────────┘
+  │  reasoning)│ │  RAG)      │                │
+  └─────┬──────┘ └─────┬──────┘                │
+        │              │                        │
+        └──────────────┴──────────┬─────────────┘
+                                  │
+              ┌───────────────────┼──────────────────┐
+              │                   │                  │
+              ▼                   ▼                  ▼
+     ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐
+     │ invoice-     │   │notification- │   │  PostgreSQL 16   │
+     │ service :8083│   │service :8084 │   │  + pgvector      │
+     │ (PDF, Excel) │   │ (SSE hub)    │   │  (DB partagée)   │
+     └──────────────┘   └──────┬───────┘   └──────────────────┘
+                                │
+                    ┌───────────┴──────────┐
+                    │    Apache Kafka       │
+                    │    KRaft 3 nœuds      │
+                    │  platform.notifications│
+                    │  cra.* / expense.*   │
+                    └──────────────────────┘</div>
+
+  <h3>3.2 Stack technique retenue</h3>
+  <table>
+    <thead><tr><th>Couche</th><th>Technologie</th><th>Justification</th></tr></thead>
+    <tbody>
+      <tr><td>LLM principal</td><td>Groq — llama-3.1-8b-instant / gpt-oss-120b</td><td>Gratuit tier dev, ~500 tok/s, JSON structuré</td></tr>
+      <tr><td>LLM fallback</td><td>OpenAI gpt-4.1-mini</td><td>Robustesse si Groq KO (circuit breaker resilience4j)</td></tr>
+      <tr><td>Embeddings</td><td>OpenAI text-embedding-3-large (2000d)</td><td>Groq ne supporte pas les embeddings</td></tr>
+      <tr><td>Base de données</td><td>PostgreSQL 16 + pgvector</td><td>SQL + recherche vectorielle dans un seul service</td></tr>
+      <tr><td>Auth</td><td>Keycloak 24 — realm-per-tenant</td><td>Isolation totale par tenant, RBAC natif</td></tr>
+      <tr><td>Messaging</td><td>Apache Kafka KRaft 3 nœuds</td><td>Notifications SSE broadcast multi-pod</td></tr>
+      <tr><td>Backend</td><td>Spring Boot 3.3.4 / Java 21</td><td>Écosystème mature, JPA, Security OAuth2</td></tr>
+      <tr><td>OCR</td><td>Tesseract + poppler (pdftoppm)</td><td>Open-source, support FR, images et PDF</td></tr>
+      <tr><td>Gateway</td><td>Kong DB-less</td><td>Routing JWT-aware, zero config DB</td></tr>
+      <tr><td>Infra</td><td>Kubernetes + Docker</td><td>Scalabilité, rolling updates, secrets management</td></tr>
+    </tbody>
+  </table>
+
+  <h3>3.3 Modèle multi-tenant</h3>
+  <div class="callout">
+    <strong>Stratégie realm-per-tenant :</strong> chaque organisation cliente dispose de son propre realm Keycloak. Le <code>TenantFilter</code> extrait le realm depuis le claim <code>iss</code> du JWT et positionne le <code>TenantContext</code> (ThreadLocal UUID) avant tout accès JPA. Toutes les requêtes DB filtrent par <code>tenant_id</code>.
+  </div>
+
+  <h3>3.4 Flux notification temps réel (SSE + Kafka)</h3>
+  <div class="diagram">  Admin valide CRA
+        │
+        ▼
+  activity-service ──publish──▶ platform.notifications (Kafka)
+                                        │
+              ┌─────────────────────────┼─────────────────────────┐
+              ▼                         ▼                         ▼
+       ai-service pod            expense-service          notification-service
+    (group-id unique             (group-id unique          (group-id unique
+     par pod/HOSTNAME)            par pod/HOSTNAME)         par pod/HOSTNAME)
+              │
+              ▼
+   ConsultantNotificationService
+   (SSE emitter en mémoire, clé=email)
+              │
+              ▼
+   Navigateur consultant ← SSE push "CRA VALIDÉ ✓"</div>
+  <p style="font-size:9.5pt; color:#64748b; margin-top:8px;">Chaque pod consomme l'intégralité du topic (group-id unique par HOSTNAME) car les emitters SSE sont en mémoire et non partagés entre pods.</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     SPRINT 1
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 4</div>
+  <h2 class="section-title">Sprint 1 — Fondations &amp; authentification multi-tenant</h2>
+
+  <div class="sprint-card">
+    <div class="sprint-header s1">
+      <div class="sprint-num">S1</div>
+      <div class="sprint-title-block">
+        <h3>Fondations &amp; authentification multi-tenant</h3>
+        <p>Durée : 5 semaines · Objectif : infrastructure opérationnelle, auth fonctionnel, CI/CD en place</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Objectif du sprint</h4>
+      <p>Disposer d'un socle technique solide sur lequel tous les modules métier pourront s'appuyer : cluster Kubernetes configuré, base de données avec extension pgvector, Keycloak avec provisioning automatique par tenant, et Kong comme point d'entrée unique.</p>
+
+      <h4>User stories prioritaires</h4>
+      <ul class="story-list">
+        <li>En tant que super-admin, je peux créer une nouvelle organisation (tenant) via la console plateforme et recevoir automatiquement un realm Keycloak isolé avec ses rôles</li>
+        <li>En tant que consultant, je peux me connecter via SSO Keycloak sur mon espace (URL slug) et accéder à mes données uniquement</li>
+        <li>En tant que développeur, je dispose d'un pipeline Docker/K8s reproductible avec port-forwards locaux documentés</li>
+        <li>En tant qu'admin, mes données sont strictement isolées de celles des autres tenants (filtrage par tenant_id)</li>
+      </ul>
+
+      <div class="grid-2">
+        <div>
+          <h4>Livrables techniques</h4>
+          <ul class="checklist">
+            <li>Cluster K8s : namespaces multi-agent, keycloak, kong, agent-system</li>
+            <li>PostgreSQL 16 + extension pgvector activée</li>
+            <li>Flyway migrations initiales (schema complet)</li>
+            <li>Keycloak 24 — realm master + KeycloakProvisioningService</li>
+            <li>TenantFilter (OncePerRequestFilter) dans tous les services</li>
+            <li>Kong DB-less avec déclaration des routes</li>
+            <li>3 frontends Vanilla JS skeleton (admin, consultant, platform)</li>
+            <li>CI : Dockerfiles multi-stage + push registre</li>
+            <li>Scripts deploy/agents/start-agents.sh &amp; uninstall-agents.sh</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Critères d'acceptation</h4>
+          <ul class="checklist">
+            <li>Création d'un tenant via /organizations provisionne le realm Keycloak</li>
+            <li>Un consultant d'un tenant A ne peut pas accéder aux données du tenant B</li>
+            <li>JWT expiré → 401 sur tous les endpoints</li>
+            <li>Kong route correctement les requêtes par préfixe de path</li>
+            <li>kubectl apply + rollout restart = déploiement sans downtime</li>
+          </ul>
+          <h4>Technologies / dépendances</h4>
+          <table style="font-size:9.5pt;">
+            <tr><td>Spring Security OAuth2 Resource Server</td></tr>
+            <tr><td>JwtIssuerAuthenticationManagerResolver</td></tr>
+            <tr><td>Keycloak Admin REST API</td></tr>
+            <tr><td>Flyway Core + flyway-database-postgresql</td></tr>
+            <tr><td>Kong Declarative Config (YAML)</td></tr>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     SPRINT 2
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 5</div>
+  <h2 class="section-title">Sprint 2 — Modules métier</h2>
+
+  <div class="sprint-card">
+    <div class="sprint-header s2">
+      <div class="sprint-num">S2</div>
+      <div class="sprint-title-block">
+        <h3>Notes de frais · CRA mensuel · Congés</h3>
+        <p>Durée : 6 semaines · Objectif : les 3 modules métier core sont utilisables en production</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Objectif du sprint</h4>
+      <p>Livrer les fonctionnalités à plus fort ROI immédiat : le consultant peut soumettre ses notes de frais et son CRA, l'admin peut les valider. Les notifications SSE temps réel sont opérationnelles. C'est le sprint qui apporte la valeur visible aux utilisateurs finaux.</p>
+
+      <h4>Module A — Notes de frais</h4>
+      <ul class="story-list">
+        <li>En tant que consultant, je saisis une dépense en texte libre et le LLM extrait le type, montant, date, mode de paiement automatiquement</li>
+        <li>En tant que consultant, je photographie un reçu ou joindre un PDF — l'OCR (Tesseract) extrait les données sans saisie manuelle</li>
+        <li>En tant que consultant, je déclare des frais kilométriques pour un mois : les jours d'absence/congés sont automatiquement déduits du calcul</li>
+        <li>En tant qu'admin, je visualise toutes les notes en attente (PENDING) et peux les approuver ou refuser avec commentaire</li>
+        <li>En tant que consultant, je suis notifié en temps réel (SSE) de la décision de l'admin</li>
+      </ul>
+
+      <h4>Module B — CRA mensuel</h4>
+      <ul class="story-list">
+        <li>En tant que consultant, je remplis mon CRA mensuel (jours travaillés, absences, projets) et le soumets pour validation</li>
+        <li>En tant qu'admin, je valide ou refuse le CRA avec un commentaire (notification SSE immédiate au consultant)</li>
+        <li>Le CRA suit le workflow : BROUILLON → SOUMIS → VALIDÉ | REFUSÉ</li>
+        <li>Un CRA refusé repasse en BROUILLON pour correction par le consultant</li>
+        <li>En tant qu'admin, je peux exporter le CRA en PDF horodaté et signé</li>
+      </ul>
+
+      <h4>Module C — Congés</h4>
+      <ul class="story-list">
+        <li>En tant que consultant, je demande des jours de congés (CP, RTT) avec dates et commentaire</li>
+        <li>En tant qu'admin, j'approuve ou refuse la demande — le solde est mis à jour automatiquement</li>
+        <li>Les congés approuvés sont automatiquement pris en compte dans le calcul des frais km du mois</li>
+      </ul>
+
+      <div class="grid-2">
+        <div>
+          <h4>Livrables techniques</h4>
+          <ul class="checklist">
+            <li>expense-service :8082 (OCR, extraction JSON, workflow)</li>
+            <li>activity-service :8085 (CRA, congés, exports PDF)</li>
+            <li>notification-service :8084 (SSE hub Kafka)</li>
+            <li>Tables : expense, receipt, cra_entry, leave_request, leave_balance</li>
+            <li>Kafka : topics expense.*, cra.*, leave.*, platform.notifications</li>
+            <li>Frontend consultant : saisie libre, upload OCR, CRA grid, congés</li>
+            <li>Frontend admin : queues d'approbation, tableau de bord</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Critères d'acceptation</h4>
+          <ul class="checklist">
+            <li>Saisie "déjeuner resto 28€ le 3 juillet" → note créée correctement</li>
+            <li>Upload photo ticket restaurant → OCR extrait montant + date</li>
+            <li>Frais km juillet : absences congés déduites automatiquement</li>
+            <li>CRA soumis → admin notifié en &lt; 2s par SSE</li>
+            <li>CRA validé → consultant notifié en &lt; 2s par SSE</li>
+            <li>Export PDF CRA : données correctes, format professionnel</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     SPRINT 3
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 6</div>
+  <h2 class="section-title">Sprint 3 — Intelligence artificielle &amp; automatisation</h2>
+
+  <div class="sprint-card">
+    <div class="sprint-header s3">
+      <div class="sprint-num">S3</div>
+      <div class="sprint-title-block">
+        <h3>Pipeline RAG · LLM · Sécurité LLM</h3>
+        <p>Durée : 4 semaines · Objectif : IA opérationnelle, sécurisée, avec fallback automatique</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Objectif du sprint</h4>
+      <p>Rendre l'assistant IA réellement intelligent : il comprend le contexte des dépenses passées (RAG), classe automatiquement l'intention de l'utilisateur, reformule les requêtes ambiguës, et s'adapte au style de chaque consultant. La couche de sécurité bloque les tentatives d'injection et d'abus.</p>
+
+      <h4>Module A — Pipeline RAG (Retrieval-Augmented Generation)</h4>
+      <ul class="story-list">
+        <li>Les notes de frais et historiques sont indexés en vecteurs (text-embedding-3-large, 2000 dimensions) dans pgvector</li>
+        <li>Lors d'une nouvelle saisie, les 5 chunks les plus proches (similarité cosinus ≥ 0.70) enrichissent le prompt LLM</li>
+        <li>En tant que consultant, je peux interroger mon historique de frais en langage naturel ("combien j'ai dépensé en restaurant en juin ?")</li>
+        <li>Le RAG filtre strictement par tenant_id — aucune donnée d'un autre client n'est jamais visible</li>
+      </ul>
+
+      <h4>Module B — Intent classifier &amp; query rewrite</h4>
+      <ul class="story-list">
+        <li>Chaque message utilisateur est classifié automatiquement (create_expense, generate_report, delete_expense…) avec un score de confiance</li>
+        <li>Les requêtes ambiguës sont reformulées par le LLM avant d'être envoyées au RAG</li>
+        <li>Le résultat de la classification est caché (Caffeine, 10 min) pour éviter les appels LLM redondants</li>
+      </ul>
+
+      <h4>Module C — Résilience LLM</h4>
+      <ul class="story-list">
+        <li>Circuit breaker (resilience4j) : si Groq échoue 5 fois sur 10 appels → bascule immédiate sur OpenAI gpt-4.1-mini sans délai de retry</li>
+        <li>Circuit ouvert pendant 30 secondes avant de réessayer Groq</li>
+        <li>Logs clairs sur chaque transition de circuit (OPEN/HALF_OPEN/CLOSED)</li>
+      </ul>
+
+      <h4>Module D — Sécurité LLM (OWASP LLM Top 10)</h4>
+      <ul class="story-list">
+        <li>PromptGuardFilter (@Order 1) : intercepte tous les POST/PUT avant tout controller</li>
+        <li>Limites : taille message ≤ 4000 chars, rate limit ≤ 20 req/min par consultant</li>
+        <li>Détection injection : patterns "ignore previous instructions", "act as", "DAN mode", zero-width chars…</li>
+        <li>Masquage des textes utilisateur dans les logs (log masking)</li>
+        <li>Validation JSON Schema sur les réponses LLM (types, bornes, champs requis)</li>
+        <li>Fact-checking sur les montants extraits (montants négatifs, &gt;10 000€, dates futures bloqués)</li>
+      </ul>
+
+      <div class="grid-2">
+        <div>
+          <h4>Livrables techniques</h4>
+          <ul class="checklist">
+            <li>SemanticSearchService — similarité cosinus pgvector</li>
+            <li>IntentClassifierService — JSON structuré + confiance</li>
+            <li>QueryRewriteService — reformulation + cache Caffeine</li>
+            <li>LLMAIClient — circuit breaker resilience4j</li>
+            <li>PromptGuard + PromptGuardFilter</li>
+            <li>LlmJsonValidator — validation sans lib externe</li>
+            <li>RAGService.factCheckExpense()</li>
+            <li>Index HNSW cosine sur vector(2000) + seuil 0.70</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Critères d'acceptation</h4>
+          <ul class="checklist">
+            <li>"ignore all instructions" → HTTP 429 bloqué par PromptGuard</li>
+            <li>Groq simulé KO → fallback OpenAI en &lt; 500ms (circuit ouvert)</li>
+            <li>Montant −50€ → rejet avec message explicite</li>
+            <li>Requête RAG → résultats uniquement du bon tenant</li>
+            <li>Score similarité &lt; 0.70 → aucun chunk injecté dans le prompt</li>
+            <li>Cache hit intent classifier → temps de réponse &lt; 50ms</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     SPRINT 4
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 7</div>
+  <h2 class="section-title">Sprint 4 — Facturation, décomposition microservices &amp; production</h2>
+
+  <div class="sprint-card">
+    <div class="sprint-header s4">
+      <div class="sprint-num">S4</div>
+      <div class="sprint-title-block">
+        <h3>invoice-service · Kong routing complet · Production readiness</h3>
+        <p>Durée : 5 semaines · Objectif : mise en production, facturation automatique, microservices autonomes</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Objectif du sprint</h4>
+      <p>Clore la décomposition en microservices (retirer le code métier dupliqué de ai-service), activer le routing Kong vers expense-service et activity-service, livrer la génération de factures, et atteindre les standards de production (secrets chiffrés, monitoring, haute disponibilité).</p>
+
+      <h4>Module A — invoice-service</h4>
+      <ul class="story-list">
+        <li>En tant qu'admin, je génère une facture PDF conforme depuis un CRA validé en un clic</li>
+        <li>La date de facture est le 1er du mois suivant la période de CRA (juin 2026 → facture datée 01/07/2026)</li>
+        <li>L'échéance de paiement est invoiceDate + 45 jours (configurable par client)</li>
+        <li>Export Excel disponible en complément du PDF pour comptabilité</li>
+        <li>Suivi du statut de paiement : BROUILLON → ENVOYÉE → PAYÉE</li>
+      </ul>
+
+      <h4>Module B — Finalisation microservices</h4>
+      <ul class="story-list">
+        <li>Kong route /expenses/* → expense-service, /cra/* → activity-service (les frontends ne pointent plus sur ai-service directement)</li>
+        <li>Le code métier CRA/frais est retiré de ai-service (qui devient le service settings/org/RAG uniquement)</li>
+        <li>Chaque service a son propre Dockerfile, configMap K8s, et est déployable indépendamment</li>
+        <li>Les topics Kafka cra.* sont enrichis avec les données client nécessaires à la facturation future</li>
+      </ul>
+
+      <h4>Module C — Production readiness</h4>
+      <ul class="story-list">
+        <li>Sealed Secrets (Bitnami) : OPENAI_API_KEY et POSTGRES_PASSWORD chiffrés, committables en git</li>
+        <li>Liveness / Readiness probes configurées sur tous les pods (/actuator/health)</li>
+        <li>HPA (Horizontal Pod Autoscaler) sur ai-service et expense-service (cibles de charge variables)</li>
+        <li>Métriques Prometheus exposées sur /actuator/prometheus — dashboards Grafana</li>
+        <li>PodDisruptionBudget : toujours au moins 1 pod disponible par déploiement</li>
+        <li>NetworkPolicy : services ne peuvent communiquer qu'avec leurs dépendances directes</li>
+      </ul>
+
+      <div class="grid-2">
+        <div>
+          <h4>Livrables techniques</h4>
+          <ul class="checklist">
+            <li>invoice-service :8083 — generate, mark-sent, mark-paid</li>
+            <li>Retrait code expense/CRA de ai-service</li>
+            <li>Kong declarative config mis à jour (5 services)</li>
+            <li>Sealed Secrets controller + kubeseal scripts</li>
+            <li>HPA YAML pour ai-service et expense-service</li>
+            <li>Dashboards Grafana : latence LLM, erreurs consumer Kafka</li>
+            <li>OWASP Dependency Check intégré en CI</li>
+            <li>Runbook de déploiement mis à jour (docs/DEPLOYMENT.md)</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Critères d'acceptation</h4>
+          <ul class="checklist">
+            <li>CRA validé → facture PDF générée avec bonnes dates</li>
+            <li>ai-service sans aucun import expense/cra/leave</li>
+            <li>kubectl apply --dry-run=client ne révèle pas de secrets en clair</li>
+            <li>Simulation crash d'un pod → 0 downtime (HPA + readiness probe)</li>
+            <li>Dashboard Grafana : latence LLM p95 &lt; 3s (hors fallback)</li>
+            <li>OWASP scan : 0 vulnérabilité critique</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     8. RISQUES
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 8</div>
+  <h2 class="section-title">Analyse des risques</h2>
+
+  <div class="risk-item risk-h">
+    <div class="risk-level">🔴 ÉLEVÉ</div>
+    <div>
+      <strong>Disponibilité Groq</strong> — Groq est un service tiers gratuit sur le tier dev. En cas de panne prolongée, toutes les features LLM basculent sur OpenAI (coût variable). <em>Mitigation : circuit breaker resilience4j en place, fallback OpenAI automatique.</em>
+    </div>
+  </div>
+
+  <div class="risk-item risk-h">
+    <div class="risk-level">🔴 ÉLEVÉ</div>
+    <div>
+      <strong>Secrets en clair en production</strong> — OPENAI_API_KEY et credentials PostgreSQL exposés dans les manifests K8s si non chiffrés. <em>Mitigation : Sealed Secrets (Sprint 4), .gitignore des fichiers .env.</em>
+    </div>
+  </div>
+
+  <div class="risk-item risk-m">
+    <div class="risk-level">🟠 MOYEN</div>
+    <div>
+      <strong>Qualité OCR sur justificatifs dégradés</strong> — Tesseract peut échouer sur des photos floues ou des tickets thermiques effacés. <em>Mitigation : fallback saisie manuelle toujours disponible, LLM de correction sur le texte extrait.</em>
+    </div>
+  </div>
+
+  <div class="risk-item risk-m">
+    <div class="risk-level">🟠 MOYEN</div>
+    <div>
+      <strong>Notifications SSE perdues si plusieurs pods</strong> — Les emitters SSE sont en mémoire. Un message Kafka livré au mauvais pod (hors celui portant la connexion SSE) est perdu. <em>Mitigation : group-id unique par pod (${HOSTNAME}) pour broadcast — déjà implémenté.</em>
+    </div>
+  </div>
+
+  <div class="risk-item risk-m">
+    <div class="risk-level">🟠 MOYEN</div>
+    <div>
+      <strong>Dépréciation des modèles LLM</strong> — Les modèles Groq ont des cycles de dépréciation courts (ex : llama-3.3-70b déprécié août 2026). <em>Mitigation : modèles configurés via variables d'environnement dans le ConfigMap, changement sans rebuild.</em>
+    </div>
+  </div>
+
+  <div class="risk-item risk-l">
+    <div class="risk-level">🟢 FAIBLE</div>
+    <div>
+      <strong>Performance pgvector sur large volume</strong> — L'index HNSW peut saturer au-delà de plusieurs millions de vecteurs. <em>Mitigation : partition par tenant_id, monitoring des requêtes lentes, migration Weaviate prévue si nécessaire.</em>
+    </div>
+  </div>
+
+  <div class="risk-item risk-l">
+    <div class="risk-level">🟢 FAIBLE</div>
+    <div>
+      <strong>Injection de prompts LLM</strong> — Un utilisateur malveillant pourrait tenter d'extraire les données d'autres tenants via le LLM. <em>Mitigation : PromptGuardFilter (@Order 1) avec 15+ patterns bloqués, filtrage tenant_id sur tous les chunks RAG.</em>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     9. ROADMAP
+══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-number">Section 9</div>
+  <h2 class="section-title">Roadmap &amp; jalons</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Sprint</th>
+        <th>Thème</th>
+        <th>Durée</th>
+        <th>Jalons clés</th>
+        <th>Statut</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Sprint 1</strong></td>
+        <td>Fondations &amp; auth multi-tenant</td>
+        <td>5 sem.</td>
+        <td>Keycloak opérationnel, 1er tenant créé, CI/CD vert</td>
+        <td><span class="badge badge-green">✓ Livré</span></td>
+      </tr>
+      <tr>
+        <td><strong>Sprint 2</strong></td>
+        <td>Modules métier (frais, CRA, congés)</td>
+        <td>6 sem.</td>
+        <td>1ère note de frais créée, CRA validé end-to-end, SSE fonctionnel</td>
+        <td><span class="badge badge-green">✓ Livré</span></td>
+      </tr>
+      <tr>
+        <td><strong>Sprint 3</strong></td>
+        <td>IA, RAG, sécurité LLM</td>
+        <td>4 sem.</td>
+        <td>Circuit breaker actif, PromptGuard bloquant, RAG &gt;0.70</td>
+        <td><span class="badge badge-blue">⟳ En cours</span></td>
+      </tr>
+      <tr>
+        <td><strong>Sprint 4</strong></td>
+        <td>Facturation, microservices, production</td>
+        <td>5 sem.</td>
+        <td>1ère facture générée, Sealed Secrets, HPA configuré, 0 CVE critique</td>
+        <td><span class="badge badge-orange">◷ Planifié</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Chronologie</h3>
+  <div class="diagram">
+Semaine :  1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20
+           │   │   │   │   │   │   │   │   │   │   │   │   │   │   │   │   │   │   │   │
+Sprint 1   ████████████████████                                                ← LIVRÉ ✓
+Sprint 2                       ██████████████████████████                     ← LIVRÉ ✓
+Sprint 3                                               ████████████████       ← EN COURS
+Sprint 4                                                               ████████████████████
+
+Jalons :
+  J1  Semaine 5  ── Infrastructure K8s opérationnelle, Keycloak multi-tenant
+  J2  Semaine 11 ── Modules métier utilisables, SSE temps réel fonctionnel
+  J3  Semaine 15 ── IA opérationnelle, sécurité LLM validée
+  J4  Semaine 20 ── Production ready, facturation livrée, 0 secret en clair
+</div>
+
+  <div class="callout success" style="margin-top:32px;">
+    <strong>Prochaines étapes immédiates (Sprint 3 → Sprint 4) :</strong><br>
+    Finaliser le routing Kong vers expense-service et activity-service · Enrichir le payload <code>cra.validated</code> avec les données client · Implémenter invoice-service triggering au jalon J3 · Déployer Sealed Secrets avant J4.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     PIED DE PAGE
+══════════════════════════════════════════════════ -->
+<div class="footer">
+  <p>IA-INSIGHT Platform — Document de Conception v1.0 — Juillet 2026</p>
+  <p style="margin-top:4px; font-size:8.5pt;">Confidentiel — Usage interne</p>
+</div>
+
+</div><!-- .page -->
+</body>
+</html>

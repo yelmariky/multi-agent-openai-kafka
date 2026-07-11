@@ -122,7 +122,8 @@ kubectl apply -f invoice-service/deploy/k8s/  && kubectl rollout restart deploym
 | `docs/PITCH.md` | Présentation projet clients/investisseurs (10 slides PowerPoint) |
 | `docs/FILES.md` | Arborescence complete des fichiers cles |
 | `docs/BUSINESS-RULES.md` | paymentMode, frais km, workflow CRA, modele CraRequest, absences |
-| `docs/INFRA.md` | Namespaces K8s, structure monorepo, variables d'env, OCR prerequis |
+| `docs/INFRA.md` | Namespaces K8s, structure monorepo, variables d'env, modeles LLM, OCR prerequis |
+| `docs/KAFKA.md` | Topics Kafka, carte producteur→consommateur, analyse résilience, gaps Phase 3 |
 | `docs/DATABASE.md` | Tables, pgvector, Flyway, SSE store, WeaviateService facade |
 | `docs/GUIDELINES-KARPATHY.md` | Guidelines complètes Claude Code (7 règles détaillées) |
 

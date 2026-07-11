@@ -870,6 +870,37 @@ header {
 .notes-kpi-value.green  { color: #4ade80; }
 .notes-kpi-value.orange { color: #fb923c; }
 
+/* Absence summary pill */
+.absence-summary-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(74, 222, 128, 0.08);
+  border: 1px solid rgba(74, 222, 128, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  font-size: 13px;
+}
+.absence-summary-check {
+  color: #4ade80;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.absence-summary-text {
+  color: var(--text);
+  flex: 1;
+}
+.absence-summary-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.absence-summary-toggle:hover { color: var(--text); }
+
 /* Periods editor (saisie libre km absences) */
 .absence-period-row {
   display: flex;

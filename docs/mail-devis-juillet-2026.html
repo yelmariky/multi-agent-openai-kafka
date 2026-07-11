@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Mail devis — Sprint Juillet 2026</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 24px; }
+  .toolbar {
+    background: #0f172a; color: #fff; border-radius: 10px 10px 0 0;
+    padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .toolbar span { font-size: 13px; color: #94a3b8; }
+  .btn-copy {
+    background: #2ce5a7; color: #0f172a; font-weight: 700; font-size: 13px;
+    border: none; border-radius: 8px; padding: 9px 22px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px; transition: opacity .15s;
+  }
+  .btn-copy:hover { opacity: .85; }
+  .btn-copy.copied { background: #4ade80; }
+  .email-box {
+    background: #fff; border: 1px solid #e2e8f0; border-top: none;
+    border-radius: 0 0 10px 10px; padding: 32px 36px; max-width: 720px;
+    font-size: 14px; line-height: 1.7; color: #1a1a2e;
+  }
+  .subject-bar {
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 10px 16px; margin-bottom: 28px; font-size: 13px; color: #475569;
+  }
+  .subject-bar strong { color: #0f172a; font-size: 14px; }
+  h3 { color: #2563eb; margin: 28px 0 10px; font-size: 15px; }
+  h4 {
+    color: #1e40af; background: #f1f5f9; padding: 9px 14px;
+    border-radius: 8px; border-left: 4px solid #2563eb;
+    font-size: 13.5px; margin: 20px 0 10px;
+  }
+  ul, ol { padding-left: 20px; margin: 8px 0 14px; }
+  li { margin-bottom: 5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+  th { background: #0f172a; color: #fff; padding: 9px 14px; text-align: left; }
+  td { padding: 8px 14px; border-bottom: 1px solid #e2e8f0; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 22px 0; }
+  .sig { margin-top: 24px; color: #334155; }
+  .notice { font-size: 11px; color: #94a3b8; margin-top: 16px; font-style: italic; }
+
+  /* Zone de texte brut pour copie facile */
+  .copy-area {
+    background: #0f172a; color: #e2e8f0; border-radius: 10px;
+    padding: 20px 24px; margin-top: 32px; font-family: 'Courier New', monospace;
+    font-size: 12px; line-height: 1.7; white-space: pre-wrap;
+    position: relative;
+  }
+  .copy-area-label {
+    font-family: Arial, sans-serif; font-size: 11px; color: #64748b;
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;
+    display: block;
+  }
+  .btn-copy-text {
+    position: absolute; top: 14px; right: 16px;
+    background: #2ce5a7; color: #0f172a; font-weight: 700; font-size: 12px;
+    border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer;
+  }
+  .btn-copy-text:hover { opacity: .85; }
+</style>
+</head>
+<body>
+
+<div style="max-width:760px; margin:0 auto;">
+
+  <div class="toolbar">
+    <div>
+      <div style="font-weight:700; font-size:14px;">📧 Mail prêt à envoyer</div>
+      <span>Copie le contenu HTML ou le texte brut ci-dessous</span>
+    </div>
+    <button class="btn-copy" onclick="copyHtml(this)">
+      📋 Copier le mail (HTML)
+    </button>
+  </div>
+
+  <!-- PRÉVISUALISATION -->
+  <div class="email-box" id="email-content">
+
+    <div class="subject-bar">
+      <strong>Objet :</strong> Demande de devis — Développement logiciel Sprint Juillet 2026 | Plateforme SaaS IA-INSIGHT
+    </div>
+
+    <p>Madame, Monsieur,</p>
+
+    <p>Nous sommes <strong>IA-INSIGHT</strong>, éditeur d'une plateforme SaaS multi-tenant d'automatisation administrative à destination des ESN et cabinets de conseil IT. Notre solution intègre des pipelines d'intelligence artificielle (LLM Groq/OpenAI, RAG pgvector) pour automatiser la gestion des notes de frais, CRA mensuels, congés et facturation client.</p>
+
+    <p>La plateforme est en production active sur une architecture microservices (Spring Boot 3.3 / Java 21, Kubernetes, Kafka, Keycloak) avec 5 services déployés et 3 consoles web (administrateur, consultant, plateforme).</p>
+
+    <hr>
+
+    <h3>Objet de la présente demande</h3>
+
+    <p>Dans le cadre de notre programme de développement sur 4 mois (Juillet – Octobre 2026), nous sollicitons votre société pour la réalisation des <strong>2 sprints du mois de Juillet</strong>, correspondant aux livrables suivants :</p>
+
+    <h4>Sprint 1 — Consolidation architecture &amp; Kong routing <em style="font-weight:normal;color:#64748b">(2 semaines)</em></h4>
+    <ul>
+      <li>Retrait du code métier dupliqué de ai-service (migration vers expense-service et activity-service)</li>
+      <li>Configuration Kong DB-less : routing des 6 préfixes de path vers les microservices cibles</li>
+      <li>Mise à jour des 3 frontends (config.js → apiBase via Kong)</li>
+      <li>Script de smoke-test automatisé (15 endpoints critiques)</li>
+      <li>Mise à jour de la documentation technique (ENDPOINTS.md, INFRA.md)</li>
+    </ul>
+
+    <h4>Sprint 2 — UX Design System &amp; cohérence 3 frontends <em style="font-weight:normal;color:#64748b">(2 semaines)</em></h4>
+    <ul>
+      <li>Création d'un Design System CSS unifié (tokens, typographie Space Grotesk, composants)</li>
+      <li>Responsive Mobile First sur les 3 consoles (breakpoints 320 / 768 / 1024 / 1440px)</li>
+      <li>Skeleton loaders animés sur les appels LLM (latence 3–30s)</li>
+      <li>Modale de confirmation réutilisable sur les actions destructives</li>
+      <li>Audit et correction accessibilité WCAG 2.1 AA (Lighthouse ≥ 85)</li>
+      <li>Navigation clavier complète (Tab / Enter / Escape)</li>
+    </ul>
+
+    <p>Le dossier de conception détaillé (user stories, critères d'acceptation, Definition of Done, architecture) est disponible et sera transmis sur simple demande sous NDA.</p>
+
+    <hr>
+
+    <h3>Profil recherché</h3>
+    <ul>
+      <li>Architecture Spring Boot microservices et API Gateway (Kong ou équivalent)</li>
+      <li>Développement frontend Vanilla JS / CSS moderne (pas de framework imposé)</li>
+      <li>Accessibilité web et responsive design</li>
+    </ul>
+
+    <hr>
+
+    <h3>Éléments attendus dans votre devis</h3>
+    <ol>
+      <li>Un chiffrage détaillé par livrable (en jours/homme ou forfait)</li>
+      <li>La composition et le profil de l'équipe proposée</li>
+      <li>Vos disponibilités de démarrage <strong>(date souhaitée : lundi 6 juillet 2026)</strong></li>
+      <li>Vos références sur des projets similaires (architecture microservices ou SaaS B2B)</li>
+      <li>Vos conditions générales de prestation (régie / forfait, modalités de recette)</li>
+    </ol>
+
+    <hr>
+
+    <h3>Calendrier de sélection</h3>
+    <table>
+      <thead><tr><th>Étape</th><th>Date</th></tr></thead>
+      <tbody>
+        <tr><td>Réception des devis</td><td><strong>avant le 11 juillet 2026</strong></td></tr>
+        <tr><td>Entretiens techniques (30 min)</td><td>Semaine du 14 juillet</td></tr>
+        <tr><td>Notification du prestataire retenu</td><td>18 juillet 2026</td></tr>
+        <tr><td>Démarrage effectif</td><td><strong>20 juillet 2026</strong></td></tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <p>Nous sommes ouverts à un appel de découverte de 20 minutes si vous souhaitez obtenir des précisions techniques avant de chiffrer.</p>
+    <p>Dans l'attente de votre retour, nous vous adressons nos cordiales salutations.</p>
+
+    <div class="sig">
+      <strong>[Votre nom]</strong><br>
+      <strong>[Votre titre] — IA-INSIGHT</strong><br>
+      [Email] | [Téléphone]
+    </div>
+
+    <p class="notice">⚠️ Pense à remplacer [Votre nom], [Votre titre], [Email] et [Téléphone] avant d'envoyer.</p>
+
+  </div>
+
+  <!-- TEXTE BRUT POUR COPIE RAPIDE -->
+  <div class="copy-area" id="plain-text">
+    <span class="copy-area-label">Version texte brut</span>
+    <button class="btn-copy-text" onclick="copyPlain(this)">📋 Copier</button>
+Objet : Demande de devis — Développement logiciel Sprint Juillet 2026 | Plateforme SaaS IA-INSIGHT
+
+Madame, Monsieur,
+
+Nous sommes IA-INSIGHT, éditeur d'une plateforme SaaS multi-tenant d'automatisation administrative
+à destination des ESN et cabinets de conseil IT. Notre solution intègre des pipelines d'intelligence
+artificielle (LLM Groq/OpenAI, RAG pgvector) pour automatiser la gestion des notes de frais,
+CRA mensuels, congés et facturation client.
+
+La plateforme est en production active sur une architecture microservices (Spring Boot 3.3 / Java 21,
+Kubernetes, Kafka, Keycloak) avec 5 services déployés et 3 consoles web.
+
+─────────────────────────────────────────────────────────
+OBJET DE LA PRÉSENTE DEMANDE
+─────────────────────────────────────────────────────────
+
+Dans le cadre de notre programme de développement sur 4 mois (Juillet – Octobre 2026), nous
+sollicitons votre société pour la réalisation des 2 sprints du mois de Juillet :
+
+SPRINT 1 — Consolidation architecture & Kong routing (2 semaines)
+• Retrait du code métier dupliqué de ai-service (migration vers expense-service et activity-service)
+• Configuration Kong DB-less : routing des 6 préfixes de path vers les microservices cibles
+• Mise à jour des 3 frontends (config.js → apiBase via Kong)
+• Script de smoke-test automatisé (15 endpoints critiques)
+• Mise à jour de la documentation technique (ENDPOINTS.md, INFRA.md)
+
+SPRINT 2 — UX Design System & cohérence 3 frontends (2 semaines)
+• Création d'un Design System CSS unifié (tokens, typographie Space Grotesk, composants)
+• Responsive Mobile First sur les 3 consoles (breakpoints 320 / 768 / 1024 / 1440px)
+• Skeleton loaders animés sur les appels LLM (latence 3–30s)
+• Modale de confirmation réutilisable sur les actions destructives
+• Audit et correction accessibilité WCAG 2.1 AA (Lighthouse ≥ 85)
+• Navigation clavier complète (Tab / Enter / Escape)
+
+Le dossier de conception détaillé est disponible sur simple demande sous NDA.
+
+─────────────────────────────────────────────────────────
+PROFIL RECHERCHÉ
+─────────────────────────────────────────────────────────
+• Architecture Spring Boot microservices et API Gateway (Kong ou équivalent)
+• Développement frontend Vanilla JS / CSS moderne
+• Accessibilité web et responsive design
+
+─────────────────────────────────────────────────────────
+ÉLÉMENTS ATTENDUS DANS VOTRE DEVIS
+─────────────────────────────────────────────────────────
+1. Chiffrage détaillé par livrable (jours/homme ou forfait)
+2. Composition et profil de l'équipe proposée
+3. Disponibilités de démarrage (date souhaitée : lundi 6 juillet 2026)
+4. Références sur des projets similaires (microservices ou SaaS B2B)
+5. Conditions générales de prestation (régie / forfait, modalités de recette)
+
+─────────────────────────────────────────────────────────
+CALENDRIER DE SÉLECTION
+─────────────────────────────────────────────────────────
+Réception des devis          → avant le 11 juillet 2026
+Entretiens techniques (30mn) → semaine du 14 juillet
+Notification du prestataire  → 18 juillet 2026
+Démarrage effectif           → 20 juillet 2026
+
+─────────────────────────────────────────────────────────
+
+Nous sommes ouverts à un appel de découverte de 20 minutes si vous souhaitez obtenir des
+précisions techniques avant de chiffrer.
+
+Dans l'attente de votre retour, nous vous adressons nos cordiales salutations.
+
+[Votre nom]
+[Votre titre] — IA-INSIGHT
+[Email] | [Téléphone]
+  </div>
+
+</div>
+
+<script>
+function copyHtml(btn) {
+  const el = document.getElementById('email-content');
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  document.execCommand('copy');
+  sel.removeAllRanges();
+  btn.textContent = '✅ Copié !';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = '📋 Copier le mail (HTML)'; btn.classList.remove('copied'); }, 2500);
+}
+
+function copyPlain(btn) {
+  const el = document.getElementById('plain-text');
+  const text = el.innerText.replace('Version texte brut\nCopier\n', '').trim();
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✅ Copié !';
+    setTimeout(() => btn.textContent = '📋 Copier', 2500);
+  });
+}
+</script>
+
+</body>
+</html>

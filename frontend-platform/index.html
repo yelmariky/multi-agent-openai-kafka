@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Console plateforme</title>
+  <link rel="icon" type="image/svg+xml" href="logo-mark.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -38,10 +39,13 @@
 
     <!-- HEADER -->
     <header>
-      <div class="header-brand">
+      <div class="header-brand" style="display:flex;align-items:flex-start;gap:14px">
+        <img src="logo-mark.svg" alt="IA-INSIGHT" width="44" height="44" style="flex-shrink:0;margin-top:3px">
+        <div>
         <p class="eyebrow">Console plateforme</p>
         <h1>Gestion des tenants</h1>
         <p class="lede">Créez et gérez les organisations de la plateforme.</p>
+        </div>
       </div>
       <div class="header-config">
         <div class="user-meta">
@@ -119,6 +123,87 @@
         <div id="list-status" class="status"></div>
         <div id="tenant-list"></div>
       </section>
+
+      <!-- Abonnements & facturation SaaS -->
+      <section class="card" id="billing-section">
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Revenus</p>
+            <h2>Abonnements &amp; facturation</h2>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button id="billing-run-btn" class="btn-primary" title="Génère les factures des abonnements arrivés à échéance">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Facturer maintenant
+            </button>
+            <button id="billing-refresh-btn" class="btn-secondary">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              Rafraîchir
+            </button>
+          </div>
+        </div>
+        <div id="billing-kpis" class="billing-kpis"></div>
+        <div id="billing-status" class="status"></div>
+        <div id="billing-list"></div>
+      </section>
+
+      <!-- Modal affectation d'offre -->
+      <div id="billing-modal" class="modal-overlay" style="display:none">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h2>Affecter une offre</h2>
+            <button id="billing-close" class="btn-icon">&times;</button>
+          </div>
+          <div class="form-stack">
+            <input type="hidden" id="billing-org-id">
+            <label class="inline">
+              Organisation
+              <input id="billing-org-name" type="text" disabled>
+            </label>
+            <div class="form-row">
+              <label class="inline" style="flex:1">
+                Offre
+                <select id="billing-offer">
+                  <option value="ESSENTIEL">Essentiel — 29€/consultant/mois</option>
+                  <option value="CROISSANCE">Croissance — 49€/consultant/mois</option>
+                  <option value="ENTERPRISE">Enterprise — prix négocié</option>
+                </select>
+              </label>
+              <label class="inline" style="flex:1">
+                Périodicité
+                <select id="billing-period">
+                  <option value="ANNUEL">Annuelle prépayée (-20%)</option>
+                  <option value="TRIMESTRIEL">Trimestrielle prépayée</option>
+                  <option value="MENSUEL">Mensuelle</option>
+                </select>
+              </label>
+            </div>
+            <label class="inline" id="billing-price-label" style="display:none">
+              Prix mensuel négocié HT / consultant (€)
+              <input id="billing-price" type="number" min="1" step="0.01" placeholder="79.00">
+            </label>
+            <label class="inline">
+              Adresse de facturation
+              <input id="billing-address" type="text" placeholder="12 rue de la Paix, 75002 Paris">
+            </label>
+            <div class="form-row">
+              <label class="inline" style="flex:1">
+                SIREN / RCS
+                <input id="billing-rcs" type="text" placeholder="RCS Paris 123 456 789">
+              </label>
+              <label class="inline" style="flex:1">
+                Début de période
+                <input id="billing-start" type="date">
+              </label>
+            </div>
+          </div>
+          <div class="actions-row" style="margin-top:16px">
+            <button id="billing-save" class="btn-primary">Enregistrer</button>
+            <button id="billing-cancel" class="btn-ghost">Annuler</button>
+          </div>
+          <div id="billing-modal-status" class="status"></div>
+        </div>
+      </div>
 
       <!-- Modal édition -->
       <div id="edit-modal" class="modal-overlay" style="display:none">

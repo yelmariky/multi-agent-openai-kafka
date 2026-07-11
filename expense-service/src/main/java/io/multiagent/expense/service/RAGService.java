@@ -76,8 +76,8 @@ public class RAGService {
     @Value("${AI_CORE_PROMPT_INVOICE:}")
     private String invoicePromptEnv;
     // Modèle dédié à l'extraction JSON complexe (notes de frais, factures)
-    // llama-3.3-70b-versatile par défaut : bien meilleur que 8b pour suivre les instructions JSON
-    @Value("${OPENAI_EXPENSE_MODEL:llama-3.3-70b-versatile}")
+    // openai/gpt-oss-120b : remplace llama-3.3-70b-versatile (déprécié Groq 2026-08-16)
+    @Value("${OPENAI_EXPENSE_MODEL:openai/gpt-oss-120b}")
     private String expenseExtractionModel;
     private String singleExpensePromptTemplate;
     private String expenseListPromptTemplate;

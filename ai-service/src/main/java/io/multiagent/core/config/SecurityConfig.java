@@ -67,6 +67,8 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
+                // Chatbot du site vitrine — anonyme, protégé par PromptGuard + rate-limit IP (ChatbotService)
+                .requestMatchers(HttpMethod.POST, "/public/chatbot").permitAll()
                 .requestMatchers("/admin/notifications/stream", "/consultant/notifications/stream").permitAll()
                 .requestMatchers("/admin/notifications/**").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers(HttpMethod.POST, "/expenses/approve", "/expenses/refuse").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
@@ -78,6 +80,8 @@ public class SecurityConfig {
                 .requestMatchers("/settings/seller-profile", "/settings/seller", "/settings/reindex-chunks").hasRole(ROLE_ADMIN)
                 // Dashboard manager
                 .requestMatchers("/dashboard/**").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
+                // Aperçu tarifaire de l'abonnement du tenant (console admin — formulaire d'ajout consultant)
+                .requestMatchers(HttpMethod.GET, "/billing/preview").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 // Congés — consultant peut soumettre et consulter, admin peut approuver/refuser/gérer les soldes
                 .requestMatchers(HttpMethod.POST, "/leaves/request").authenticated()
                 .requestMatchers(HttpMethod.GET,  "/leaves/mine", "/leaves/balance").authenticated()

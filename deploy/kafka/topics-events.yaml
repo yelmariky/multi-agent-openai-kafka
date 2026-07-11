@@ -55,7 +55,8 @@ data:
 
     # --- Domaine : Notes de frais ---
     create_topic "expense.created"         "Nouvelle note de frais indexée (RAGService → indexExpenses)"
-    create_topic "expense.approved"        "Note de frais approuvée ou refusée par l'admin"
+    create_topic "expense.approved"        "Note de frais approuvée par l'admin"
+    create_topic "expense.refused"         "Note de frais refusée par l'admin"
     create_topic "expense.absence.updated" "Mise à jour des périodes d'absence km pour un consultant"
 
     # --- Domaine : CRA (Compte Rendu d'Activité) ---
@@ -63,15 +64,23 @@ data:
     create_topic "cra.validated"   "CRA validé par l'admin (transition SOUMIS → VALIDE)"
     create_topic "cra.refused"     "CRA refusé par l'admin (transition SOUMIS → REFUSE/BROUILLON)"
 
+    # --- Domaine : Congés ---
+    create_topic "leave.requested" "Demande de congé soumise par le consultant"
+    create_topic "leave.approved"  "Demande de congé approuvée par l'admin"
+    create_topic "leave.refused"   "Demande de congé refusée par l'admin"
+
     # --- Domaine : Factures ---
     create_topic "invoice.generated" "Facture générée et indexée dans Weaviate"
 
     # --- Domaine : Reasoning / Intent ---
     create_topic "reasoning.intent.routed" "Intent classifié et routé par le pipeline ReasoningService"
 
+    # --- Notifications temps réel (SSE) ---
+    create_topic "platform.notifications" "Notification SSE consommée par notification-service (broadcast par pod via groupId \${HOSTNAME})"
+
     echo ""
     echo "==> Liste des topics créés :"
-    kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list | grep -E "expense\.|cra\.|invoice\.|reasoning\." || true
+    kafka-topics.sh --bootstrap-server "${BOOTSTRAP}" --list | grep -E "expense\.|cra\.|leave\.|invoice\.|reasoning\.|platform\." || true
     echo ""
     echo "[DONE] Tous les topics ont été créés."
 ---

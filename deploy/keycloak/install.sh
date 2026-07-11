@@ -70,11 +70,26 @@ kubectl apply -f "${SCRIPT_DIR}/deployment.yaml"
 echo "==> [7/7] Application des Services (ClusterIP + NodePort)"
 kubectl apply -f "${SCRIPT_DIR}/service.yaml"
 
+echo "==> Attente que Keycloak soit prêt…"
+kubectl rollout status deployment/keycloak -n keycloak --timeout=120s
+
+echo "==> Application du thème ia-insight sur tous les realms via kcadm.sh"
+KC_POD=$(kubectl get pod -n keycloak -l app=keycloak -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n keycloak "$KC_POD" -- \
+  /opt/keycloak/bin/kcadm.sh config credentials \
+  --server http://localhost:8080 --realm master \
+  --user "${KEYCLOAK_ADMIN}" --password "${KEYCLOAK_ADMIN_PASSWORD}"
+for REALM in ia-insight platform; do
+  kubectl exec -n keycloak "$KC_POD" -- \
+    /opt/keycloak/bin/kcadm.sh update "realms/${REALM}" \
+    -s loginTheme=ia-insight 2>/dev/null \
+    && echo "  [OK] ${REALM} → loginTheme=ia-insight" \
+    || echo "  [SKIP] realm ${REALM} inexistant (sera importé au prochain démarrage)"
+done
+
 echo ""
 echo "[OK] Keycloak déployé."
 echo "     Accès dev local : http://localhost:30080"
-echo "     Attendre que le pod soit prêt :"
-echo "       kubectl rollout status deployment/keycloak -n keycloak"
 echo ""
 echo "     JWKS endpoint (valider les JWT depuis Kong/ai-core) :"
 echo "       http://keycloak.keycloak.svc.cluster.local:8080/realms/ia-insight/protocol/openid-connect/certs"

@@ -50,6 +50,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health/**", "/actuator/prometheus").permitAll()
                 .requestMatchers(HttpMethod.POST, "/invoices/delete", "/invoices/delete-by-text").hasRole(ROLE_ADMIN)
+                // Facturation des abonnements SaaS — console plateforme ou admin IA-INSIGHT
+                .requestMatchers(HttpMethod.POST, "/invoices/subscription/run-billing").hasAnyRole(ROLE_ADMIN, "platform_admin")
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2

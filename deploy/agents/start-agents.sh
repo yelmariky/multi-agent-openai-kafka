@@ -1,67 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Apply configs/secrets/deployments for ai-core, reasoning, reassign, audit.
+# Déploie la plateforme multi-tenant : namespace, topics Kafka, secrets,
+# puis configMaps/deployments pour ai-service, expense-service, activity-service,
+# notification-service et invoice-service.
 
 kubectl >/dev/null 2>&1 || { echo "kubectl introuvable"; exit 1; }
-#instal topics for multi-agent
-kubectl create ns multi-agent
-
-kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --create --topic intent-input-topic \
-     --partitions 3 --replication-factor 3
-
-kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --create --topic reasoning-input-topic \
-     --partitions 3 --replication-factor 3
-
-kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --create --topic audit.events.in \
-     --partitions 3 --replication-factor 3
-
-kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --create --topic reassign-input-topic \
-     --partitions 3 --replication-factor 3
-
-kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --create --topic reassign-output-topic \
-     --partitions 3 --replication-factor 3
-
-kubectl run kafka-client --rm -ti --restart=Never \
-  --image=confluentinc/cp-kafka:7.7.0 \
-  --namespace=agent-system \
-  -- kafka-topics --bootstrap-server kafka.agent-system.svc.cluster.local:9092 \
-     --create --topic audit.events.out \
-     --partitions 3 --replication-factor 3
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source $ROOT/ai-core/deploy/k8s/init-secret.sh
+
+echo "==> Namespace multi-agent"
+kubectl create ns multi-agent --dry-run=client -o yaml | kubectl apply -f -
+
+echo "==> Topics Kafka (Job kafka-topic-init)"
+kubectl apply -f "$ROOT/deploy/kafka/topics-events.yaml"
+kubectl wait --for=condition=complete job/kafka-topic-init -n agent-system --timeout=120s || \
+  echo "⚠️  kafka-topic-init pas encore terminé — vérifier: kubectl logs job/kafka-topic-init -n agent-system"
+
+echo "==> Secrets (OpenAI, Postgres, Keycloak)"
+source "$ROOT/ai-service/deploy/k8s/init-secret.sh"
+
+# Ordre important : les configMaps doivent être appliquées avant les deployments
+# qui les référencent (expense-service et activity-service réutilisent multi-agent-config).
 MANIFESTS=(
-  "$ROOT/ai-core/deploy/k8s/configMap.yaml"
-  "$ROOT/ai-core/deploy/k8s/deployment.yaml"
-  "$ROOT/reasoning-agent/deploy/k8s/configMap.yaml"
-  "$ROOT/reasoning-agent/deploy/k8s/deployment.yaml"
-  "$ROOT/intent-agent//deploy/k8s/configMap.yaml"
-  "$ROOT/intent-agent/deploy/k8s/deployment.yaml"
-  "$ROOT/reassign-agent/deploy/k8s/configMap.yaml"
-  "$ROOT/reassign-agent/deploy/k8s/deployment.yaml"
-  "$ROOT/audit-agent/deploy/k8s/configMap.yaml"
-  "$ROOT/audit-agent/deploy/k8s/deployment.yaml"
+  "$ROOT/ai-service/deploy/k8s/configMap.yaml"
+  "$ROOT/ai-service/deploy/k8s/deployment.yaml"
+  "$ROOT/expense-service/deploy/k8s/deployment.yaml"
+  "$ROOT/activity-service/deploy/k8s/deployment.yaml"
+  "$ROOT/notification-service/deploy/k8s/deployment.yaml"
+  "$ROOT/invoice-service/deploy/k8s/configMap.yaml"
+  "$ROOT/invoice-service/deploy/k8s/deployment.yaml"
+  "$ROOT/invoice-service/deploy/k8s/service.yaml"
 )
 
 for f in "${MANIFESTS[@]}"; do

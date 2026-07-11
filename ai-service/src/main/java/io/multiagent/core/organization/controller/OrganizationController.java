@@ -72,11 +72,52 @@ public class OrganizationController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, String>> deactivate(@PathVariable UUID id) {
+    public ResponseEntity<Map<String, Object>> deactivate(@PathVariable UUID id) {
         Organization org = organizationService.findById(id);
         if (org == null) return ResponseEntity.notFound().build();
+
+        // 1. Désactiver le realm Keycloak — bloque les nouveaux logins et révoque les sessions
+        boolean keycloakDisabled = true;
+        try {
+            keycloakProvisioning.disableRealm(org.getKeycloakRealm());
+        } catch (Exception e) {
+            log.error("Keycloak disableRealm failed for '{}': {}", org.getKeycloakRealm(), e.getMessage());
+            keycloakDisabled = false;
+        }
+
+        // 2. Marquer l'organisation inactive en base
         org.setActive(false);
         organizationService.update(id, org);
-        return ResponseEntity.ok(Map.of("message", "Tenant desactivated", "slug", org.getSlug()));
+
+        log.info("Tenant désactivé — slug={} keycloakDisabled={}", org.getSlug(), keycloakDisabled);
+        return ResponseEntity.ok(Map.of(
+                "message", "Tenant désactivé",
+                "slug", org.getSlug(),
+                "keycloakDisabled", keycloakDisabled
+        ));
+    }
+
+    @PutMapping("/{id}/reactivate")
+    public ResponseEntity<Map<String, Object>> reactivate(@PathVariable UUID id) {
+        Organization org = organizationService.findById(id);
+        if (org == null) return ResponseEntity.notFound().build();
+
+        boolean keycloakEnabled = true;
+        try {
+            keycloakProvisioning.enableRealm(org.getKeycloakRealm());
+        } catch (Exception e) {
+            log.error("Keycloak enableRealm failed for '{}': {}", org.getKeycloakRealm(), e.getMessage());
+            keycloakEnabled = false;
+        }
+
+        org.setActive(true);
+        organizationService.update(id, org);
+
+        log.info("Tenant réactivé — slug={} keycloakEnabled={}", org.getSlug(), keycloakEnabled);
+        return ResponseEntity.ok(Map.of(
+                "message", "Tenant réactivé",
+                "slug", org.getSlug(),
+                "keycloakEnabled", keycloakEnabled
+        ));
     }
 }

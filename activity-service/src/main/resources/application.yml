@@ -31,6 +31,21 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
+spring.mail:
+  host: ${MAIL_HOST:smtp.gmail.com}
+  port: ${MAIL_PORT:587}
+  username: ${MAIL_USERNAME:}
+  password: ${MAIL_PASSWORD:}
+  properties:
+    mail.smtp.auth: true
+    mail.smtp.starttls.enable: true
+
+cra:
+  reminder:
+    enabled: ${CRA_REMINDER_ENABLED:true}
+    from: ${CRA_REMINDER_FROM:noreply@ia-insight.fr}
+    frontend-url: ${FRONTEND_CONSULTANT_URL:http://localhost:3001}
+
 keycloak:
   base-url: ${KEYCLOAK_BASE_URL:http://localhost:8090}
   internal-url: ${KEYCLOAK_INTERNAL_URL:http://keycloak.keycloak.svc.cluster.local:8080}

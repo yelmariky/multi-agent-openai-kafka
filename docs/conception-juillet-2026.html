@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conception Juillet 2026 — IA-INSIGHT Platform</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Space Grotesk',system-ui;font-size:11pt;line-height:1.65;color:#1a1a2e;background:#fff}
+:root{--p:#2563eb;--g:#16a34a;--o:#d97706;--r:#dc2626;--v:#7c3aed;--c:#0891b2;--m:#64748b;--l:#f1f5f9;--b:#e2e8f0;--d:#0f172a}
+.page{max-width:920px;margin:0 auto;padding:0 40px}
+
+/* COVER */
+.cover{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+  background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 50%,#0e7490 100%);
+  color:#fff;padding:80px 60px;page-break-after:always}
+.cover-eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 16px;
+  font-size:10pt;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:28px}
+.cover-month{font-size:13pt;color:#38bdf8;font-weight:600;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase}
+.cover h1{font-size:38pt;font-weight:800;line-height:1.1;margin-bottom:12px}
+.cover h1 em{color:#2ce5a7;font-style:normal}
+.cover-sub{font-size:14pt;color:#94a3b8;margin-bottom:44px;max-width:580px}
+.cover-tags{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:48px}
+.tag{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);
+  border-radius:8px;padding:5px 14px;font-size:9.5pt;color:#cbd5e1}
+.cover-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:0;
+  border-top:1px solid rgba(255,255,255,.12);padding-top:28px}
+.meta-item{padding:0 24px 0 0}
+.meta-item:first-child{padding-left:0}
+.meta-label{font-size:8.5pt;color:#475569;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+.meta-val{font-size:12pt;font-weight:600;color:#e2e8f0}
+
+/* SECTIONS */
+.section{padding:52px 0 28px;page-break-before:always}
+.section:first-of-type{page-break-before:auto}
+.eyebrow{font-size:9pt;font-weight:700;color:var(--p);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+h2.stitle{font-size:22pt;font-weight:800;color:var(--d);margin-bottom:22px;padding-bottom:12px;border-bottom:3px solid var(--p)}
+h3{font-size:13pt;font-weight:700;color:var(--d);margin:26px 0 11px}
+h4{font-size:11pt;font-weight:600;color:var(--p);margin:18px 0 8px}
+p{margin-bottom:11px;color:#334155}
+
+/* SPRINT CARD */
+.sprint-card{border:1px solid var(--b);border-radius:14px;overflow:hidden;margin:28px 0;page-break-inside:avoid}
+.sprint-head{padding:22px 28px;display:flex;align-items:center;gap:20px}
+.sh-s1{background:linear-gradient(135deg,#1e40af,#0284c7)}
+.sh-s2{background:linear-gradient(135deg,#5b21b6,#7c3aed)}
+.sprint-num{font-size:32pt;font-weight:900;color:rgba(255,255,255,.2);line-height:1;min-width:52px}
+.sprint-head-info h3{font-size:15pt;color:#fff;margin:0 0 3px}
+.sprint-head-info p{font-size:9.5pt;color:rgba(255,255,255,.65);margin:0}
+.sprint-body{padding:24px 28px}
+
+/* TABLES */
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:10pt}
+th{background:var(--d);color:#fff;padding:9px 14px;text-align:left;font-weight:600;font-size:9.5pt}
+td{padding:8px 14px;border-bottom:1px solid var(--b);vertical-align:top}
+tr:nth-child(even) td{background:var(--l)}
+
+/* LISTS */
+.ul{list-style:none;margin:10px 0}
+.ul li{display:flex;gap:9px;padding:6px 0;border-bottom:1px solid var(--b);font-size:10.5pt;color:#334155}
+.ul li:last-child{border-bottom:none}
+.ul li::before{content:"→";color:var(--p);font-weight:700;flex-shrink:0}
+.check li::before{content:"✓";color:var(--g)}
+.warn li::before{content:"⚠";color:var(--o)}
+
+/* GRID */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:14px 0}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:14px 0}
+.box{background:var(--l);border:1px solid var(--b);border-radius:10px;padding:16px}
+.kpi{text-align:center}
+.kpi .v{font-size:26pt;font-weight:800;color:var(--p)}
+.kpi .l{font-size:8.5pt;color:var(--m);text-transform:uppercase;letter-spacing:.8px}
+
+/* CALLOUTS */
+.note{border-left:4px solid var(--p);background:var(--l);padding:14px 18px;margin:16px 0;border-radius:0 8px 8px 0}
+.note.g{border-color:var(--g);background:#f0fdf4}
+.note.o{border-color:var(--o);background:#fffbeb}
+.note.r{border-color:var(--r);background:#fef2f2}
+
+/* BADGES */
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:9pt;font-weight:600}
+.bg{background:#dcfce7;color:#15803d}.bb{background:#dbeafe;color:#1d4ed8}
+.bo{background:#ffedd5;color:#c2410c}.bv{background:#f3e8ff;color:#7e22ce}
+.br{background:#fee2e2;color:#b91c1c}
+
+/* DOD */
+.dod{background:var(--d);color:#e2e8f0;border-radius:10px;padding:20px 24px;margin:18px 0}
+.dod h4{color:#2ce5a7;margin-bottom:10px}
+.dod li{padding:4px 0;font-size:10pt;list-style:none;display:flex;gap:8px}
+.dod li::before{content:"✓";color:#2ce5a7;flex-shrink:0}
+
+/* UX SCREENS */
+.screen-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:16px 0}
+.screen-box{border:1px solid var(--b);border-radius:10px;overflow:hidden}
+.screen-header{background:var(--d);color:#7ad7ff;padding:8px 14px;font-size:9.5pt;font-weight:600}
+.screen-body{padding:12px 14px;font-size:9.5pt;color:#334155}
+
+/* FOOTER */
+.footer{margin-top:60px;padding:20px 0;border-top:1px solid var(--b);text-align:center;color:var(--m);font-size:9pt}
+
+@media print{
+  body{font-size:10pt}
+  .cover,.section{page-break-before:always;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .sprint-card{page-break-inside:avoid}
+  .sprint-head,.dod{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{margin:18mm 14mm}
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-eyebrow">📅 Dossier de Conception Mensuel</div>
+  <div class="cover-month">Juillet 2026 — Mois 1 / 4</div>
+  <h1>Consolidation<br><em>& Design System</em></h1>
+  <p class="cover-sub">Finaliser la décomposition microservices, unifier l'expérience utilisateur des 3 consoles et poser les bases du Design System.</p>
+  <div class="cover-tags">
+    <span class="tag">🏗 Architecture microservices</span>
+    <span class="tag">🎨 UX / Design System</span>
+    <span class="tag">⚡ Kong routing</span>
+    <span class="tag">♿ Accessibilité WCAG 2.1</span>
+    <span class="tag">📱 Responsive</span>
+  </div>
+  <div class="cover-meta">
+    <div class="meta-item"><div class="meta-label">Sprints</div><div class="meta-val">S1 + S2</div></div>
+    <div class="meta-item"><div class="meta-label">Durée</div><div class="meta-val">4 semaines</div></div>
+    <div class="meta-item"><div class="meta-label">Statut</div><div class="meta-val">🔵 En cours</div></div>
+    <div class="meta-item"><div class="meta-label">Équipe</div><div class="meta-val">3 devs + 1 UX</div></div>
+  </div>
+</div>
+
+<div class="page">
+
+<!-- ══════════════════════════════════════════
+     CONCEPTION DU PROJET (commun aux 4 mois)
+══════════════════════════════════════════ -->
+
+<!-- SOMMAIRE -->
+<div class="section" style="page-break-before:auto">
+  <h2 class="stitle" style="border-color:#334155">Sommaire</h2>
+  <table>
+    <thead><tr><th>#</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Contexte & Besoin métier</td></tr>
+      <tr><td>2</td><td>Solution proposée & Périmètre</td></tr>
+      <tr><td>3</td><td>Architecture technique</td></tr>
+      <tr><td>4</td><td>Roadmap globale — 8 sprints / 4 mois</td></tr>
+      <tr><td>5</td><td>Sprints du mois — Juillet 2026</td></tr>
+      <tr><td>6</td><td>Sprint Review & Rétrospective</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 1. CONTEXTE -->
+<div class="section">
+  <div class="eyebrow">Section 1</div>
+  <h2 class="stitle">Contexte & Besoin métier</h2>
+
+  <h3>Le problème des ESN aujourd'hui</h3>
+  <p>Les entreprises de services numériques (ESN) et cabinets de conseil IT gèrent des dizaines à des centaines de consultants disséminés chez leurs clients. Chaque mois, ce modèle génère une charge administrative considérable :</p>
+
+  <div class="g3" style="margin:20px 0">
+    <div class="box kpi"><div class="v">3h</div><div class="l">Perdues par consultant/mois en admin</div></div>
+    <div class="box kpi"><div class="v">23%</div><div class="l">Notes de frais avec erreurs</div></div>
+    <div class="box kpi"><div class="v">8j</div><div class="l">Délai moyen facturation post-CRA</div></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Processus</th><th>Situation actuelle</th><th>Impact</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Notes de frais</strong></td><td>Saisie manuelle Excel, scan PDF par email</td><td>Erreurs, pièces perdues, retards remboursement</td></tr>
+      <tr><td><strong>CRA mensuel</strong></td><td>Feuille Excel partagée ou formulaire papier</td><td>Retards validation → retards facturation client</td></tr>
+      <tr><td><strong>Facturation client</strong></td><td>Factures générées manuellement Word/Excel</td><td>Risques TVA, numérotation incohérente</td></tr>
+      <tr><td><strong>Gestion congés</strong></td><td>Email ou HR tool déconnecté des outils métier</td><td>Calcul frais km erroné si absences non remontées</td></tr>
+      <tr><td><strong>Visibilité manager</strong></td><td>Aucun tableau de bord temps réel</td><td>Arbitrages retardés, perte de contexte</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Besoins exprimés</h3>
+  <div class="g2">
+    <div>
+      <h4>Consultant</h4>
+      <ul class="ul">
+        <li>Saisir une note de frais en langage naturel</li>
+        <li>Photographier un justificatif → OCR automatique</li>
+        <li>Frais km avec exclusion automatique des absences/congés</li>
+        <li>Soumettre son CRA depuis n'importe quel appareil</li>
+        <li>Notifications temps réel sur les décisions admin</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Manager / Admin</h4>
+      <ul class="ul">
+        <li>Valider/refuser frais et CRA en 1 clic</li>
+        <li>Génération automatique de factures PDF à la validation CRA</li>
+        <li>Tableau de bord global : frais, CRA, factures</li>
+        <li>Console multi-tenant : piloter plusieurs ESN</li>
+        <li>Conformité RGPD & audit trail LLM</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 2. SOLUTION -->
+<div class="section">
+  <div class="eyebrow">Section 2</div>
+  <h2 class="stitle">Solution proposée & Périmètre</h2>
+
+  <div class="note g">
+    <strong>Vision produit :</strong> Une plateforme SaaS multi-tenant d'automatisation administrative pour ESN, propulsée par des LLM open-source (Groq) avec pipeline RAG sur pgvector. L'utilisateur parle à un assistant IA en français naturel — il s'occupe du reste.
+  </div>
+
+  <div class="g2">
+    <div>
+      <h4>✅ Dans le périmètre</h4>
+      <ul class="ul check">
+        <li>Notes de frais — saisie libre, OCR, frais km</li>
+        <li>CRA mensuel — workflow BROUILLON→SOUMIS→VALIDÉ</li>
+        <li>Congés CP/RTT — demandes & solde</li>
+        <li>Facturation — PDF & Excel client</li>
+        <li>Notifications SSE temps réel</li>
+        <li>Pipeline RAG pgvector + LLM Groq/OpenAI</li>
+        <li>Multi-tenant Keycloak realm-per-tenant</li>
+        <li>Gouvernance IA (audit, PII masking, token budget)</li>
+        <li>Conformité RGPD (droit à l'oubli, portabilité)</li>
+        <li>AWS Production (EKS, RDS, MSK, DR)</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Profils utilisateurs</h4>
+      <table>
+        <tr><th>Profil</th><th>Interface</th></tr>
+        <tr><td>Consultant</td><td>frontend-consultant :3001</td></tr>
+        <tr><td>Admin ESN</td><td>frontend :3000</td></tr>
+        <tr><td>Super-admin</td><td>frontend-platform :3002</td></tr>
+      </table>
+      <h4 style="margin-top:16px">Stack technique</h4>
+      <table>
+        <tr><th>Couche</th><th>Technologie</th></tr>
+        <tr><td>LLM principal</td><td>Groq — llama-3.1-8b + gpt-oss-120b</td></tr>
+        <tr><td>LLM fallback</td><td>OpenAI gpt-4.1-mini (circuit breaker)</td></tr>
+        <tr><td>Embeddings</td><td>OpenAI text-embedding-3-large</td></tr>
+        <tr><td>DB + Vector</td><td>PostgreSQL 16 + pgvector</td></tr>
+        <tr><td>Auth</td><td>Keycloak 24 realm-per-tenant</td></tr>
+        <tr><td>Messaging</td><td>Apache Kafka KRaft</td></tr>
+        <tr><td>Backend</td><td>Spring Boot 3.3 / Java 21</td></tr>
+        <tr><td>Cloud</td><td>AWS EKS + RDS + MSK</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 3. ARCHITECTURE -->
+<div class="section">
+  <div class="eyebrow">Section 3</div>
+  <h2 class="stitle">Architecture technique</h2>
+
+  <div style="background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8.5pt;
+    padding:20px 24px;border-radius:10px;margin:16px 0;white-space:pre;line-height:1.55;overflow-x:auto">
+Internet → Route 53 → WAF → ALB (HTTPS/ACM)
+                               │
+                      Kong / Ingress K8s
+          ┌────────────┬────────┴────────┬──────────────┐
+          ▼            ▼                 ▼              ▼
+    ai-service    expense-service  activity-service  invoice-service
+      :8081          :8082             :8085            :8083
+    (settings,   (frais, OCR,      (CRA, congés,    (PDF, Excel,
+     org, RAG,    RAG, intent)      PDF CRA)         paiements)
+     reasoning)
+          │            │                 │              │
+          └────────────┴────────┬────────┴──────────────┘
+                                ▼
+                  PostgreSQL 16 + pgvector (RDS Multi-AZ)
+                  Apache Kafka KRaft 3 noeuds (MSK)
+                  Keycloak 24 realm-per-tenant
+                                │
+                    notification-service :8084
+                    (SSE hub — consomme platform.notifications)
+                                │
+          ┌─────────────────────┤
+          ▼                     ▼
+  frontend/ :3000    frontend-consultant/ :3001    frontend-platform/ :3002
+  (Admin ESN)        (Consultant)                  (Super-admin)</div>
+
+  <h3>Multi-tenant — realm-per-tenant Keycloak</h3>
+  <p>Chaque organisation cliente dispose de son propre realm Keycloak. Le <code>TenantFilter</code> extrait le realm depuis le claim <code>iss</code> du JWT et positionne le <code>TenantContext</code> (ThreadLocal UUID) avant tout accès JPA. Toutes les requêtes DB filtrent par <code>tenant_id</code>.</p>
+
+  <h3>Résilience LLM — Circuit Breaker</h3>
+  <p>Groq est le LLM primaire (500 tok/s, gratuit tier dev). En cas de panne, resilience4j circuit breaker détecte 5 échecs sur 10 appels et bascule immédiatement sur OpenAI gpt-4.1-mini, sans délai de retry. Le circuit se referme après 30s.</p>
+</div>
+
+<!-- 4. ROADMAP 8 SPRINTS -->
+<div class="section">
+  <div class="eyebrow">Section 4</div>
+  <h2 class="stitle">Roadmap globale — 8 Sprints / 4 Mois</h2>
+
+  <table>
+    <thead><tr><th>Sprint</th><th>Mois</th><th>Thème</th><th>Valeur livrée</th></tr></thead>
+    <tbody>
+      <tr style="background:#dbeafe"><td><strong>S1</strong></td><td>Juillet</td><td>Consolidation architecture + Kong routing</td><td>Architecture propre, routing correct vers chaque service</td></tr>
+      <tr style="background:#dbeafe"><td><strong>S2</strong></td><td>Juillet</td><td>UX Design System & cohérence 3 frontends</td><td>Expérience unifiée, mobile fonctionnel, accessibilité WCAG</td></tr>
+      <tr style="background:#f3e8ff"><td><strong>S3</strong></td><td>Août</td><td>Gouvernance IA — Audit trail, PII Masking, Token Budget</td><td>0 PII fuite vers LLM, traçabilité complète</td></tr>
+      <tr style="background:#f3e8ff"><td><strong>S4</strong></td><td>Août</td><td>Sécurité RGPD & Versioning modèles</td><td>DPIA validé, droit à l'oubli, OWASP LLM 9/10 couverts</td></tr>
+      <tr style="background:#f0f9ff"><td><strong>S5</strong></td><td>Septembre</td><td>Facturation end-to-end</td><td>Cycle CRA → Facture → Paiement complet et automatisé</td></tr>
+      <tr style="background:#f0f9ff"><td><strong>S6</strong></td><td>Septembre</td><td>Observabilité & SLA</td><td>Grafana, alerting, SLO mesurables, runbooks ops</td></tr>
+      <tr style="background:#fffbeb"><td><strong>S7</strong></td><td>Octobre</td><td>AWS Architecture & Terraform</td><td>EKS, RDS, MSK, Secrets Manager, IaC complet</td></tr>
+      <tr style="background:#fffbeb"><td><strong>S8</strong></td><td>Octobre</td><td>Production Deployment & Go-Live</td><td>Plateforme sur AWS, client pilote actif, SLA 99.9%</td></tr>
+    </tbody>
+  </table>
+
+  <div style="background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8.5pt;
+    padding:16px 24px;border-radius:10px;margin:16px 0;white-space:pre;line-height:1.8">
+Sem:  1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16
+      │   │   │   │   │   │   │   │   │   │   │   │   │   │   │   │
+S1    ████████████
+S2                ████████████
+S3                            ████████████
+S4                                        ████████████
+S5                                                    ████████████
+S6                                                                ████████████
+S7                                                                            ████████████
+S8                                                                                        ████████████
+      │           │           │           │           │           │           │           │
+    J-1         J-4         A-1         A-4         S-1         S-4         O-1         O-4</div>
+</div>
+
+<!-- ══ SECTION : CONTEXTE ══ -->
+<div class="section">
+  <div class="eyebrow">Contexte du mois</div>
+  <h2 class="stitle">Où en sommes-nous ?</h2>
+
+  <div class="note g">
+    <strong>Acquis fin Juin 2026 :</strong> Les 5 microservices sont déployés (ai-service :8081, expense-service :8082, activity-service :8085, invoice-service :8083, notification-service :8084). Les modules métier (frais, CRA, congés) sont fonctionnels. Le circuit breaker LLM Groq→OpenAI est opérationnel.
+  </div>
+
+  <div class="g3">
+    <div class="box kpi"><div class="v">5</div><div class="l">Microservices déployés</div></div>
+    <div class="box kpi"><div class="v">13</div><div class="l">Topics Kafka configurés</div></div>
+    <div class="box kpi"><div class="v">3</div><div class="l">Frontends en production</div></div>
+  </div>
+
+  <h3>Dette technique identifiée à ce stade</h3>
+  <table>
+    <thead><tr><th>Problème</th><th>Impact</th><th>Priorité</th></tr></thead>
+    <tbody>
+      <tr><td>Code CRA/expense toujours présent dans ai-service (duplicat)</td><td>Confusion routing, maintenance double</td><td><span class="badge br">CRITIQUE</span></td></tr>
+      <tr><td>Kong ne route pas encore vers expense-service / activity-service</td><td>Frontends appellent ai-service directement</td><td><span class="badge br">CRITIQUE</span></td></tr>
+      <tr><td>3 frontends avec des composants UI incohérents</td><td>UX fragmentée, charte non respectée</td><td><span class="badge bo">MOYEN</span></td></tr>
+      <tr><td>Aucun loading state sur les appels LLM (3-30s)</td><td>Utilisateur croit que l'app est bloquée</td><td><span class="badge bo">MOYEN</span></td></tr>
+      <tr><td>Pas de responsive mobile sur frontend-consultant</td><td>Consultants sur téléphone pénalisés</td><td><span class="badge bo">MOYEN</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══ SPRINT 1 ══ -->
+<div class="section">
+  <div class="sprint-card">
+    <div class="sprint-head sh-s1">
+      <div class="sprint-num">S1</div>
+      <div class="sprint-head-info">
+        <h3>Consolidation architecture & Kong routing complet</h3>
+        <p>Semaines 1-2 · Juillet 2026 · Responsable : Tech Lead Backend</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Objectif du sprint</h4>
+      <p>Terminer proprement la décomposition microservices initiée en Juin : retirer le code métier dupliqué de ai-service, configurer Kong pour router vers les bons services, et valider la non-régression end-to-end.</p>
+
+      <div class="g2">
+        <div>
+          <h4>User stories</h4>
+          <ul class="ul">
+            <li>En tant que Tech Lead, je retire tous les controllers expense/CRA/leave de ai-service afin qu'il ne reste que les modules settings, organization, RAG et reasoning</li>
+            <li>En tant que consultant, mes appels /expenses/* et /cra/* passent par Kong vers les bons microservices sans régression fonctionnelle</li>
+            <li>En tant qu'admin, le dashboard charge ses données depuis les bons services via Kong sans modifier le frontend</li>
+            <li>En tant que DevOps, je dispose d'un script de smoke-test automatisé validant tous les endpoints critiques après déploiement</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Livrables techniques</h4>
+          <ul class="ul check">
+            <li>Suppression controllers expense/CRA/leave de ai-service (src + tests)</li>
+            <li>Kong declarative config : /expenses/* → expense-service, /cra/* → activity-service, /leaves/* → activity-service, /notifications/* → notification-service</li>
+            <li>Mise à jour config.js des 3 frontends (apiBase via Kong)</li>
+            <li>Script smoke-test.sh (curl sur 15 endpoints critiques)</li>
+            <li>Mise à jour docs/ENDPOINTS.md</li>
+            <li>Mise à jour CLAUDE.md (routing actuel)</li>
+          </ul>
+        </div>
+      </div>
+
+      <h4>Architecture Kong après Sprint 1</h4>
+      <table>
+        <thead><tr><th>Préfixe</th><th>Service cible</th><th>Port</th><th>Avant S1</th></tr></thead>
+        <tbody>
+          <tr><td><code>/expenses/*</code></td><td>expense-service</td><td>8082</td><td>→ ai-service ❌</td></tr>
+          <tr><td><code>/receipts/*</code></td><td>expense-service</td><td>8082</td><td>→ ai-service ❌</td></tr>
+          <tr><td><code>/reasoning/*</code></td><td>expense-service</td><td>8082</td><td>→ ai-service ❌</td></tr>
+          <tr><td><code>/cra/*</code></td><td>activity-service</td><td>8085</td><td>→ ai-service ❌</td></tr>
+          <tr><td><code>/leaves/*</code></td><td>activity-service</td><td>8085</td><td>→ ai-service ❌</td></tr>
+          <tr><td><code>/notifications/*</code></td><td>notification-service</td><td>8084</td><td>→ ai-service ❌</td></tr>
+          <tr><td><code>/invoices/*</code></td><td>invoice-service</td><td>8083</td><td>✅ OK</td></tr>
+          <tr><td>tout le reste</td><td>ai-service</td><td>8081</td><td>✅ OK</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Critères d'acceptation</h4>
+      <ul class="ul check">
+        <li>ai-service ne contient plus aucun import package expense, cra, leave</li>
+        <li>mvn clean compile -pl ai-service → BUILD SUCCESS sans ces packages</li>
+        <li>smoke-test.sh → 15/15 endpoints HTTP 200 ou 401 (auth requise)</li>
+        <li>Aucune régression sur les tests unitaires existants</li>
+        <li>Le frontend consultant crée une note de frais via Kong → expense-service</li>
+      </ul>
+
+      <div class="dod">
+        <h4>Definition of Done — Sprint 1</h4>
+        <ul>
+          <li>Code retiré, compilé, tests passants</li>
+          <li>Kong config appliquée en K8s et validée</li>
+          <li>Smoke-test automatisé exécuté et vert</li>
+          <li>Docs mis à jour (ENDPOINTS.md, CLAUDE.md, INFRA.md)</li>
+          <li>Code review approuvée par 1 pair</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ SPRINT 2 ══ -->
+  <div class="sprint-card">
+    <div class="sprint-head sh-s2">
+      <div class="sprint-num">S2</div>
+      <div class="sprint-head-info">
+        <h3>UX Design System & cohérence 3 frontends</h3>
+        <p>Semaines 3-4 · Juillet 2026 · Responsable : Tech Lead Frontend + UX Designer</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Objectif du sprint</h4>
+      <p>Unifier l'expérience utilisateur des 3 consoles (admin, consultant, platform) sur une base de composants cohérente, accessible (WCAG 2.1 AA) et responsive. L'objectif n'est pas un redesign complet mais une harmonisation et l'élimination des incohérences visuelles.</p>
+
+      <h4>Inventaire composants à harmoniser</h4>
+      <div class="screen-grid">
+        <div class="screen-box">
+          <div class="screen-header">frontend/ (Admin :3000)</div>
+          <div class="screen-body">
+            <strong>Composants :</strong> Dashboard KPI, queues d'approbation, tableau frais/CRA, drawer settings<br><br>
+            <strong>Problèmes :</strong> Boutons primaires incohérents, pas de skeleton loader, tableau non responsive
+          </div>
+        </div>
+        <div class="screen-box">
+          <div class="screen-header">frontend-consultant/ (:3001)</div>
+          <div class="screen-body">
+            <strong>Composants :</strong> Saisie libre, upload OCR, CRA grid mensuel, congés<br><br>
+            <strong>Problèmes :</strong> Mobile cassé sur CRA grid, liste absences volumineuse (résolu S0), loading LLM absent
+          </div>
+        </div>
+        <div class="screen-box">
+          <div class="screen-header">frontend-platform/ (:3002)</div>
+          <div class="screen-body">
+            <strong>Composants :</strong> Gestion tenants, provisioning organisation<br><br>
+            <strong>Problèmes :</strong> Page minimale, manque feedback actions, pas de confirmation destructive
+          </div>
+        </div>
+      </div>
+
+      <h4>Tokens Design System (CSS Variables — à standardiser)</h4>
+      <table>
+        <thead><tr><th>Token</th><th>Valeur</th><th>Usage</th></tr></thead>
+        <tbody>
+          <tr><td><code>--bg</code></td><td>#0d1017</td><td>Fond principal toutes pages</td></tr>
+          <tr><td><code>--card</code></td><td>#111725</td><td>Cartes, panneaux</td></tr>
+          <tr><td><code>--accent</code></td><td>#2ce5a7</td><td>CTA principal, succès, focus</td></tr>
+          <tr><td><code>--accent-2</code></td><td>#7ad7ff</td><td>Liens, éléments secondaires</td></tr>
+          <tr><td><code>--text</code></td><td>#ecf1ff</td><td>Texte principal</td></tr>
+          <tr><td><code>--muted</code></td><td>#a8b3c6</td><td>Labels, descriptions</td></tr>
+          <tr><td><code>--danger</code></td><td>#ff5252</td><td>Erreurs, suppressions</td></tr>
+          <tr><td><code>--warning</code></td><td>#fb923c</td><td>Avertissements</td></tr>
+          <tr><td><code>--border</code></td><td>#1f2a3f</td><td>Séparateurs, bordures cartes</td></tr>
+          <tr><td><code>--font</code></td><td>Space Grotesk</td><td>Typographie unique</td></tr>
+        </tbody>
+      </table>
+
+      <div class="g2">
+        <div>
+          <h4>User stories UX</h4>
+          <ul class="ul">
+            <li>En tant que consultant sur mobile (iPhone 14), je peux remplir et soumettre mon CRA sans scrolling horizontal ni éléments tronqués</li>
+            <li>En tant qu'utilisateur, je vois un skeleton loader animé pendant les appels LLM (3-30s) plutôt qu'un écran figé</li>
+            <li>En tant qu'admin, chaque action destructive (suppression, refus) déclenche une modale de confirmation avec le libellé de l'entité</li>
+            <li>En tant qu'utilisateur malvoyant, tous les éléments interactifs ont un ratio de contraste ≥ 4.5:1 (WCAG AA)</li>
+            <li>En tant qu'utilisateur clavier, je navigue dans l'app sans souris (Tab, Enter, Escape fonctionnels)</li>
+            <li>En tant que consultant, la page "organisation introuvable" est stylée comme le reste de l'app (déjà livré)</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Livrables</h4>
+          <ul class="ul check">
+            <li>shared/design-tokens.css — variables CSS centralisées, importées par les 3 frontends</li>
+            <li>Skeleton loader (.skeleton-pulse) pour les appels LLM et chargements lents</li>
+            <li>Composant Modal de confirmation réutilisable (JS pur)</li>
+            <li>CRA grid : responsive mobile (grid → stack sous 768px)</li>
+            <li>Toast notifications harmonisées (succès/erreur/info)</li>
+            <li>ARIA labels sur tous les boutons icône et champs complexes</li>
+            <li>Audit contraste : rapport accessibilité pour les 3 frontends</li>
+            <li>Breakpoints définis : 320px / 768px / 1024px / 1440px</li>
+          </ul>
+        </div>
+      </div>
+
+      <h4>Règles responsive Mobile First</h4>
+      <table>
+        <thead><tr><th>Breakpoint</th><th>Layout</th><th>Adaptations clés</th></tr></thead>
+        <tbody>
+          <tr><td><strong>< 480px</strong> (mobile)</td><td>1 colonne, navigation bottom</td><td>CRA grid en liste, formulaires full-width, tabs scrollables</td></tr>
+          <tr><td><strong>480–768px</strong> (tablette)</td><td>1-2 colonnes</td><td>Sidebar collapsible, cartes en grille 2 colonnes</td></tr>
+          <tr><td><strong>768–1024px</strong> (laptop)</td><td>Sidebar + contenu</td><td>Layout actuel, sidebar visible</td></tr>
+          <tr><td><strong>> 1024px</strong> (desktop)</td><td>Full layout</td><td>Grilles 3+ colonnes, tableaux complets</td></tr>
+        </tbody>
+      </table>
+
+      <div class="dod">
+        <h4>Definition of Done — Sprint 2</h4>
+        <ul>
+          <li>design-tokens.css importé par les 3 frontends sans conflit</li>
+          <li>Test sur iPhone 14 Safari : CRA et notes de frais utilisables</li>
+          <li>Lighthouse Accessibility score ≥ 85 sur les 3 frontends</li>
+          <li>Skeleton loader visible sur les appels LLM (testable en throttle réseau)</li>
+          <li>Modale de confirmation sur toutes les actions destructives (refus, suppression)</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ RETROSPECTIVE ══ -->
+<div class="section">
+  <div class="eyebrow">Fin de mois</div>
+  <h2 class="stitle">Sprint Review & Rétrospective Juillet</h2>
+
+  <div class="g2">
+    <div>
+      <h3>Sprint Review (démo)</h3>
+      <ul class="ul">
+        <li>Démo live Kong routing : créer une note de frais depuis le front consultant → trace dans expense-service</li>
+        <li>Démo responsive : afficher le CRA sur iPhone (émulateur DevTools)</li>
+        <li>Démo skeleton loader : throttler le réseau à 3G, montrer le comportement</li>
+        <li>Démo accessibilité : naviguer dans l'app uniquement au clavier</li>
+        <li>Présenter le smoke-test.sh et son résultat (15/15 vert)</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Points rétrospective à couvrir</h3>
+      <ul class="ul">
+        <li><strong>Ce qui a bien fonctionné</strong> : communication inter-équipes, découpage clair des sprints</li>
+        <li><strong>Ce qui peut s'améliorer</strong> : estimation de la dette technique UX (souvent sous-estimée)</li>
+        <li><strong>Action concrète</strong> : créer un checklist UX obligatoire en DoD pour les prochains sprints</li>
+        <li><strong>Vélocité mesurée</strong> vs planifiée → ajuster les sprints d'Août si nécessaire</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note o">
+    <strong>Risque Juillet :</strong> La suppression du code CRA/expense de ai-service peut introduire des régressions si des appels croisés internes (non documentés) existaient. Prévoir une journée de buffer en fin de S1 pour les corrections.
+  </div>
+</div>
+
+<div class="footer">IA-INSIGHT Platform · Dossier de conception Juillet 2026 · Confidentiel</div>
+</div>
+</body>
+</html>

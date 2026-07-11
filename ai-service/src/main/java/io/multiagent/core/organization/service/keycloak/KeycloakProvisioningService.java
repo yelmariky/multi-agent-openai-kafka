@@ -60,12 +60,43 @@ public class KeycloakProvisioningService {
     }
 
     /**
-     * Deletes a Keycloak realm (used when deactivating a tenant).
+     * Désactive un realm Keycloak — plus aucun login possible, sessions existantes révoquées.
+     * Non destructif : le realm et tous ses utilisateurs sont conservés pour réactivation.
+     */
+    public void disableRealm(String realmName) {
+        try (Keycloak kc = buildAdminClient()) {
+            RealmRepresentation rep = kc.realm(realmName).toRepresentation();
+            rep.setEnabled(false);
+            kc.realm(realmName).update(rep);
+            // Révoquer toutes les sessions actives
+            kc.realm(realmName).logoutAll();
+            log.info("Keycloak realm '{}' désactivé — sessions révoquées", realmName);
+        } catch (Exception e) {
+            log.warn("Échec désactivation realm Keycloak '{}': {}", realmName, e.getMessage());
+        }
+    }
+
+    /**
+     * Réactive un realm Keycloak précédemment désactivé.
+     */
+    public void enableRealm(String realmName) {
+        try (Keycloak kc = buildAdminClient()) {
+            RealmRepresentation rep = kc.realm(realmName).toRepresentation();
+            rep.setEnabled(true);
+            kc.realm(realmName).update(rep);
+            log.info("Keycloak realm '{}' réactivé", realmName);
+        } catch (Exception e) {
+            log.warn("Échec réactivation realm Keycloak '{}': {}", realmName, e.getMessage());
+        }
+    }
+
+    /**
+     * Deletes a Keycloak realm — irréversible, à n'utiliser que pour suppression définitive.
      */
     public void deleteRealm(String realmName) {
         try (Keycloak kc = buildAdminClient()) {
             kc.realm(realmName).remove();
-            log.info("Keycloak realm '{}' deleted", realmName);
+            log.info("Keycloak realm '{}' supprimé définitivement", realmName);
         } catch (Exception e) {
             log.warn("Failed to delete Keycloak realm '{}': {}", realmName, e.getMessage());
         }

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="IA-INSIGHT">
+  <defs>
+    <linearGradient id="iag" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2ce5a7"/>
+      <stop offset="100%" stop-color="#7ad7ff"/>
+    </linearGradient>
+  </defs>
+  <!-- Badge -->
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#111725" stroke="url(#iag)" stroke-width="2"/>
+  <!-- Œil de l'insight -->
+  <path d="M14 32 Q32 16 50 32 Q32 48 14 32 Z" fill="none" stroke="url(#iag)" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- Pupille diamant -->
+  <path d="M32 25 L39 32 L32 39 L25 32 Z" fill="url(#iag)"/>
+  <!-- Nœuds neuronaux connectés -->
+  <line x1="32" y1="14.5" x2="32" y2="23.5" stroke="#2ce5a7" stroke-width="1.5" opacity=".75"/>
+  <circle cx="32" cy="12.5" r="2.4" fill="#2ce5a7"/>
+  <line x1="32" y1="40.5" x2="32" y2="49.5" stroke="#7ad7ff" stroke-width="1.5" opacity=".75"/>
+  <circle cx="32" cy="51.5" r="2.4" fill="#7ad7ff"/>
+  <line x1="12" y1="32" x2="16" y2="32" stroke="#2ce5a7" stroke-width="1.5" opacity=".5"/>
+  <circle cx="10.5" cy="32" r="1.8" fill="#2ce5a7" opacity=".8"/>
+  <line x1="48" y1="32" x2="52" y2="32" stroke="#7ad7ff" stroke-width="1.5" opacity=".5"/>
+  <circle cx="53.5" cy="32" r="1.8" fill="#7ad7ff" opacity=".8"/>
+</svg>

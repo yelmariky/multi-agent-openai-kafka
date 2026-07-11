@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conception Août 2026 — IA-INSIGHT Platform</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Space Grotesk',system-ui;font-size:11pt;line-height:1.65;color:#1a1a2e;background:#fff}
+:root{--p:#2563eb;--g:#16a34a;--o:#d97706;--r:#dc2626;--v:#7c3aed;--c:#0891b2;--m:#64748b;--l:#f1f5f9;--b:#e2e8f0;--d:#0f172a}
+.page{max-width:920px;margin:0 auto;padding:0 40px}
+.cover{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+  background:linear-gradient(135deg,#0f172a 0%,#581c87 50%,#7c3aed 100%);
+  color:#fff;padding:80px 60px;page-break-after:always}
+.cover-eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 16px;
+  font-size:10pt;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:28px}
+.cover-month{font-size:13pt;color:#c4b5fd;font-weight:600;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase}
+.cover h1{font-size:38pt;font-weight:800;line-height:1.1;margin-bottom:12px}
+.cover h1 em{color:#2ce5a7;font-style:normal}
+.cover-sub{font-size:14pt;color:#94a3b8;margin-bottom:44px;max-width:580px}
+.cover-tags{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:48px}
+.tag{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 14px;font-size:9.5pt;color:#cbd5e1}
+.cover-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid rgba(255,255,255,.12);padding-top:28px}
+.meta-item{padding:0 24px 0 0}
+.meta-label{font-size:8.5pt;color:#475569;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+.meta-val{font-size:12pt;font-weight:600;color:#e2e8f0}
+.section{padding:52px 0 28px;page-break-before:always}
+.section:first-of-type{page-break-before:auto}
+.eyebrow{font-size:9pt;font-weight:700;color:var(--v);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+h2.stitle{font-size:22pt;font-weight:800;color:var(--d);margin-bottom:22px;padding-bottom:12px;border-bottom:3px solid var(--v)}
+h3{font-size:13pt;font-weight:700;color:var(--d);margin:26px 0 11px}
+h4{font-size:11pt;font-weight:600;color:var(--v);margin:18px 0 8px}
+p{margin-bottom:11px;color:#334155}
+.sprint-card{border:1px solid var(--b);border-radius:14px;overflow:hidden;margin:28px 0;page-break-inside:avoid}
+.sprint-head{padding:22px 28px;display:flex;align-items:center;gap:20px}
+.sh-s3{background:linear-gradient(135deg,#065f46,#059669)}
+.sh-s4{background:linear-gradient(135deg,#7c2d12,#dc2626)}
+.sprint-num{font-size:32pt;font-weight:900;color:rgba(255,255,255,.2);line-height:1;min-width:52px}
+.sprint-head-info h3{font-size:15pt;color:#fff;margin:0 0 3px}
+.sprint-head-info p{font-size:9.5pt;color:rgba(255,255,255,.65);margin:0}
+.sprint-body{padding:24px 28px}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:10pt}
+th{background:var(--d);color:#fff;padding:9px 14px;text-align:left;font-weight:600;font-size:9.5pt}
+td{padding:8px 14px;border-bottom:1px solid var(--b);vertical-align:top}
+tr:nth-child(even) td{background:var(--l)}
+.ul{list-style:none;margin:10px 0}
+.ul li{display:flex;gap:9px;padding:6px 0;border-bottom:1px solid var(--b);font-size:10.5pt;color:#334155}
+.ul li:last-child{border-bottom:none}
+.ul li::before{content:"→";color:var(--v);font-weight:700;flex-shrink:0}
+.check li::before{content:"✓";color:var(--g)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:14px 0}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:14px 0}
+.box{background:var(--l);border:1px solid var(--b);border-radius:10px;padding:16px}
+.kpi{text-align:center}
+.kpi .v{font-size:26pt;font-weight:800;color:var(--v)}
+.kpi .l{font-size:8.5pt;color:var(--m);text-transform:uppercase;letter-spacing:.8px}
+.note{border-left:4px solid var(--v);background:#f5f3ff;padding:14px 18px;margin:16px 0;border-radius:0 8px 8px 0}
+.note.g{border-color:var(--g);background:#f0fdf4}
+.note.o{border-color:var(--o);background:#fffbeb}
+.note.r{border-color:var(--r);background:#fef2f2}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:9pt;font-weight:600}
+.bg{background:#dcfce7;color:#15803d}.bb{background:#dbeafe;color:#1d4ed8}
+.bo{background:#ffedd5;color:#c2410c}.bv{background:#f3e8ff;color:#7e22ce}
+.br{background:#fee2e2;color:#b91c1c}
+.dod{background:var(--d);color:#e2e8f0;border-radius:10px;padding:20px 24px;margin:18px 0}
+.dod h4{color:#2ce5a7;margin-bottom:10px}
+.dod ul{list-style:none}
+.dod li{padding:4px 0;font-size:10pt;display:flex;gap:8px}
+.dod li::before{content:"✓";color:#2ce5a7;flex-shrink:0}
+.risk-row{display:flex;gap:12px;padding:12px 16px;border-radius:8px;margin:7px 0;align-items:flex-start}
+.rh{background:#fef2f2}.rm{background:#fffbeb}.rl{background:#f0fdf4}
+.rlevel{font-weight:700;font-size:9pt;min-width:60px;padding-top:2px}
+.rh .rlevel{color:#b91c1c}.rm .rlevel{color:#c2410c}.rl .rlevel{color:#15803d}
+.governance-matrix{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--b);border-radius:10px;overflow:hidden;margin:16px 0}
+.gm-cell{padding:14px 16px;border-right:1px solid var(--b);border-bottom:1px solid var(--b);font-size:10pt}
+.gm-cell:nth-child(3n){border-right:none}
+.gm-header{background:var(--d);color:#fff;font-weight:600;font-size:9.5pt}
+.footer{margin-top:60px;padding:20px 0;border-top:1px solid var(--b);text-align:center;color:var(--m);font-size:9pt}
+@media print{
+  body{font-size:10pt}
+  .cover,.section{page-break-before:always;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .sprint-card{page-break-inside:avoid}
+  .sprint-head,.dod{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{margin:18mm 14mm}
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-eyebrow">📅 Dossier de Conception Mensuel</div>
+  <div class="cover-month">Août 2026 — Mois 2 / 4</div>
+  <h1>Gouvernance IA<br><em>& Sécurité RGPD</em></h1>
+  <p class="cover-sub">Implémenter la couche de gouvernance IA (audit trail, PII masking, modèles versionnés) et atteindre la conformité RGPD complète avec le droit à l'oubli et la portabilité des données.</p>
+  <div class="cover-tags">
+    <span class="tag">🤖 Gouvernance IA</span>
+    <span class="tag">🔒 OWASP LLM Top 10</span>
+    <span class="tag">🇪🇺 RGPD / DPIA</span>
+    <span class="tag">📋 Audit Trail</span>
+    <span class="tag">🕵️ PII Masking</span>
+    <span class="tag">📊 Token Budget</span>
+  </div>
+  <div class="cover-meta">
+    <div class="meta-item"><div class="meta-label">Sprints</div><div class="meta-val">S3 + S4</div></div>
+    <div class="meta-item"><div class="meta-label">Durée</div><div class="meta-val">4 semaines</div></div>
+    <div class="meta-item"><div class="meta-label">Statut</div><div class="meta-val">📋 Planifié</div></div>
+    <div class="meta-item"><div class="meta-label">Équipe</div><div class="meta-val">2 devs + 1 SecOps</div></div>
+  </div>
+</div>
+
+<div class="page">
+
+<!-- ══════════════════════════════════════════
+     CONCEPTION DU PROJET (commun aux 4 mois)
+══════════════════════════════════════════ -->
+
+<!-- SOMMAIRE -->
+<div class="section" style="page-break-before:auto">
+  <h2 class="stitle" style="border-color:#334155">Sommaire</h2>
+  <table>
+    <thead><tr><th>#</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Contexte &amp; Besoin métier</td></tr>
+      <tr><td>2</td><td>Solution proposée &amp; Périmètre</td></tr>
+      <tr><td>3</td><td>Architecture technique</td></tr>
+      <tr><td>4</td><td>Roadmap globale — 8 sprints / 4 mois</td></tr>
+      <tr><td>5</td><td>Sprints du mois — Août 2026</td></tr>
+      <tr><td>6</td><td>Sprint Review &amp; Rétrospective</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 1. CONTEXTE -->
+<div class="section">
+  <div class="eyebrow">Section 1</div>
+  <h2 class="stitle">Contexte &amp; Besoin métier</h2>
+  <h3>Le problème des ESN aujourd'hui</h3>
+  <p>Les ESN et cabinets de conseil IT gèrent des dizaines à des centaines de consultants disséminés chez leurs clients. Chaque mois, ce modèle génère une charge administrative considérable :</p>
+  <div class="g3" style="margin:20px 0">
+    <div class="box kpi"><div class="v">3h</div><div class="l">Perdues par consultant/mois en admin</div></div>
+    <div class="box kpi"><div class="v">23%</div><div class="l">Notes de frais avec erreurs</div></div>
+    <div class="box kpi"><div class="v">8j</div><div class="l">Délai moyen facturation post-CRA</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Processus</th><th>Situation actuelle</th><th>Impact</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Notes de frais</strong></td><td>Saisie manuelle Excel, scan PDF par email</td><td>Erreurs, pièces perdues, retards remboursement</td></tr>
+      <tr><td><strong>CRA mensuel</strong></td><td>Feuille Excel partagée ou formulaire papier</td><td>Retards validation → retards facturation client</td></tr>
+      <tr><td><strong>Facturation client</strong></td><td>Factures Word/Excel manuelles</td><td>Risques TVA, numérotation incohérente</td></tr>
+      <tr><td><strong>Gestion congés</strong></td><td>Email ou HR tool déconnecté des outils métier</td><td>Calcul frais km erroné si absences non remontées</td></tr>
+      <tr><td><strong>Visibilité manager</strong></td><td>Aucun tableau de bord temps réel</td><td>Arbitrages retardés, perte de contexte</td></tr>
+    </tbody>
+  </table>
+  <div class="g2" style="margin-top:16px">
+    <div>
+      <h4>Besoins consultant</h4>
+      <ul class="ul">
+        <li>Saisir une note de frais en langage naturel</li>
+        <li>Photographier un justificatif → OCR automatique</li>
+        <li>Frais km avec exclusion automatique absences/congés</li>
+        <li>Soumettre son CRA depuis n'importe quel appareil</li>
+        <li>Notifications temps réel sur les décisions admin</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Besoins manager / admin</h4>
+      <ul class="ul">
+        <li>Valider/refuser frais et CRA en 1 clic</li>
+        <li>Génération automatique de factures PDF post-CRA</li>
+        <li>Tableau de bord global : frais, CRA, factures</li>
+        <li>Console multi-tenant : piloter plusieurs ESN</li>
+        <li>Conformité RGPD &amp; audit trail LLM</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 2. SOLUTION -->
+<div class="section">
+  <div class="eyebrow">Section 2</div>
+  <h2 class="stitle">Solution proposée &amp; Périmètre</h2>
+  <div class="note g">
+    <strong>Vision produit :</strong> Plateforme SaaS multi-tenant d'automatisation administrative pour ESN. L'utilisateur parle à un assistant IA en français naturel — il s'occupe du reste.
+  </div>
+  <div class="g2">
+    <div>
+      <h4>✅ Dans le périmètre</h4>
+      <ul class="ul check">
+        <li>Notes de frais — saisie libre, OCR, frais km</li>
+        <li>CRA mensuel — workflow BROUILLON→SOUMIS→VALIDÉ</li>
+        <li>Congés CP/RTT — demandes &amp; solde</li>
+        <li>Facturation — PDF &amp; Excel client</li>
+        <li>Notifications SSE temps réel</li>
+        <li>Pipeline RAG pgvector + LLM Groq/OpenAI</li>
+        <li>Multi-tenant Keycloak realm-per-tenant</li>
+        <li>Gouvernance IA (audit, PII masking, token budget)</li>
+        <li>Conformité RGPD (droit à l'oubli, portabilité)</li>
+        <li>AWS Production (EKS, RDS, MSK, DR)</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Stack technique</h4>
+      <table>
+        <tr><th>Couche</th><th>Technologie</th></tr>
+        <tr><td>LLM principal</td><td>Groq — llama-3.1-8b + gpt-oss-120b</td></tr>
+        <tr><td>LLM fallback</td><td>OpenAI gpt-4.1-mini (circuit breaker)</td></tr>
+        <tr><td>Embeddings</td><td>OpenAI text-embedding-3-large</td></tr>
+        <tr><td>DB + Vector</td><td>PostgreSQL 16 + pgvector</td></tr>
+        <tr><td>Auth</td><td>Keycloak 24 realm-per-tenant</td></tr>
+        <tr><td>Messaging</td><td>Apache Kafka KRaft</td></tr>
+        <tr><td>Backend</td><td>Spring Boot 3.3 / Java 21</td></tr>
+        <tr><td>Cloud</td><td>AWS EKS + RDS + MSK</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 3. ARCHITECTURE -->
+<div class="section">
+  <div class="eyebrow">Section 3</div>
+  <h2 class="stitle">Architecture technique</h2>
+  <div style="background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8.5pt;padding:20px 24px;border-radius:10px;margin:16px 0;white-space:pre;line-height:1.55;overflow-x:auto">Internet → Route 53 → WAF → ALB (HTTPS)
+                               │
+                      Kong / Ingress K8s
+          ┌────────────┬────────┴────────┬──────────────┐
+          ▼            ▼                 ▼              ▼
+    ai-service    expense-service  activity-service  invoice-service
+      :8081          :8082             :8085            :8083
+          └────────────┴────────┬────────┴──────────────┘
+                                ▼
+                  PostgreSQL 16 + pgvector | Kafka | Keycloak 24
+                                │
+                    notification-service :8084 (SSE hub)
+                                │
+   frontend/:3000   frontend-consultant/:3001   frontend-platform/:3002</div>
+  <div class="g2">
+    <div>
+      <h4>Multi-tenant</h4>
+      <p>Chaque organisation = 1 realm Keycloak. <code>TenantFilter</code> extrait le realm du JWT → <code>TenantContext</code> (ThreadLocal UUID). Toutes les requêtes JPA filtrent par <code>tenant_id</code>.</p>
+    </div>
+    <div>
+      <h4>Résilience LLM</h4>
+      <p>Groq primaire. Sur 5 échecs / 10 appels → circuit ouvert resilience4j → bascule immédiate OpenAI gpt-4.1-mini. Refermeture 30s. SSE broadcast via Kafka (group-id unique par pod <code>${HOSTNAME}</code>).</p>
+    </div>
+  </div>
+</div>
+
+<!-- 4. ROADMAP -->
+<div class="section">
+  <div class="eyebrow">Section 4</div>
+  <h2 class="stitle">Roadmap globale — 8 Sprints / 4 Mois</h2>
+  <table>
+    <thead><tr><th>Sprint</th><th>Mois</th><th>Thème</th><th>Valeur livrée</th></tr></thead>
+    <tbody>
+      <tr style="background:#dbeafe"><td><strong>S1</strong></td><td>Juillet</td><td>Consolidation architecture + Kong</td><td>Architecture propre, routing vers chaque service</td></tr>
+      <tr style="background:#dbeafe"><td><strong>S2</strong></td><td>Juillet</td><td>UX Design System &amp; 3 frontends</td><td>Expérience unifiée, mobile WCAG AA</td></tr>
+      <tr style="background:#f3e8ff"><td><strong>S3</strong></td><td>Août</td><td>Gouvernance IA — Audit, PII Masking</td><td>0 PII vers LLM, traçabilité complète</td></tr>
+      <tr style="background:#f3e8ff"><td><strong>S4</strong></td><td>Août</td><td>Sécurité RGPD &amp; Versioning modèles</td><td>DPIA validé, droit à l'oubli</td></tr>
+      <tr style="background:#f0f9ff"><td><strong>S5</strong></td><td>Septembre</td><td>Facturation end-to-end</td><td>Cycle CRA → Facture → Paiement</td></tr>
+      <tr style="background:#f0f9ff"><td><strong>S6</strong></td><td>Septembre</td><td>Observabilité &amp; SLA</td><td>Grafana, alerting, runbooks</td></tr>
+      <tr style="background:#fffbeb"><td><strong>S7</strong></td><td>Octobre</td><td>AWS Architecture &amp; Terraform</td><td>EKS, RDS, MSK, Secrets Manager</td></tr>
+      <tr style="background:#fffbeb"><td><strong>S8</strong></td><td>Octobre</td><td>Production Deployment &amp; Go-Live</td><td>AWS prod, client pilote, SLA 99.9%</td></tr>
+    </tbody>
+  </table>
+  <div style="background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:8pt;padding:14px 24px;border-radius:10px;margin:14px 0;white-space:pre;line-height:1.8">Sem:  W1  W2  W3  W4  W5  W6  W7  W8  W9 W10 W11 W12 W13 W14 W15 W16
+S1    ████████
+S2            ████████
+S3                    ████████
+S4                            ████████
+S5                                    ████████
+S6                                            ████████
+S7                                                    ████████
+S8                                                            ████████
+      └── Juillet ───┘└──── Août ───────┘└─ Septembre ────┘└── Octobre ─────┘</div>
+</div>
+
+
+<!-- ══ SECTION MENSUELLE ══ -->
+<div class="section">
+  <div class="eyebrow">Contexte du mois</div>
+  <h2 class="stitle">Pourquoi Gouvernance IA & Sécurité maintenant ?</h2>
+
+  <p>Après la consolidation technique de Juillet, Août est consacré aux deux axes non-fonctionnels les plus critiques avant d'aller en production réelle : la <strong>gouvernance des modèles IA</strong> et la <strong>conformité réglementaire RGPD</strong>. Ces sujets ne peuvent pas être traités en fin de projet — ils structurent la confiance des clients ESN.</p>
+
+  <div class="note r">
+    <strong>Risque réglementaire :</strong> Sans audit trail LLM et sans mécanisme de droit à l'oubli, la plateforme ne peut pas être vendue à des ESN opérant sous contrat avec des grandes entreprises (banques, assurances, secteur public) qui exigent ces garanties contractuellement.
+  </div>
+
+  <div class="g3">
+    <div class="box kpi"><div class="v" style="color:#dc2626">0</div><div class="l">Traces LLM actuellement loggées</div></div>
+    <div class="box kpi"><div class="v" style="color:#dc2626">0</div><div class="l">Mécanismes droit à l'oubli</div></div>
+    <div class="box kpi"><div class="v" style="color:#d97706">~12</div><div class="l">Contrôles OWASP LLM en place</div></div>
+  </div>
+</div>
+
+<!-- SPRINT 3 -->
+<div class="section">
+  <div class="sprint-card">
+    <div class="sprint-head sh-s3">
+      <div class="sprint-num">S3</div>
+      <div class="sprint-head-info">
+        <h3>Gouvernance IA — Audit, PII Masking & Token Budget</h3>
+        <p>Semaines 5-6 · Août 2026 · Responsable : Tech Lead IA + DPO</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>Cadre de gouvernance IA à implémenter</h4>
+      <p>La gouvernance IA couvre 5 piliers : traçabilité, confidentialité des données, contrôle des coûts, versioning des modèles, et incident response. Ce sprint livre les 3 premiers.</p>
+
+      <div class="governance-matrix">
+        <div class="gm-cell gm-header">Pilier</div>
+        <div class="gm-cell gm-header">Statut avant S3</div>
+        <div class="gm-cell gm-header">Objectif S3</div>
+        <div class="gm-cell">Traçabilité</div><div class="gm-cell">❌ Aucune</div><div class="gm-cell">Table llm_audit_log complète</div>
+        <div class="gm-cell">Confidentialité PII</div><div class="gm-cell">⚠️ Log masking partiel</div><div class="gm-cell">Masquage avant envoi LLM</div>
+        <div class="gm-cell">Contrôle coûts</div><div class="gm-cell">❌ Aucun</div><div class="gm-cell">Token budget par tenant/mois</div>
+        <div class="gm-cell">Versioning modèles</div><div class="gm-cell">❌ Aucun</div><div class="gm-cell">Planifié S4</div>
+        <div class="gm-cell">Incident response</div><div class="gm-cell">❌ Aucun</div><div class="gm-cell">Planifié S4</div>
+      </div>
+
+      <h4>Schéma de la table llm_audit_log</h4>
+      <table>
+        <thead><tr><th>Colonne</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>id</code></td><td>UUID PK</td><td>Identifiant unique de l'appel</td></tr>
+          <tr><td><code>tenant_id</code></td><td>UUID FK</td><td>Tenant concerné (isolation)</td></tr>
+          <tr><td><code>user_email</code></td><td>VARCHAR(150)</td><td>Consultant ou admin ayant déclenché l'appel</td></tr>
+          <tr><td><code>session_id</code></td><td>VARCHAR(64)</td><td>Session browser (pour grouper les échanges)</td></tr>
+          <tr><td><code>intent</code></td><td>VARCHAR(50)</td><td>Intent classifié (create_expense, rag_query…)</td></tr>
+          <tr><td><code>model_used</code></td><td>VARCHAR(80)</td><td>ID exact du modèle Groq/OpenAI utilisé</td></tr>
+          <tr><td><code>prompt_hash</code></td><td>VARCHAR(64)</td><td>SHA-256 du prompt (sans PII) — non réversible</td></tr>
+          <tr><td><code>tokens_input</code></td><td>INTEGER</td><td>Tokens consommés en entrée</td></tr>
+          <tr><td><code>tokens_output</code></td><td>INTEGER</td><td>Tokens générés en sortie</td></tr>
+          <tr><td><code>latency_ms</code></td><td>INTEGER</td><td>Temps de réponse LLM en ms</td></tr>
+          <tr><td><code>fallback_used</code></td><td>BOOLEAN</td><td>true si OpenAI fallback déclenché</td></tr>
+          <tr><td><code>guard_blocked</code></td><td>BOOLEAN</td><td>true si PromptGuard a bloqué</td></tr>
+          <tr><td><code>created_at</code></td><td>TIMESTAMPTZ</td><td>Horodatage UTC</td></tr>
+        </tbody>
+      </table>
+
+      <div class="g2">
+        <div>
+          <h4>PII Masking — règles à appliquer</h4>
+          <ul class="ul">
+            <li>Emails : remplacer par <code>[EMAIL]</code> avant envoi LLM</li>
+            <li>IBAN/BIC : remplacer par <code>[IBAN]</code></li>
+            <li>Noms propres : remplacer par <code>[NOM]</code> (via NER ou regex)</li>
+            <li>Numéros de téléphone : <code>[TEL]</code></li>
+            <li>Adresses IP : <code>[IP]</code></li>
+            <li>Le prompt masqué est loggué — pas l'original</li>
+            <li>Le prompt_hash = SHA-256(prompt_original) pour audit sans exposition</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Token Budget par tenant</h4>
+          <ul class="ul check">
+            <li>Table <code>tenant_token_budget</code> : budget_mensuel, tokens_consommés, alerte_seuil</li>
+            <li>Alerte à 80% du budget → notification admin platform</li>
+            <li>Blocage à 100% → HTTP 429 "Budget LLM épuisé"</li>
+            <li>Reset automatique le 1er du mois</li>
+            <li>Dashboard platform_admin : consommation par tenant en temps réel</li>
+            <li>Default budget : 500 000 tokens/mois/tenant</li>
+          </ul>
+        </div>
+      </div>
+
+      <h4>User stories Sprint 3</h4>
+      <ul class="ul">
+        <li>En tant que platform_admin, je consulte un dashboard montrant la consommation LLM (tokens, coût estimé, latence p95) par tenant et par mois</li>
+        <li>En tant que DPO, je certifie qu'aucun email, IBAN ou nom propre n'est transmis aux APIs LLM externes (Groq/OpenAI)</li>
+        <li>En tant que platform_admin, je fixe un budget de tokens mensuel par tenant et reçois une alerte quand 80% est atteint</li>
+        <li>En tant qu'auditeur, je peux exporter le log de tous les appels LLM d'un tenant sur une période donnée (format CSV)</li>
+        <li>En tant que consultant, si le budget LLM de mon organisation est épuisé, je reçois un message explicite (pas une erreur 500)</li>
+      </ul>
+
+      <div class="dod">
+        <h4>Definition of Done — Sprint 3</h4>
+        <ul>
+          <li>Migration Flyway : table llm_audit_log créée avec index sur (tenant_id, created_at)</li>
+          <li>LLMAIClient enrichi : log de chaque appel dans llm_audit_log après réponse</li>
+          <li>PiiMasker.java : regex + masquage appliqué à tous les prompts entrants</li>
+          <li>TenantTokenBudgetService : vérification avant chaque appel LLM</li>
+          <li>Dashboard platform_admin : graphes tokens/coût/latence par tenant</li>
+          <li>Test : envoyer "mon email est test@example.com" → vérifier que [EMAIL] est loggué</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPRINT 4 -->
+  <div class="sprint-card">
+    <div class="sprint-head sh-s4">
+      <div class="sprint-num">S4</div>
+      <div class="sprint-head-info">
+        <h3>Sécurité avancée, RGPD & Versioning des modèles</h3>
+        <p>Semaines 7-8 · Août 2026 · Responsable : Tech Lead Sécurité + DPO</p>
+      </div>
+    </div>
+    <div class="sprint-body">
+
+      <h4>RGPD — Droits des personnes à implémenter</h4>
+      <table>
+        <thead><tr><th>Droit RGPD</th><th>Article</th><th>Implémentation technique</th><th>Délai légal</th></tr></thead>
+        <tbody>
+          <tr><td>Droit d'accès</td><td>Art. 15</td><td>GET /privacy/export → ZIP (expenses, CRA, frais, profil)</td><td>30 jours</td></tr>
+          <tr><td>Droit à l'oubli</td><td>Art. 17</td><td>DELETE /privacy/erase → anonymisation (pas suppression des factures légales)</td><td>30 jours</td></tr>
+          <tr><td>Portabilité</td><td>Art. 20</td><td>Export JSON structuré de toutes les données personnelles</td><td>30 jours</td></tr>
+          <tr><td>Rectification</td><td>Art. 16</td><td>PUT /consultants/profiles/{id} — déjà disponible</td><td>Immédiat</td></tr>
+          <tr><td>Opposition au profiling</td><td>Art. 21</td><td>Flag <code>opt_out_llm_training</code> sur tenant</td><td>Immédiat</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Model Versioning & Incident Response</h4>
+      <div class="g2">
+        <div>
+          <ul class="ul">
+            <li>Table <code>llm_model_registry</code> : model_id, provider, version, deployed_at, deprecated_at, replacement</li>
+            <li>Rollback automatique si un modèle génère >5% d'erreurs JSON en 10 min</li>
+            <li>Runbook "LLM Incident" : détection → confinement → rollback → post-mortem</li>
+            <li>Alerte PagerDuty (ou équivalent) si fallback Groq→OpenAI dure >15 min</li>
+          </ul>
+        </div>
+        <div>
+          <ul class="ul check">
+            <li>DPIA (Data Protection Impact Assessment) rédigé et validé DPO</li>
+            <li>Registre des traitements mis à jour</li>
+            <li>Politique de rétention des données : logs = 90j, données métier = 7 ans (légal)</li>
+            <li>Chiffrement AES-256 at-rest sur les colonnes sensibles (IBAN, token LLM)</li>
+          </ul>
+        </div>
+      </div>
+
+      <h4>Checklist sécurité OWASP LLM Top 10</h4>
+      <table>
+        <thead><tr><th>#</th><th>Menace OWASP LLM</th><th>Statut</th><th>Action S4</th></tr></thead>
+        <tbody>
+          <tr><td>LLM01</td><td>Prompt Injection</td><td><span class="badge bg">✓ Couvert</span></td><td>Renforcer les patterns injection multilingues</td></tr>
+          <tr><td>LLM02</td><td>Insecure Output Handling</td><td><span class="badge bg">✓ Couvert</span></td><td>LlmJsonValidator en place</td></tr>
+          <tr><td>LLM03</td><td>Training Data Poisoning</td><td><span class="badge bo">Partiel</span></td><td>Fact-checking sur les montants (RAGService)</td></tr>
+          <tr><td>LLM04</td><td>Model Denial of Service</td><td><span class="badge bo">Partiel</span></td><td>Token budget S3 + rate limiting</td></tr>
+          <tr><td>LLM05</td><td>Supply Chain Vulnerabilities</td><td><span class="badge br">❌ Absent</span></td><td>SBOM + OWASP Dependency Check en CI</td></tr>
+          <tr><td>LLM06</td><td>Sensitive Info Disclosure</td><td><span class="badge bo">Partiel</span></td><td>PII Masking S3 + log masking</td></tr>
+          <tr><td>LLM07</td><td>Insecure Plugin Design</td><td><span class="badge bg">✓ N/A</span></td><td>Pas de plugins LLM externes</td></tr>
+          <tr><td>LLM08</td><td>Excessive Agency</td><td><span class="badge bg">✓ Couvert</span></td><td>LLM ne peut pas déclencher d'actions directes</td></tr>
+          <tr><td>LLM09</td><td>Overreliance</td><td><span class="badge br">❌ Absent</span></td><td>Avertissement UI sur les extractions LLM</td></tr>
+          <tr><td>LLM10</td><td>Model Theft</td><td><span class="badge bg">✓ N/A</span></td><td>Modèles tiers (Groq/OpenAI) — non applicable</td></tr>
+        </tbody>
+      </table>
+
+      <div class="dod">
+        <h4>Definition of Done — Sprint 4</h4>
+        <ul>
+          <li>Endpoint GET /privacy/export → ZIP téléchargeable en < 30s</li>
+          <li>Endpoint DELETE /privacy/erase → anonymisation vérifiable en base</li>
+          <li>DPIA signé et archivé dans docs/DPIA-2026.pdf</li>
+          <li>OWASP Dependency Check : 0 CVE critique dans le rapport CI</li>
+          <li>Table llm_model_registry créée avec l'historique des modèles utilisés</li>
+          <li>Runbook LLM Incident rédigé dans docs/RUNBOOK-LLM.md</li>
+          <li>Avertissement "données extraites par IA — à vérifier" visible sur les notes de frais OCR</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="eyebrow">Fin de mois</div>
+  <h2 class="stitle">Sprint Review & Rétrospective Août</h2>
+  <div class="g2">
+    <div>
+      <h3>Démos à préparer</h3>
+      <ul class="ul">
+        <li>Envoyer "mon IBAN est FR76 1234 5678" → montrer que [IBAN] est loggué, pas la valeur réelle</li>
+        <li>Atteindre 80% du budget token → montrer l'alerte admin</li>
+        <li>Déclencher l'export RGPD d'un consultant → télécharger le ZIP</li>
+        <li>Montrer le dashboard gouvernance IA avec graphes par tenant</li>
+      </ul>
+    </div>
+    <div>
+      <h3>KPIs du mois</h3>
+      <ul class="ul check">
+        <li>100% des appels LLM tracés dans llm_audit_log</li>
+        <li>0 PII transmis aux APIs externes (validation audit)</li>
+        <li>DPIA validé DPO</li>
+        <li>OWASP LLM : 8/10 risques couverts (vs 4/10 avant S3)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="footer">IA-INSIGHT Platform · Dossier de conception Août 2026 · Confidentiel</div>
+</div>
+</body>
+</html>

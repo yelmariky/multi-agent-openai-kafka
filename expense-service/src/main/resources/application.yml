@@ -49,7 +49,7 @@ openai:
     api-key: ${OPENAI_LLM_API_KEY:}
     base-url: ${OPENAI_LLM_BASE_URL:}
   model: ${OPENAI_MODEL:llama-3.1-8b-instant}
-  expense-model: ${OPENAI_EXPENSE_MODEL:llama-3.3-70b-versatile}
+  expense-model: ${OPENAI_EXPENSE_MODEL:openai/gpt-oss-120b}
   fallback-model: ${OPENAI_FALLBACK_MODEL:gpt-4.1-mini}
   embedding-model: ${OPENAI_EMBEDDING_MODEL:text-embedding-3-large}
   embedding-dimensions: ${OPENAI_EMBEDDING_DIMENSIONS:2000}

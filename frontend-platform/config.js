@@ -13,6 +13,7 @@ globalThis.APP_CONFIG = {
   keycloakRealm:    'platform',
   keycloakClientId: 'frontend-platform',
   apiBase:          'http://localhost:8081',   // ai-service direct
+  invoiceBase:      'http://localhost:8083',   // invoice-service direct (facturation abonnements)
 
   // --- PRODUCTION (Kong) — décommenter et adapter ---
   // keycloakUrl:      'https://auth.ia-insight.fr',
