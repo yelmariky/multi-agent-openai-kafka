@@ -483,8 +483,10 @@ async function initCra(user) {
   }
   clientEl.readOnly = true;
   emailEl.readOnly  = true;
-  clientEl.style.background = '#f5f5f5';
-  emailEl.style.background  = '#f5f5f5';
+  clientEl.style.opacity = '0.6';
+  clientEl.style.cursor  = 'default';
+  emailEl.style.opacity  = '0.6';
+  emailEl.style.cursor   = 'default';
 
   // ── Règle mois courant ────────────────────────────────────────────────────
   // Si le CRA du mois précédent est clôturé (date > 5 du mois suivant),
@@ -732,7 +734,7 @@ async function downloadCraPdfById(id, month, statusEl, projectId, projectName) {
     URL.revokeObjectURL(objUrl);
   } catch (e) {
     if (statusEl) setStatus(statusEl, 'Erreur PDF : ' + e.message, 'err');
-    else showToast('Erreur PDF : ' + e.message, 'error');
+    else showToast('Erreur PDF : ' + e.message, 'err');
   }
 }
 
@@ -2152,6 +2154,7 @@ async function submitLeaveRequest(user) {
   const statusEl = document.getElementById('leave-submit-status');
 
   if (!start || !end) { setStatus(statusEl, 'Veuillez sélectionner les dates.', 'err'); return; }
+  if (start > end) { setStatus(statusEl, 'La date de fin doit être après la date de début.', 'err'); return; }
   setStatus(statusEl, 'Envoi en cours…');
   try {
     const res = await fetch(`${base()}/leaves/request`, {

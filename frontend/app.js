@@ -435,8 +435,8 @@ function initSettingsDrawer() {
       });
       if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
       sellerSettings = payload;
-      setStatus(statusEl, 'Parametres sauvegardes.', 'ok');
-      showToast('Parametres de facturation sauvegardes.', 'ok');
+      setStatus(statusEl, 'Paramètres sauvegardés.', 'ok');
+      showToast('Paramètres de facturation sauvegardés.', 'ok');
       setTimeout(closeSettingsDrawer, 800);
     } catch (e) {
       setStatus(statusEl, 'Erreur : ' + e.message, 'err');
@@ -758,9 +758,9 @@ function initConsultants(user) {
       if (adminUser?.email) existingEmails.add(adminUser.email.toLowerCase());
       const available = users.filter(u => u.email && !existingEmails.has(u.email.toLowerCase()));
       if (!available.length) {
-        sel.innerHTML = '<option value="">Tous les utilisateurs sont deja ajoutes</option>';
+        sel.innerHTML = '<option value="">Tous les utilisateurs sont déjà ajoutés</option>';
       } else {
-        sel.innerHTML = '<option value="">-- Selectionnez --</option>' +
+        sel.innerHTML = '<option value="">-- Sélectionnez --</option>' +
           available.map(u => `<option value="${escapeHtml(u.email)}" data-name="${escapeHtml(u.name)}">${escapeHtml(u.name)} (${escapeHtml(u.email)})</option>`).join('');
       }
       statusEl.textContent = '';
@@ -890,7 +890,7 @@ function initConsultants(user) {
       if (!email) { showToast('Email obligatoire.', 'err'); return; }
       if (authType === 'internal' && !password) { showToast('Mot de passe temporaire obligatoire pour un utilisateur interne.', 'err'); return; }
       if (allConsultants.some(c => c.email.toLowerCase() === email)) {
-        showToast('Ce consultant est deja enregistre.', 'err'); return;
+        showToast('Ce consultant est déjà enregistré.', 'err'); return;
       }
 
       try {
@@ -913,7 +913,7 @@ function initConsultants(user) {
         document.getElementById('cons-add-form').style.display = 'none';
         document.getElementById('cons-add-btn').style.display  = '';
         renderConsultantsGrid();
-        showToast(`${name} invite et enregistre.`, 'ok');
+        showToast(`${name} invité et enregistré.`, 'ok');
       } catch (e) {
         showToast('Erreur : ' + e.message, 'err');
       }
@@ -925,9 +925,9 @@ function initConsultants(user) {
       const role       = document.getElementById('cons-new-role').value;
       const company    = document.getElementById('cons-new-company').value.trim() || tenantName();
       const clientName = document.getElementById('cons-new-clientname').value.trim();
-      if (!email) { showToast('Selectionnez un utilisateur Keycloak.', 'err'); return; }
+      if (!email) { showToast('Sélectionnez un utilisateur.', 'err'); return; }
       if (allConsultants.some(c => c.email.toLowerCase() === email)) {
-        showToast('Ce consultant est deja enregistre.', 'err'); return;
+        showToast('Ce consultant est déjà enregistré.', 'err'); return;
       }
       const newCons = { name, email, role, company, clientName, clientAddress: '', clientRcs: '', tjm: 0, active: true };
       allConsultants.push(newCons);
@@ -1246,7 +1246,7 @@ async function loadConsCra(cons) {
   const statusEl = document.getElementById('cons-cra-status');
   const resultEl = document.getElementById('cons-cra-result');
 
-  if (!month) { setStatus(statusEl, 'Selectionnez un mois.', 'err'); return; }
+  if (!month) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
   setStatus(statusEl, 'Chargement…');
   resultEl.style.display = 'none';
 
@@ -1728,7 +1728,7 @@ async function loadConsNotes(cons) {
   const resultEl = document.getElementById('cons-notes-result');
   const approveAllBtn = document.getElementById('cons-notes-approve-all');
 
-  if (!month) { setStatus(statusEl, 'Selectionnez un mois.', 'err'); return; }
+  if (!month) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
   setStatus(statusEl, 'Chargement…');
   resultEl.style.display = 'none';
   approveAllBtn.style.display = 'none';
@@ -1858,7 +1858,7 @@ function wireExpenseActions(container, cons) {
 async function approveAllNotes(cons) {
   if (!loadedExpenses.length) return;
   const toApprove = loadedExpenses.filter(e => (e.weaviateId || e.id) && e.approvalStatus !== 'APPROVED');
-  if (!toApprove.length) { showToast('Toutes les depenses sont deja approuvees.'); return; }
+  if (!toApprove.length) { showToast('Toutes les dépenses sont déjà approuvées.'); return; }
   if (!confirm(`Approuver les ${toApprove.length} depenses de ${cons.name} ?`)) return;
 
   let ok = 0, err = 0;
@@ -1879,14 +1879,14 @@ async function approveAllNotes(cons) {
 
 function downloadNotesPdf(cons) {
   const month = document.getElementById('cons-notes-month').value;
-  if (!month) { showToast('Selectionnez un mois.', 'err'); return; }
+  if (!month) { showToast('Sélectionnez un mois.', 'err'); return; }
   const p = new URLSearchParams({ month, consultantEmail: cons.email });
   window.open(`${base()}/expenses/report/pdf/month?${p}`, '_blank');
 }
 
 function downloadNotesExcel(cons) {
   const month = document.getElementById('cons-notes-month').value;
-  if (!month) { showToast('Selectionnez un mois.', 'err'); return; }
+  if (!month) { showToast('Sélectionnez un mois.', 'err'); return; }
   const p = new URLSearchParams({ month, consultantEmail: cons.email });
   window.open(`${base()}/expenses/report/excel?${p}`, '_blank');
 }
