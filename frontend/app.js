@@ -2577,17 +2577,17 @@ function populateClientSelects(preselectName = '') {
 
 async function loadClients() {
   const statusEl = document.getElementById('client-list-status');
-  setStatus(statusEl, 'Chargement…');
+  if (statusEl) setStatus(statusEl, 'Chargement…');
   try {
     const res = await fetch(`${base()}/clients`, { headers: adminHeaders() });
-    if (!res.ok) { setStatus(statusEl, 'Erreur lors du chargement.', 'error'); return; }
+    if (!res.ok) { if (statusEl) setStatus(statusEl, 'Erreur lors du chargement.', 'error'); return; }
     allClients = await res.json();
     allClients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    setStatus(statusEl, '');
+    if (statusEl) setStatus(statusEl, '');
     renderClientsTable();
     populateClientSelects();
   } catch {
-    setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
+    if (statusEl) setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
   }
 }
 
