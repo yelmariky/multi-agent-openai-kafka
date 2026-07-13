@@ -742,6 +742,9 @@ function initConsultants(user) {
     loadBillingPreview();
     const companyInput = document.getElementById('cons-new-company');
     if (companyInput && !companyInput.value) companyInput.value = tenantName();
+    // Pré-charger les clients si pas encore chargés
+    if (!allClients.length) await loadClients();
+    populateClientSelects();
     // Load Keycloak users into dropdown
     const sel = document.getElementById('cons-new-kc-user');
     const statusEl = document.getElementById('cons-add-kc-status');
@@ -770,6 +773,53 @@ function initConsultants(user) {
   document.getElementById('cons-add-cancel').addEventListener('click', () => {
     document.getElementById('cons-add-form').style.display = 'none';
     document.getElementById('cons-add-btn').style.display  = '';
+    document.getElementById('cons-inline-client-form').style.display = 'none';
+  });
+
+  // populateClientSelects est défini au niveau module (voir ci-dessous)
+
+  // Ouvre le mini-form inline et ferme au clic "Annuler"
+  function openInlineClientForm() {
+    ['inline-client-name','inline-client-address','inline-client-rcs','inline-client-contact','inline-client-email']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('inline-client-status').textContent = '';
+    document.getElementById('cons-inline-client-form').style.display = '';
+  }
+
+  document.getElementById('cons-new-client-create-btn')?.addEventListener('click', openInlineClientForm);
+  document.getElementById('cons-invite-client-create-btn')?.addEventListener('click', openInlineClientForm);
+
+  document.getElementById('inline-client-cancel')?.addEventListener('click', () => {
+    document.getElementById('cons-inline-client-form').style.display = 'none';
+  });
+
+  document.getElementById('inline-client-save')?.addEventListener('click', async () => {
+    const name    = document.getElementById('inline-client-name').value.trim();
+    const address = document.getElementById('inline-client-address').value.trim();
+    const rcs     = document.getElementById('inline-client-rcs').value.trim();
+    const contact = document.getElementById('inline-client-contact').value.trim();
+    const email   = document.getElementById('inline-client-email').value.trim();
+    const statusEl = document.getElementById('inline-client-status');
+
+    if (!name) { statusEl.textContent = 'Le nom du client est requis.'; statusEl.className = 'status error'; return; }
+    statusEl.textContent = 'Création…'; statusEl.className = 'status';
+
+    try {
+      const res = await fetch(`${base()}/clients`, {
+        method: 'POST',
+        headers: adminHeaders(),
+        body: JSON.stringify({ name, address, rcs, contactName: contact, contactEmail: email }),
+      });
+      if (!res.ok) { const t = await res.text(); throw new Error(t || `HTTP ${res.status}`); }
+      const created = await res.json();
+      allClients.push(created);
+      allClients.sort((a, b) => a.name.localeCompare(b.name));
+      populateClientSelects(created.name);
+      document.getElementById('cons-inline-client-form').style.display = 'none';
+      showToast(`Client "${created.name}" créé et sélectionné.`, 'ok');
+    } catch (e) {
+      statusEl.textContent = 'Erreur : ' + e.message; statusEl.className = 'status error';
+    }
   });
 
   // Impact tarifaire de l'ajout d'un consultant (abonnement du tenant — comptage dynamique)
@@ -2515,6 +2565,16 @@ async function deleteAllInvoices(cons) {
 // ============================================================
 let allClients = [];
 
+function populateClientSelects(preselectName = '') {
+  ['cons-new-clientname', 'cons-invite-clientname'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel || sel.tagName !== 'SELECT') return;
+    const current = preselectName || sel.value;
+    sel.innerHTML = '<option value="">-- Sélectionner --</option>' +
+      allClients.map(c => `<option value="${escapeHtml(c.name)}"${c.name === current ? ' selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+  });
+}
+
 async function loadClients() {
   const statusEl = document.getElementById('client-list-status');
   setStatus(statusEl, 'Chargement…');
@@ -2522,8 +2582,10 @@ async function loadClients() {
     const res = await fetch(`${base()}/clients`, { headers: adminHeaders() });
     if (!res.ok) { setStatus(statusEl, 'Erreur lors du chargement.', 'error'); return; }
     allClients = await res.json();
+    allClients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     setStatus(statusEl, '');
     renderClientsTable();
+    populateClientSelects();
   } catch {
     setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
   }

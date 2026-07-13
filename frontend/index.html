@@ -114,6 +114,10 @@
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           Dashboard
         </button>
+        <button class="main-tab" data-view="clients">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Clients
+        </button>
         <button class="main-tab active" data-view="consultants">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Consultants
@@ -121,10 +125,6 @@
         <button class="main-tab" data-view="projects">
           <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
           Projets
-        </button>
-        <button class="main-tab" data-view="clients">
-          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          Clients
         </button>
       </nav>
 
@@ -199,8 +199,13 @@
                   <input id="cons-new-company" type="text" readonly style="opacity:.6;cursor:default">
                 </label>
                 <label class="inline" style="flex:1">
-                  Societe cliente
-                  <input id="cons-new-clientname" type="text" placeholder="INFOGENE DIGITAL">
+                  Société cliente
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <select id="cons-new-clientname" style="flex:1">
+                      <option value="">-- Sélectionner --</option>
+                    </select>
+                    <button type="button" id="cons-new-client-create-btn" class="btn-ghost" style="white-space:nowrap;font-size:11px;padding:6px 10px" title="Créer un nouveau client">+ Nouveau</button>
+                  </div>
                 </label>
               </div>
             </div>
@@ -250,10 +255,49 @@
                   <input id="cons-invite-company" type="text" readonly style="opacity:.6;cursor:default">
                 </label>
                 <label class="inline" style="flex:1">
-                  Societe cliente
-                  <input id="cons-invite-clientname" type="text" placeholder="INFOGENE DIGITAL">
+                  Société cliente
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <select id="cons-invite-clientname" style="flex:1">
+                      <option value="">-- Sélectionner --</option>
+                    </select>
+                    <button type="button" id="cons-invite-client-create-btn" class="btn-ghost" style="white-space:nowrap;font-size:11px;padding:6px 10px" title="Créer un nouveau client">+ Nouveau</button>
+                  </div>
                 </label>
               </div>
+            </div>
+
+            <!-- Mini-formulaire création client inline -->
+            <div id="cons-inline-client-form" style="display:none;margin-top:12px;padding:14px;background:rgba(44,229,167,.05);border:1px solid rgba(44,229,167,.2);border-radius:10px">
+              <p class="eyebrow" style="margin-bottom:10px">Nouveau client</p>
+              <div class="form-row">
+                <label class="inline" style="flex:2">
+                  Nom *
+                  <input id="inline-client-name" type="text" placeholder="INFOGENE DIGITAL">
+                </label>
+                <label class="inline" style="flex:2">
+                  Adresse
+                  <input id="inline-client-address" type="text" placeholder="12 rue de la Paix, 75002 Paris">
+                </label>
+                <label class="inline" style="flex:1">
+                  RCS / SIRET
+                  <input id="inline-client-rcs" type="text" placeholder="RCS Paris 123 456 789">
+                </label>
+              </div>
+              <div class="form-row" style="margin-top:8px">
+                <label class="inline" style="flex:1">
+                  Nom du contact
+                  <input id="inline-client-contact" type="text" placeholder="Jean Dupont">
+                </label>
+                <label class="inline" style="flex:1">
+                  Email du contact
+                  <input id="inline-client-email" type="email" placeholder="j.dupont@client.fr">
+                </label>
+              </div>
+              <div class="actions-row" style="margin-top:10px">
+                <button id="inline-client-save" class="btn-primary" style="font-size:12px;padding:7px 16px">Créer ce client</button>
+                <button id="inline-client-cancel" class="btn-ghost" style="font-size:12px;padding:7px 16px">Annuler</button>
+              </div>
+              <div id="inline-client-status" class="status" style="margin-top:6px"></div>
             </div>
 
             <div class="actions-row" style="margin-top:12px">
