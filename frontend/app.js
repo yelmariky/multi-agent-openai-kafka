@@ -2627,8 +2627,7 @@ function renderClientsTable() {
           <div>${c.rcs ? `<span class="dl-badge dl-badge-muted">${escapeHtml(c.rcs)}</span>` : '<span class="cell-sub">—</span>'}</div>
           <div class="cell-sub">${escapeHtml(c.contactName || '—')}</div>
           <div class="cell-actions">
-            <button class="btn-row-edit"
-              onclick="openEditClient('${escapeHtml(c.id)}','${escapeHtml(c.name)}','${escapeHtml(c.address||'')}','${escapeHtml(c.rcs||'')}','${escapeHtml(c.contactName||'')}','${escapeHtml(c.contactEmail||'')}')">
+            <button class="btn-row-edit" data-client-id="${escapeHtml(c.id)}">
               <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Modifier
             </button>
@@ -2652,6 +2651,14 @@ function renderClientsTable() {
 
 function initClients() {
   document.getElementById('client-search').addEventListener('input', debounce(() => renderClientsTable(), 150));
+
+  // Délégation pour les boutons "Modifier" (évite les bugs avec apostrophes dans les données)
+  document.getElementById('client-table-wrap').addEventListener('click', e => {
+    const btn = e.target.closest('[data-client-id]');
+    if (!btn) return;
+    const c = allClients.find(x => x.id === btn.dataset.clientId);
+    if (c) openEditClient(c.id, c.name, c.address || '', c.rcs || '', c.contactName || '', c.contactEmail || '');
+  });
 
   document.getElementById('client-add-btn').addEventListener('click', () => {
     document.getElementById('client-form-id').value           = '';
