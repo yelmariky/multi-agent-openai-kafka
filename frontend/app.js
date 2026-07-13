@@ -802,6 +802,15 @@ function initConsultants(user) {
     const statusEl = document.getElementById('inline-client-status');
 
     if (!name) { statusEl.textContent = 'Le nom du client est requis.'; statusEl.className = 'status error'; return; }
+
+    const existing = allClients.find(c => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (existing) {
+      populateClientSelects(existing.name);
+      document.getElementById('cons-inline-client-form').style.display = 'none';
+      showToast(`Client "${existing.name}" déjà existant — sélectionné automatiquement.`, 'ok');
+      return;
+    }
+
     statusEl.textContent = 'Création…'; statusEl.className = 'status';
 
     try {
@@ -2652,6 +2661,22 @@ function renderClientsTable() {
 function initClients() {
   document.getElementById('client-search').addEventListener('input', debounce(() => renderClientsTable(), 150));
 
+  document.getElementById('client-dedup-btn')?.addEventListener('click', async () => {
+    if (!confirm('Supprimer automatiquement les clients en double (le plus récent est supprimé) ?')) return;
+    try {
+      const res = await fetch(`${base()}/clients/deduplicate`, { method: 'POST', headers: adminHeaders() });
+      const data = await res.json();
+      if (data.duplicatesRemoved === 0) {
+        showToast('Aucun doublon trouvé.', 'ok');
+      } else {
+        showToast(`${data.duplicatesRemoved} doublon(s) supprimé(s).`, 'ok');
+        loadClients();
+      }
+    } catch (e) {
+      showToast('Erreur : ' + e.message, 'err');
+    }
+  });
+
   // Délégation pour les boutons "Modifier" (évite les bugs avec apostrophes dans les données)
   document.getElementById('client-table-wrap').addEventListener('click', e => {
     const btn = e.target.closest('[data-client-id]');
@@ -2718,7 +2743,10 @@ async function saveClient() {
     restore();
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      setStatus(statusEl, `Erreur ${res.status}${errText ? ' : ' + errText : ''}`, 'err');
+      const msg = res.status === 409
+        ? (errText || 'Un client avec ce nom existe déjà.')
+        : `Erreur ${res.status}${errText ? ' : ' + errText : ''}`;
+      setStatus(statusEl, msg, 'err');
       return;
     }
     document.getElementById('client-form-wrap').style.display = 'none';

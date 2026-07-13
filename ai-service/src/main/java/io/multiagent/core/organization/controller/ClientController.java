@@ -10,8 +10,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
@@ -28,10 +31,36 @@ public class ClientController {
 
     @PostMapping
     @Transactional
-    public ResponseEntity<Client> create(@RequestBody Client client) {
-        Organization tenant = organizationRepository.getReferenceById(TenantContext.getTenantId());
+    public ResponseEntity<?> create(@RequestBody Client client) {
+        UUID tenantId = TenantContext.getTenantId();
+        boolean exists = clientRepository.findByTenantIdAndName(tenantId, client.getName()).isPresent();
+        if (exists) {
+            return ResponseEntity.status(409)
+                    .body("Un client avec le nom \"" + client.getName() + "\" existe déjà.");
+        }
+        Organization tenant = organizationRepository.getReferenceById(tenantId);
         client.setTenant(tenant);
         return ResponseEntity.ok(clientRepository.save(client));
+    }
+
+    /** Supprime les doublons (même nom, même tenant) en gardant le plus ancien. */
+    @PostMapping("/deduplicate")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> deduplicate() {
+        UUID tenantId = TenantContext.getTenantId();
+        List<Client> all = clientRepository.findByTenantId(tenantId);
+        Map<String, List<Client>> byName = all.stream()
+                .collect(Collectors.groupingBy(c -> c.getName().trim().toLowerCase()));
+        int removed = 0;
+        for (List<Client> group : byName.values()) {
+            if (group.size() <= 1) continue;
+            group.sort(Comparator.comparing(Client::getCreatedAt));
+            for (int i = 1; i < group.size(); i++) {
+                clientRepository.delete(group.get(i));
+                removed++;
+            }
+        }
+        return ResponseEntity.ok(Map.of("duplicatesRemoved", removed));
     }
 
     @PutMapping("/{id}")
