@@ -2716,13 +2716,18 @@ async function saveClient() {
       body: JSON.stringify({ name, address, rcs, contactName, contactEmail }),
     });
     restore();
-    if (!res.ok) { setStatus(statusEl, 'Erreur lors de la sauvegarde.', 'error'); return; }
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      setStatus(statusEl, `Erreur ${res.status}${errText ? ' : ' + errText : ''}`, 'err');
+      return;
+    }
     document.getElementById('client-form-wrap').style.display = 'none';
     allClients = [];  // force reload
     showToast(isEdit ? 'Client modifié.' : 'Client créé.', 'ok');
     loadClients();
-  } catch {
+  } catch (e) {
     restore();
+    setStatus(statusEl, 'Impossible de joindre le serveur : ' + e.message, 'err');
     setStatus(statusEl, 'Impossible de joindre le serveur.', 'error');
   }
 }

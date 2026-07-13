@@ -36,10 +36,20 @@ public class ClientController {
 
     @PutMapping("/{id}")
     @Transactional
-    public ResponseEntity<Client> update(@PathVariable UUID id, @RequestBody Client updates) {
+    public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody Client updates) {
+        UUID tenantId = TenantContext.getTenantId();
         Client existing = clientRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
-        if (updates.getName() != null) existing.setName(updates.getName());
+        if (updates.getName() != null && !updates.getName().equals(existing.getName())) {
+            boolean nameConflict = clientRepository.findByTenantIdAndName(tenantId, updates.getName())
+                    .filter(c -> !c.getId().equals(id))
+                    .isPresent();
+            if (nameConflict) {
+                return ResponseEntity.status(409)
+                        .body("Un client avec le nom \"" + updates.getName() + "\" existe déjà.");
+            }
+            existing.setName(updates.getName());
+        }
         if (updates.getAddress() != null) existing.setAddress(updates.getAddress());
         if (updates.getRcs() != null) existing.setRcs(updates.getRcs());
         if (updates.getContactName() != null) existing.setContactName(updates.getContactName());
