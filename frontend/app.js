@@ -2632,10 +2632,19 @@ function renderClientsTable() {
               <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Modifier
             </button>
-            <button class="btn-row-delete" title="Désactiver"
-              onclick="deleteClient('${escapeHtml(c.id)}')">
-              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-            </button>
+            ${(() => {
+              const isAttached = allConsultants.some(cons =>
+                (cons.clientName || '').trim().toLowerCase() === (c.name || '').trim().toLowerCase()
+              );
+              return isAttached
+                ? `<button class="btn-row-delete" disabled title="Client attaché à un consultant — impossible de supprimer" style="opacity:.35;cursor:not-allowed">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                   </button>`
+                : `<button class="btn-row-delete" title="Supprimer ce client"
+                    onclick="deleteClient('${escapeHtml(c.id)}')">
+                    <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                   </button>`;
+            })()}
           </div>
         </div>`).join('')}
     </div>`;
@@ -2712,18 +2721,31 @@ async function saveClient() {
 }
 
 async function deleteClient(id) {
-  if (!confirm('Désactiver ce client ?')) return;
+  const client = allClients.find(c => c.id === id);
+  if (!client) return;
+
+  const attached = allConsultants.filter(c =>
+    (c.clientName || '').trim().toLowerCase() === client.name.trim().toLowerCase()
+  );
+  if (attached.length) {
+    const names = attached.map(c => c.name || c.email).join(', ');
+    showToast(`Impossible de supprimer "${client.name}" : attaché à ${attached.length} consultant(s) — ${names}.`, 'err');
+    return;
+  }
+
+  if (!confirm(`Supprimer le client "${client.name}" ?`)) return;
   try {
     const res = await fetch(`${base()}/clients/${id}`, {
       method: 'DELETE',
       headers: adminHeaders(),
     });
-    if (!res.ok) { showToast('Erreur lors de la désactivation.', 'error'); return; }
+    if (!res.ok) { showToast('Erreur lors de la suppression.', 'err'); return; }
     allClients = allClients.filter(c => c.id !== id);
-    showToast('Client désactivé.', 'ok');
+    populateClientSelects();
+    showToast(`Client "${client.name}" supprimé.`, 'ok');
     renderClientsTable();
   } catch {
-    showToast('Impossible de joindre le serveur.', 'error');
+    showToast('Impossible de joindre le serveur.', 'err');
   }
 }
 
