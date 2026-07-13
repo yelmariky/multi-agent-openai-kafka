@@ -288,7 +288,6 @@ async function loadTenants() {
 function renderTenantList(tenants) {
   let html = '<div class="tenant-grid">';
   for (const t of tenants) {
-    const planCls = (t.plan || 'starter').toLowerCase();
     const active  = t.active !== false;
     const created = t.createdAt
       ? new Date(t.createdAt).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric' })
@@ -304,7 +303,6 @@ function renderTenantList(tenants) {
             <span>Créé le ${created}</span>
           </div>
         </div>
-        <span class="plan-badge ${planCls}">${escapeHtml(t.plan || 'STARTER')}</span>
         <div class="tenant-actions">
           ${active ? `
           <a class="btn-open" href="http://localhost:3000/${escapeHtml(t.slug)}/" target="_blank" rel="noopener" title="Ouvrir la console admin de ce tenant">
@@ -345,7 +343,6 @@ async function createTenant() {
   const statusEl = document.getElementById('create-status');
   const name      = document.getElementById('new-name').value.trim();
   const slug      = document.getElementById('new-slug').value.trim();
-  const plan      = document.getElementById('new-plan').value;
   const adminEmail = document.getElementById('new-admin-email').value.trim() || null;
   const adminPwd   = document.getElementById('new-admin-pwd').value.trim()   || null;
 
@@ -360,7 +357,7 @@ async function createTenant() {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({
-        name, slug, plan,
+        name, slug,
         keycloakRealm: slug,
         adminEmail: adminEmail,
         adminPassword: adminPwd,
@@ -378,7 +375,6 @@ async function createTenant() {
     }
     document.getElementById('new-name').value = '';
     document.getElementById('new-slug').value = '';
-    document.getElementById('new-plan').value = 'STARTER';
     document.getElementById('new-admin-email').value = '';
     document.getElementById('new-admin-pwd').value = '';
     loadTenants();
@@ -391,11 +387,11 @@ async function createTenant() {
 // CRUD — EDIT (modal)
 // ============================================================
 function openEditModal(tenant) {
-  document.getElementById('edit-id').value     = tenant.id;
-  document.getElementById('edit-name').value   = tenant.name || '';
-  document.getElementById('edit-slug').value   = tenant.slug || '';
-  document.getElementById('edit-plan').value   = tenant.plan || 'STARTER';
-  document.getElementById('edit-active').checked = tenant.active !== false;
+  document.getElementById('edit-id').value            = tenant.id;
+  document.getElementById('edit-name').value          = tenant.name || '';
+  document.getElementById('edit-slug').value          = tenant.slug || '';
+  document.getElementById('edit-plan-current').value  = tenant.plan || 'STARTER';
+  document.getElementById('edit-active').checked      = tenant.active !== false;
   document.getElementById('edit-status').textContent = '';
   document.getElementById('edit-modal').style.display = '';
 }
@@ -408,7 +404,7 @@ async function saveEdit() {
   const statusEl = document.getElementById('edit-status');
   const id     = document.getElementById('edit-id').value;
   const name   = document.getElementById('edit-name').value.trim();
-  const plan   = document.getElementById('edit-plan').value;
+  const plan   = document.getElementById('edit-plan-current').value;
   const active = document.getElementById('edit-active').checked;
 
   if (!name) { setStatus(statusEl, 'Le nom est requis.', 'err'); return; }

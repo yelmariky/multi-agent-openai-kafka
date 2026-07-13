@@ -80,16 +80,6 @@
           </div>
           <div class="form-row">
             <label class="inline">
-              Plan
-              <select id="new-plan">
-                <option value="STARTER">Starter</option>
-                <option value="PRO">Pro</option>
-                <option value="ENTERPRISE">Enterprise</option>
-              </select>
-            </label>
-          </div>
-          <div class="form-row">
-            <label class="inline">
               Email admin initial
               <input id="new-admin-email" type="email" placeholder="admin@acme-consulting.local">
             </label>
@@ -222,14 +212,7 @@
               Slug (lecture seule)
               <input id="edit-slug" type="text" disabled>
             </label>
-            <label class="inline">
-              Plan
-              <select id="edit-plan">
-                <option value="STARTER">Starter</option>
-                <option value="PRO">Pro</option>
-                <option value="ENTERPRISE">Enterprise</option>
-              </select>
-            </label>
+            <input type="hidden" id="edit-plan-current">
             <label class="inline-check">
               <input id="edit-active" type="checkbox" checked>
               Actif
