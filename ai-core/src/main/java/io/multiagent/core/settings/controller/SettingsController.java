@@ -1,13 +1,13 @@
 package io.multiagent.core.settings.controller;
 
 import io.multiagent.core.model.SellerProfile;
+import io.multiagent.core.organization.service.OrganizationService;
 import io.multiagent.core.service.WeaviateService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -17,28 +17,30 @@ import java.util.Map;
 public class SettingsController {
 
     private final WeaviateService weaviateService;
+    private final OrganizationService organizationService;
 
-    public SettingsController(WeaviateService weaviateService) {
+    public SettingsController(WeaviateService weaviateService, OrganizationService organizationService) {
         this.weaviateService = weaviateService;
+        this.organizationService = organizationService;
     }
 
     /**
-     * Returns the SellerProfile stored in Weaviate for the given company name.
-     * Returns an empty profile (not 404) when none exists yet, so the frontend
-     * can display a pre-filled form.
+     * Returns the SellerProfile for the current tenant.
+     * When none exists yet, returns an empty profile pre-filled with the tenant's
+     * organization name — never "IA-INSIGHT" which is the platform vendor name.
      */
     @GetMapping("/seller")
-    public ResponseEntity<SellerProfile> getSeller(
-            @RequestParam(required = false, defaultValue = "IA-INSIGHT") String company) {
-        SellerProfile profile = weaviateService.findSellerProfile(company);
+    public ResponseEntity<SellerProfile> getSeller() {
+        String tenantCompanyName = organizationService.getCurrentTenantName();
+        SellerProfile profile = weaviateService.findSellerProfile(tenantCompanyName);
         if (profile == null) {
-            profile = new SellerProfile(company, "", "", "", "", "", "", "");
+            profile = new SellerProfile(tenantCompanyName, "", "", "", "", "", "", "");
         }
         return ResponseEntity.ok(profile);
     }
 
     /**
-     * Creates or replaces the SellerProfile in Weaviate.
+     * Creates or replaces the SellerProfile for the current tenant.
      */
     @PostMapping("/seller")
     public ResponseEntity<Object> saveSeller(@RequestBody SellerProfile profile) {
