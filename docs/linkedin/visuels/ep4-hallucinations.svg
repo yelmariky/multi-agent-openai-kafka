@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1017"/>
+      <stop offset="1" stop-color="#131a28"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2ce5a7"/>
+      <stop offset="1" stop-color="#7ad7ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1350" fill="url(#bg)"/>
+
+  <text x="70" y="95" font-family="Arial" font-size="28" font-weight="bold" fill="#2ce5a7" letter-spacing="5">LE MARDI SÉCURITÉ IA — ÉPISODE 4</text>
+  <text x="70" y="180" font-family="Arial" font-size="62" font-weight="bold" fill="#ecf1ff">Les hallucinations IA</text>
+  <text x="70" y="252" font-family="Arial" font-size="62" font-weight="bold" fill="#ecf1ff">ne sont pas des bugs</text>
+  <rect x="70" y="290" width="220" height="6" rx="3" fill="url(#accent)"/>
+
+  <text x="70" y="380" font-family="Arial" font-size="34" fill="#ecf1ff">Un LLM ne « sait » pas. Il prédit le mot suivant.</text>
+  <text x="70" y="428" font-family="Arial" font-size="34" fill="#ecf1ff">Inventer avec assurance fait partie de son design.</text>
+
+  <!-- Example -->
+  <rect x="70" y="490" width="940" height="180" rx="14" fill="#1a2233" stroke="#f87171" stroke-width="2"/>
+  <text x="100" y="545" font-family="Arial" font-size="26" font-weight="bold" fill="#f87171">EXEMPLE VÉCU EN GESTION</text>
+  <text x="100" y="590" font-family="Arial" font-size="27" fill="#ecf1ff">Reçu illisible → l'OCR lit « 450 € » au lieu de « 45,0 € »</text>
+  <text x="100" y="632" font-family="Arial" font-size="27" fill="#ecf1ff">L'IA remplit la note avec aplomb. Personne ne vérifie.</text>
+
+  <!-- The 3 defenses -->
+  <text x="70" y="750" font-family="Arial" font-size="26" font-weight="bold" fill="#8892a4">LES 3 DÉFENSES QUI MARCHENT :</text>
+
+  <rect x="70" y="780" width="940" height="130" rx="14" fill="#1a2233" stroke="#2ce5a7" stroke-width="2"/>
+  <text x="100" y="833" font-family="Arial" font-size="29" font-weight="bold" fill="#2ce5a7">1. Score de confiance exposé</text>
+  <text x="100" y="875" font-family="Arial" font-size="25" fill="#8892a4">L'IA dit à quel point elle est sûre — sous 70 % : revue humaine</text>
+
+  <rect x="70" y="930" width="940" height="130" rx="14" fill="#1a2233" stroke="#2ce5a7" stroke-width="2"/>
+  <text x="100" y="983" font-family="Arial" font-size="29" font-weight="bold" fill="#2ce5a7">2. Garde-fous métier</text>
+  <text x="100" y="1025" font-family="Arial" font-size="25" fill="#8892a4">Montant élevé, date future, catégorie inconnue → alerte auto</text>
+
+  <rect x="70" y="1080" width="940" height="130" rx="14" fill="#1a2233" stroke="#2ce5a7" stroke-width="2"/>
+  <text x="100" y="1133" font-family="Arial" font-size="29" font-weight="bold" fill="#2ce5a7">3. RAG : répondre depuis VOS documents</text>
+  <text x="100" y="1175" font-family="Arial" font-size="25" fill="#8892a4">L'IA cite ses sources au lieu d'inventer de mémoire</text>
+
+  <text x="70" y="1270" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Une IA fiable, c'est une IA qui sait douter.</text>
+
+  <text x="70" y="1318" font-family="Arial" font-size="26" font-weight="bold" fill="#2ce5a7">IA-INSIGHT</text>
+  <text x="1010" y="1318" font-family="Arial" font-size="22" fill="#8892a4" text-anchor="end">Le mardi sécurité IA — chaque semaine</text>
+</svg>

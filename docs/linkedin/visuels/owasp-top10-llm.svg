@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1017"/>
+      <stop offset="1" stop-color="#131a28"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2ce5a7"/>
+      <stop offset="1" stop-color="#7ad7ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1080" height="1350" fill="url(#bg)"/>
+
+  <!-- Header -->
+  <text x="70" y="95" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="bold" fill="#2ce5a7" letter-spacing="6">SÉCURITÉ IA</text>
+  <text x="70" y="165" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="bold" fill="#ecf1ff">OWASP Top 10</text>
+  <text x="70" y="225" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="bold" fill="#ecf1ff">des risques des applications IA</text>
+  <rect x="70" y="255" width="220" height="6" rx="3" fill="url(#accent)"/>
+
+  <!-- Rows -->
+  <!-- Row 1 -->
+  <rect x="70" y="300" width="940" height="86" rx="14" fill="#1a2233" stroke="#f87171" stroke-width="2"/>
+  <text x="100" y="355" font-family="Arial" font-size="30" font-weight="bold" fill="#f87171">01</text>
+  <text x="170" y="342" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Injection de prompt</text>
+  <text x="170" y="372" font-family="Arial" font-size="22" fill="#8892a4">Des instructions cachées manipulent l'IA</text>
+
+  <rect x="70" y="398" width="940" height="86" rx="14" fill="#1a2233" stroke="#f87171" stroke-width="2"/>
+  <text x="100" y="453" font-family="Arial" font-size="30" font-weight="bold" fill="#f87171">02</text>
+  <text x="170" y="440" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Fuite d'informations sensibles</text>
+  <text x="170" y="470" font-family="Arial" font-size="22" fill="#8892a4">L'IA révèle des données confidentielles</text>
+
+  <rect x="70" y="496" width="940" height="86" rx="14" fill="#1a2233" stroke="#fb923c" stroke-width="2"/>
+  <text x="100" y="551" font-family="Arial" font-size="30" font-weight="bold" fill="#fb923c">03</text>
+  <text x="170" y="538" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Chaîne d'approvisionnement</text>
+  <text x="170" y="568" font-family="Arial" font-size="22" fill="#8892a4">Modèles ou composants tiers compromis</text>
+
+  <rect x="70" y="594" width="940" height="86" rx="14" fill="#1a2233" stroke="#fb923c" stroke-width="2"/>
+  <text x="100" y="649" font-family="Arial" font-size="30" font-weight="bold" fill="#fb923c">04</text>
+  <text x="170" y="636" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Empoisonnement des données</text>
+  <text x="170" y="666" font-family="Arial" font-size="22" fill="#8892a4">Données d'entraînement corrompues</text>
+
+  <rect x="70" y="692" width="940" height="86" rx="14" fill="#1a2233" stroke="#fb923c" stroke-width="2"/>
+  <text x="100" y="747" font-family="Arial" font-size="30" font-weight="bold" fill="#fb923c">05</text>
+  <text x="170" y="734" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Sorties non contrôlées</text>
+  <text x="170" y="764" font-family="Arial" font-size="22" fill="#8892a4">Réponses IA utilisées sans validation</text>
+
+  <rect x="70" y="790" width="940" height="86" rx="14" fill="#1a2233" stroke="#facc15" stroke-width="2"/>
+  <text x="100" y="845" font-family="Arial" font-size="30" font-weight="bold" fill="#facc15">06</text>
+  <text x="170" y="832" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Agence excessive</text>
+  <text x="170" y="862" font-family="Arial" font-size="22" fill="#8892a4">L'IA agit au-delà de ses pouvoirs prévus</text>
+
+  <rect x="70" y="888" width="940" height="86" rx="14" fill="#1a2233" stroke="#facc15" stroke-width="2"/>
+  <text x="100" y="943" font-family="Arial" font-size="30" font-weight="bold" fill="#facc15">07</text>
+  <text x="170" y="930" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Fuite du prompt système</text>
+  <text x="170" y="960" font-family="Arial" font-size="22" fill="#8892a4">Les instructions internes sont exposées</text>
+
+  <rect x="70" y="986" width="940" height="86" rx="14" fill="#1a2233" stroke="#7ad7ff" stroke-width="2"/>
+  <text x="100" y="1041" font-family="Arial" font-size="30" font-weight="bold" fill="#7ad7ff">08</text>
+  <text x="170" y="1028" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Failles vecteurs &amp; embeddings</text>
+  <text x="170" y="1058" font-family="Arial" font-size="22" fill="#8892a4">Le RAG devient une porte d'entrée</text>
+
+  <rect x="70" y="1084" width="940" height="86" rx="14" fill="#1a2233" stroke="#7ad7ff" stroke-width="2"/>
+  <text x="100" y="1139" font-family="Arial" font-size="30" font-weight="bold" fill="#7ad7ff">09</text>
+  <text x="170" y="1126" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Désinformation</text>
+  <text x="170" y="1156" font-family="Arial" font-size="22" fill="#8892a4">Hallucinations prises pour des faits</text>
+
+  <rect x="70" y="1182" width="940" height="86" rx="14" fill="#1a2233" stroke="#7ad7ff" stroke-width="2"/>
+  <text x="100" y="1237" font-family="Arial" font-size="30" font-weight="bold" fill="#7ad7ff">10</text>
+  <text x="170" y="1224" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Consommation non bornée</text>
+  <text x="170" y="1254" font-family="Arial" font-size="22" fill="#8892a4">Coûts et ressources qui explosent</text>
+
+  <!-- Footer -->
+  <text x="70" y="1318" font-family="Arial" font-size="26" font-weight="bold" fill="#2ce5a7">IA-INSIGHT</text>
+  <text x="1010" y="1318" font-family="Arial" font-size="22" fill="#8892a4" text-anchor="end">Source : OWASP Top 10 for LLM Applications</text>
+</svg>

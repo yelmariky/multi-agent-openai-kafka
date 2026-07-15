@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1017"/>
+      <stop offset="1" stop-color="#131a28"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2ce5a7"/>
+      <stop offset="1" stop-color="#7ad7ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1080" height="1350" fill="url(#bg)"/>
+
+  <text x="70" y="95" font-family="Arial" font-size="28" font-weight="bold" fill="#2ce5a7" letter-spacing="5">LE MARDI SÉCURITÉ IA — ÉPISODE 2</text>
+  <text x="70" y="180" font-family="Arial" font-size="66" font-weight="bold" fill="#ecf1ff">Shadow AI :</text>
+  <text x="70" y="255" font-family="Arial" font-size="66" font-weight="bold" fill="#ecf1ff">l'IA que vos équipes</text>
+  <text x="70" y="330" font-family="Arial" font-size="66" font-weight="bold" fill="#ecf1ff">utilisent en cachette</text>
+  <rect x="70" y="365" width="220" height="6" rx="3" fill="url(#accent)"/>
+
+  <!-- Big stat -->
+  <text x="70" y="560" font-family="Arial" font-size="160" font-weight="bold" fill="#2ce5a7">78 %</text>
+  <text x="70" y="625" font-family="Arial" font-size="32" fill="#ecf1ff">des salariés utilisant l'IA au travail le font avec</text>
+  <text x="70" y="668" font-family="Arial" font-size="32" fill="#ecf1ff">des outils NON validés par leur entreprise</text>
+  <text x="70" y="710" font-family="Arial" font-size="22" fill="#8892a4">Source : Microsoft Work Trend Index</text>
+
+  <!-- Examples -->
+  <rect x="70" y="770" width="940" height="120" rx="14" fill="#1a2233" stroke="#f87171" stroke-width="2"/>
+  <text x="100" y="820" font-family="Arial" font-size="28" font-weight="bold" fill="#f87171">Le compte-rendu client collé dans un chatbot public</text>
+  <text x="100" y="858" font-family="Arial" font-size="24" fill="#8892a4">« Juste pour le résumer » — données confidentielles parties</text>
+
+  <rect x="70" y="910" width="940" height="120" rx="14" fill="#1a2233" stroke="#fb923c" stroke-width="2"/>
+  <text x="100" y="960" font-family="Arial" font-size="28" font-weight="bold" fill="#fb923c">La proposition commerciale relue par une IA gratuite</text>
+  <text x="100" y="998" font-family="Arial" font-size="24" fill="#8892a4">Vos prix et votre stratégie sur des serveurs inconnus</text>
+
+  <rect x="70" y="1050" width="940" height="120" rx="14" fill="#1a2233" stroke="#facc15" stroke-width="2"/>
+  <text x="100" y="1100" font-family="Arial" font-size="28" font-weight="bold" fill="#facc15">Les données de facturation copiées « pour gagner du temps »</text>
+  <text x="100" y="1138" font-family="Arial" font-size="24" fill="#8892a4">RGPD : responsabilité de l'entreprise, pas du salarié</text>
+
+  <text x="70" y="1250" font-family="Arial" font-size="30" font-weight="bold" fill="#ecf1ff">Interdire ne marche pas. Encadrer, oui.</text>
+
+  <text x="70" y="1318" font-family="Arial" font-size="26" font-weight="bold" fill="#2ce5a7">IA-INSIGHT</text>
+  <text x="1010" y="1318" font-family="Arial" font-size="22" fill="#8892a4" text-anchor="end">Le mardi sécurité IA — chaque semaine</text>
+</svg>
