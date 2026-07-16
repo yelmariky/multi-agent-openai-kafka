@@ -1,0 +1,15 @@
+IA-INSIGHT transforme le back-office des ESN et cabinets de conseil IT grâce à l'IA générative.
+
+Notre plateforme SaaS automatise ce qui dévore le temps de vos équipes : notes de frais dictées en langage naturel (LLM + OCR), facturation client conforme générée en un clic, CRA validés en temps réel, congés, et un tableau de bord de pilotage qui donne au dirigeant son CA facturable, sa marge nette et son taux d'activité — sans attendre la clôture comptable.
+
+Chaque organisation dispose de son espace isolé et sécurisé (multi-tenant), avec une facturation simple : par consultant, par mois. Vos effectifs évoluent, votre abonnement suit automatiquement.
+
+Au-delà du logiciel, nous accompagnons les entreprises dans leur adoption de l'IA :
+🔍 Audit IA — cartographie des usages, quick wins, feuille de route
+🛡️ Gouvernance IA — conformité AI Act et RGPD, politiques d'usage des LLM
+⚙️ Ingénierie IA sur mesure — RAG, agents, intégration LLM en production
+
+Nos convictions : les données de nos clients restent les leurs (hébergement UE, jamais d'entraînement de modèles), et l'IA doit prouver son ROI en semaines, pas en années.
+
+Démo gratuite de 30 minutes : demo@ia-insightservices.fr · 06 69 00 91 08
+https://ia-insightservices.fr

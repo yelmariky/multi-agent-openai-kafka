@@ -98,8 +98,8 @@ kubectl delete -f "${SCRIPT_DIR}/pv-postgres.yaml" --ignore-not-found 2>/dev/nul
 success "PV supprimé."
 
 # ─── 7. StorageClass ──────────────────────────────────────────────────────────
-info "Suppression de la StorageClass postgres-hostpath..."
-kubectl delete storageclass postgres-hostpath --ignore-not-found 2>/dev/null
+info "Suppression de la StorageClass db-hostpath..."
+kubectl delete storageclass db-hostpath --ignore-not-found 2>/dev/null
 success "StorageClass supprimée."
 
 # ─── 8. Namespace ─────────────────────────────────────────────────────────────

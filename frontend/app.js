@@ -679,6 +679,17 @@ async function initConsultantsData() {
 }
 
 let allConsultants = loadConsultants();
+/** email → [clients] issus des affectations — la carte affiche TOUS les clients d'un consultant */
+let clientsByEmail = {};
+
+async function loadClientNames() {
+  try {
+    const res = await fetch(`${base()}/consultants/client-names`, { headers: authHeaders() });
+    if (!res.ok) return;
+    clientsByEmail = await res.json();
+    renderConsultantsGrid();
+  } catch { /* non bloquant — repli sur clientName */ }
+}
 let currentConsultant = null;
 let adminUser = null;
 let editingConsEmail = null;
@@ -1004,6 +1015,7 @@ function initConsultants(user) {
 
   // Kick off async backend sync (non-blocking)
   initConsultantsData();
+  loadClientNames();
 }
 
 function renderConsultantsGrid(filter = '') {
@@ -1034,7 +1046,7 @@ function renderConsultantsGrid(filter = '') {
           <span class="cons-role-badge ${c.role.toLowerCase()}">${escapeHtml(c.role)}</span>
           <span class="cons-company-tag">${escapeHtml(c.company)}</span>
         </div>
-        ${c.clientName ? `<p class="cons-card-client">↳ ${escapeHtml(c.clientName)}</p>` : ''}
+        ${(() => { const cl = (clientsByEmail[c.email] || []).join(' · ') || c.clientName; return cl ? `<p class="cons-card-client">↳ ${escapeHtml(cl)}</p>` : ''; })()}
         <div class="cons-card-kpis" id="kpis-${btoa(c.email).replace(/[^a-zA-Z0-9]/g,'')}">
           <div class="cons-kpi-chip"><span class="kpi-v">…</span><span class="kpi-l">CRA soumis</span></div>
           <div class="cons-kpi-chip"><span class="kpi-v">…</span><span class="kpi-l">Frais</span></div>
@@ -2512,6 +2524,7 @@ async function saveAssignment(cons) {
     });
     restore();
     if (!res.ok) { statusEl.textContent = 'Erreur lors de la sauvegarde.'; return; }
+    loadClientNames();   // rafraîchir la liste des clients affichée sur les cartes
 
     // Sauvegarder le prix d'achat sur le profil consultant
     if (currentConsultant) {
@@ -2541,6 +2554,7 @@ async function deleteAssignment(cons, assignmentId, projectName = '', clientName
     if (!res.ok) { showToast('Erreur lors de la suppression.', 'error'); return; }
     showToast('Trio supprimé.', 'ok');
     loadConsultantAssignments(cons);
+    loadClientNames();   // rafraîchir la liste des clients affichée sur les cartes
   } catch {
     showToast('Impossible de joindre le serveur.', 'error');
   }
@@ -2641,11 +2655,14 @@ function renderClientsTable() {
               Modifier
             </button>
             ${(() => {
-              const isAttached = allConsultants.some(cons =>
-                (cons.clientName || '').trim().toLowerCase() === (c.name || '').trim().toLowerCase()
-              );
-              return isAttached
-                ? `<button class="btn-row-delete" disabled title="Client attaché à un consultant — impossible de supprimer" style="opacity:.35;cursor:not-allowed">
+              const cname = (c.name || '').trim().toLowerCase();
+              // Vérité = affectations (multi-clients) ; repli sur le champ clientName hérité
+              const attached = allConsultants.filter(cons =>
+                (clientsByEmail[cons.email] || []).some(n => (n || '').trim().toLowerCase() === cname)
+                || (cons.clientName || '').trim().toLowerCase() === cname
+              ).map(cons => cons.name || cons.email);
+              return attached.length
+                ? `<button class="btn-row-delete" disabled title="Impossible de supprimer — client attaché à : ${escapeHtml(attached.join(', '))}" style="opacity:.35;cursor:not-allowed">
                     <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
                    </button>`
                 : `<button class="btn-row-delete" title="Supprimer ce client"

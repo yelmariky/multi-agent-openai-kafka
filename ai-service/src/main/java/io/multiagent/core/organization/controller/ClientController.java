@@ -70,12 +70,15 @@ public class ClientController {
         Client existing = clientRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
         if (updates.getName() != null && !updates.getName().equals(existing.getName())) {
-            boolean nameConflict = clientRepository.findByTenantIdAndName(tenantId, updates.getName())
-                    .filter(c -> !c.getId().equals(id))
-                    .isPresent();
-            if (nameConflict) {
-                return ResponseEntity.status(409)
-                        .body("Un client avec le nom \"" + updates.getName() + "\" existe déjà.");
+            var conflict = clientRepository.findByTenantIdAndName(tenantId, updates.getName())
+                    .filter(c -> !c.getId().equals(id));
+            if (conflict.isPresent()) {
+                boolean archived = !conflict.get().isActive();
+                String msg = archived
+                        ? "Un client archivé porte déjà le nom \"" + updates.getName() + "\". "
+                          + "Réactivez-le ou renommez-le d'abord (bouton « Nettoyer doublons » pour fusionner)."
+                        : "Un client actif porte déjà le nom \"" + updates.getName() + "\".";
+                return ResponseEntity.status(409).body(msg);
             }
             existing.setName(updates.getName());
         }

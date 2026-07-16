@@ -57,6 +57,7 @@ public class ConsultantAssignmentController {
         assignment.setTjm(req.tjm());
         if (req.paymentTermsDays() != null) assignment.setPaymentTermsDays(req.paymentTermsDays());
 
+        syncProfileClientName(consultant, client);
         return ResponseEntity.ok(assignmentRepository.save(assignment));
     }
 
@@ -81,7 +82,18 @@ public class ConsultantAssignmentController {
         assignment.setTjm(req.tjm());
         if (req.paymentTermsDays() != null) assignment.setPaymentTermsDays(req.paymentTermsDays());
 
+        syncProfileClientName(assignment.getConsultantProfile(), client);
         return ResponseEntity.ok(assignmentRepository.save(assignment));
+    }
+
+    /** Le champ texte libre clientName du profil (affiché sur la carte consultant et utilisé en
+     *  secours de facturation) suit l'affectation : une seule vérité visible côté admin. */
+    private void syncProfileClientName(ConsultantProfileEntity consultant, Client client) {
+        if (consultant == null || client == null || client.getName() == null) return;
+        if (!client.getName().equals(consultant.getClientName())) {
+            consultant.setClientName(client.getName());
+            consultantProfileRepository.save(consultant);
+        }
     }
 
     @DeleteMapping("/{id}")

@@ -1,0 +1,93 @@
+package io.multiagent.core.organization;
+
+import io.multiagent.core.infrastructure.tenant.TenantContext;
+import io.multiagent.core.organization.controller.ClientController;
+import io.multiagent.core.organization.entity.Client;
+import io.multiagent.core.organization.repository.ClientRepository;
+import io.multiagent.core.organization.repository.OrganizationRepository;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.ResponseEntity;
+
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("ClientController — renommage et conflits de nom")
+class ClientControllerTest {
+
+    @Mock ClientRepository clientRepository;
+    @Mock OrganizationRepository organizationRepository;
+
+    @InjectMocks ClientController controller;
+
+    private final UUID tenantId = UUID.randomUUID();
+    private final UUID clientId = UUID.randomUUID();
+
+    @BeforeEach
+    void setUp() {
+        TenantContext.set(tenantId, "ia-insight");
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
+
+    private Client client(UUID id, String name, boolean active) {
+        Client c = new Client();
+        c.setId(id);
+        c.setName(name);
+        c.setActive(active);
+        return c;
+    }
+
+    @Test
+    @DisplayName("conflit avec un client ARCHIVÉ → message explicite mentionnant l'archive")
+    void archivedConflictGivesExplicitMessage() {
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client(clientId, "INFOGENE DIGTAL", true)));
+        when(clientRepository.findByTenantIdAndName(tenantId, "INFOGENE DIGITAL"))
+                .thenReturn(Optional.of(client(UUID.randomUUID(), "INFOGENE DIGITAL", false)));  // archivé
+
+        ResponseEntity<?> res = controller.update(clientId, client(null, "INFOGENE DIGITAL", true));
+
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        assertThat((String) res.getBody()).contains("archivé").contains("INFOGENE DIGITAL");
+    }
+
+    @Test
+    @DisplayName("conflit avec un client ACTIF → message standard")
+    void activeConflictGivesStandardMessage() {
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client(clientId, "ACME", true)));
+        when(clientRepository.findByTenantIdAndName(tenantId, "EDF"))
+                .thenReturn(Optional.of(client(UUID.randomUUID(), "EDF", true)));
+
+        ResponseEntity<?> res = controller.update(clientId, client(null, "EDF", true));
+
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        assertThat((String) res.getBody()).contains("actif").doesNotContain("archivé");
+    }
+
+    @Test
+    @DisplayName("nom libre → renommage accepté")
+    void renameSucceedsWhenNameFree() {
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client(clientId, "INFOGENE DIGTAL", true)));
+        when(clientRepository.findByTenantIdAndName(tenantId, "INFOGENE DIGITAL")).thenReturn(Optional.empty());
+        when(clientRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<?> res = controller.update(clientId, client(null, "INFOGENE DIGITAL", true));
+
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(((Client) res.getBody()).getName()).isEqualTo("INFOGENE DIGITAL");
+    }
+}

@@ -24,11 +24,35 @@ public class ConsultantController {
 
     private final WeaviateService weaviateService;
     private final KeycloakProvisioningService keycloakService;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @GetMapping("/profiles")
     public ResponseEntity<List<ConsultantProfile>> getProfiles(
             @RequestParam(name = "company", required = false) String company) {
         return ResponseEntity.ok(weaviateService.findAllConsultantProfiles(company));
+    }
+
+    /** Tous les clients de chaque consultant (via ses affectations), groupés par email —
+     *  une seule requête pour toutes les cartes de la console admin. */
+    @GetMapping("/client-names")
+    public ResponseEntity<Map<String, List<String>>> clientNamesByConsultant() {
+        var rows = jdbcTemplate.queryForList("""
+                SELECT cp.email, c.name
+                FROM consultant_assignment ca
+                JOIN consultant_profile cp ON cp.id = ca.consultant_profile_id
+                JOIN client c ON c.id = ca.client_id
+                WHERE ca.tenant_id = ?
+                ORDER BY cp.email, ca.created_at
+                """, TenantContext.getTenantId());
+        Map<String, List<String>> byEmail = new java.util.LinkedHashMap<>();
+        for (var row : rows) {
+            String email = (String) row.get("email");
+            String client = (String) row.get("name");
+            if (email == null || client == null) continue;
+            List<String> clients = byEmail.computeIfAbsent(email, k -> new java.util.ArrayList<>());
+            if (!clients.contains(client)) clients.add(client);
+        }
+        return ResponseEntity.ok(byEmail);
     }
 
     @PostMapping("/profiles")
