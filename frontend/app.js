@@ -681,6 +681,7 @@ async function initConsultantsData() {
 let allConsultants = loadConsultants();
 /** email → [clients] issus des affectations — la carte affiche TOUS les clients d'un consultant */
 let clientsByEmail = {};
+let showInactiveConsultants = false;
 
 async function loadClientNames() {
   try {
@@ -711,6 +712,11 @@ function initConsultants(user) {
   document.getElementById('cons-search').addEventListener('input', debounce(e => {
     renderConsultantsGrid(e.target.value);
   }, 150));
+
+  document.getElementById('cons-show-inactive')?.addEventListener('change', e => {
+    showInactiveConsultants = e.target.checked;
+    renderConsultantsGrid(document.getElementById('cons-search').value);
+  });
 
   // --- Add form: mode toggle (existing vs invite) ---
   let addMode = 'existing'; // 'existing' or 'invite'
@@ -1023,9 +1029,11 @@ function renderConsultantsGrid(filter = '') {
   const q    = filter.trim().toLowerCase();
   const staffEmails = new Set((allConsultants.filter(c => c.role === 'admin' || c.role === 'manager').map(c => c.email?.toLowerCase())));
   if (adminUser?.email) staffEmails.add(adminUser.email.toLowerCase());
-  const activeList = allConsultants.filter(c => c.active !== false && !staffEmails.has(c.email?.toLowerCase()));
+  // showInactiveConsultants : bascule « Afficher les désactivés » de la toolbar
+  const visibleList = allConsultants.filter(c =>
+    !staffEmails.has(c.email?.toLowerCase()) && (showInactiveConsultants || c.active !== false));
   const filterFn = c => !q || c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
-  const list = activeList.filter(filterFn);
+  const list = visibleList.filter(filterFn);
 
   if (!list.length) {
     const msg = q
@@ -1037,10 +1045,10 @@ function renderConsultantsGrid(filter = '') {
   }
 
   grid.innerHTML = list.map(c => `
-    <div class="consultant-card" data-email="${escapeHtml(c.email)}">
+    <div class="consultant-card${c.active === false ? ' consultant-card-inactive' : ''}" data-email="${escapeHtml(c.email)}">
       <div class="card-inner">
         <div class="cons-avatar" style="background:${avatarColor(c.name)}">${initials(c.name)}</div>
-        <p class="cons-card-name">${escapeHtml(c.name)}</p>
+        <p class="cons-card-name">${escapeHtml(c.name)}${c.active === false ? ' <span class="cons-inactive-tag">Désactivé</span>' : ''}</p>
         <p class="cons-card-email">${escapeHtml(c.email)}</p>
         <div class="cons-card-badges">
           <span class="cons-role-badge ${c.role.toLowerCase()}">${escapeHtml(c.role)}</span>
@@ -1056,9 +1064,10 @@ function renderConsultantsGrid(filter = '') {
             <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Modifier
           </button>
-          <button class="btn-card-toggle" data-email="${escapeHtml(c.email)}">
-            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-            Desactiver
+          <button class="btn-card-toggle${c.active === false ? ' btn-card-reactivate' : ''}" data-email="${escapeHtml(c.email)}">
+            ${c.active === false
+              ? '<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> Réactiver'
+              : '<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg> Desactiver'}
           </button>
         </div>
       </div>
@@ -2598,11 +2607,14 @@ function populateClientSelects(preselectName = '') {
   });
 }
 
+let showInactiveClients = false;
+
 async function loadClients() {
   const statusEl = document.getElementById('client-list-status');
   if (statusEl) setStatus(statusEl, 'Chargement…');
   try {
-    const res = await fetch(`${base()}/clients`, { headers: adminHeaders() });
+    const qs = showInactiveClients ? '?includeInactive=true' : '';
+    const res = await fetch(`${base()}/clients${qs}`, { headers: adminHeaders() });
     if (!res.ok) { if (statusEl) setStatus(statusEl, 'Erreur lors du chargement.', 'error'); return; }
     allClients = await res.json();
     allClients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -2638,11 +2650,11 @@ function renderClientsTable() {
         <span></span>
       </div>
       ${filtered.map(c => `
-        <div class="data-list-row dl-clients-grid">
+        <div class="data-list-row dl-clients-grid${c.active === false ? ' data-list-row-inactive' : ''}">
           <div class="cell-primary">
             <div class="row-icon ${rowIconVariant(c.name)}">${getInitials(c.name)}</div>
             <div>
-              <div>${escapeHtml(c.name)}</div>
+              <div>${escapeHtml(c.name)}${c.active === false ? ' <span class="cons-inactive-tag">Archivé</span>' : ''}</div>
               ${c.contactEmail ? `<div class="cell-sub">${escapeHtml(c.contactEmail)}</div>` : ''}
             </div>
           </div>
@@ -2654,18 +2666,24 @@ function renderClientsTable() {
               <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Modifier
             </button>
+            ${c.active === false ? `<button class="btn-row-edit btn-card-reactivate" title="Réactiver ce client" onclick="reactivateClient('${escapeHtml(c.id)}')">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+              Réactiver
+            </button>` : ''}
             ${(() => {
+              if (c.active === false) return '';   // déjà archivé : pas de bouton archiver
               const cname = (c.name || '').trim().toLowerCase();
-              // Vérité = affectations (multi-clients) ; repli sur le champ clientName hérité
-              const attached = allConsultants.filter(cons =>
-                (clientsByEmail[cons.email] || []).some(n => (n || '').trim().toLowerCase() === cname)
-                || (cons.clientName || '').trim().toLowerCase() === cname
+              // Archivage bloqué uniquement si un consultant ACTIF est rattaché (affectation ou champ hérité)
+              const activeAttached = allConsultants.filter(cons =>
+                cons.active !== false && (
+                  (clientsByEmail[cons.email] || []).some(n => (n || '').trim().toLowerCase() === cname)
+                  || (cons.clientName || '').trim().toLowerCase() === cname)
               ).map(cons => cons.name || cons.email);
-              return attached.length
-                ? `<button class="btn-row-delete" disabled title="Impossible de supprimer — client attaché à : ${escapeHtml(attached.join(', '))}" style="opacity:.35;cursor:not-allowed">
+              return activeAttached.length
+                ? `<button class="btn-row-delete" disabled title="Impossible d'archiver — consultant(s) actif(s) rattaché(s) : ${escapeHtml(activeAttached.join(', '))}" style="opacity:.35;cursor:not-allowed">
                     <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
                    </button>`
-                : `<button class="btn-row-delete" title="Supprimer ce client"
+                : `<button class="btn-row-delete" title="Archiver ce client"
                     onclick="deleteClient('${escapeHtml(c.id)}')">
                     <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
                    </button>`;
@@ -2677,6 +2695,11 @@ function renderClientsTable() {
 
 function initClients() {
   document.getElementById('client-search').addEventListener('input', debounce(() => renderClientsTable(), 150));
+
+  document.getElementById('client-show-inactive')?.addEventListener('change', e => {
+    showInactiveClients = e.target.checked;
+    loadClients();
+  });
 
   document.getElementById('client-dedup-btn')?.addEventListener('click', async () => {
     if (!confirm('Supprimer automatiquement les clients en double (le plus récent est supprimé) ?')) return;
@@ -2781,26 +2804,51 @@ async function deleteClient(id) {
   const client = allClients.find(c => c.id === id);
   if (!client) return;
 
-  const attached = allConsultants.filter(c =>
-    (c.clientName || '').trim().toLowerCase() === client.name.trim().toLowerCase()
+  const cname = client.name.trim().toLowerCase();
+  const activeAttached = allConsultants.filter(c =>
+    c.active !== false && (
+      (clientsByEmail[c.email] || []).some(n => (n || '').trim().toLowerCase() === cname)
+      || (c.clientName || '').trim().toLowerCase() === cname)
   );
-  if (attached.length) {
-    const names = attached.map(c => c.name || c.email).join(', ');
-    showToast(`Impossible de supprimer "${client.name}" : attaché à ${attached.length} consultant(s) — ${names}.`, 'err');
+  if (activeAttached.length) {
+    const names = activeAttached.map(c => c.name || c.email).join(', ');
+    showToast(`Impossible d'archiver "${client.name}" : consultant(s) actif(s) rattaché(s) — ${names}.`, 'err');
     return;
   }
 
-  if (!confirm(`Supprimer le client "${client.name}" ?`)) return;
+  if (!confirm(`Archiver le client "${client.name}" ? (réversible via « Afficher les archivés »)`)) return;
   try {
     const res = await fetch(`${base()}/clients/${id}`, {
       method: 'DELETE',
       headers: adminHeaders(),
     });
-    if (!res.ok) { showToast('Erreur lors de la suppression.', 'err'); return; }
-    allClients = allClients.filter(c => c.id !== id);
-    populateClientSelects();
-    showToast(`Client "${client.name}" supprimé.`, 'ok');
-    renderClientsTable();
+    if (!res.ok) {
+      const msg = await res.text().catch(() => '');
+      showToast(msg || "Erreur lors de l'archivage.", 'err');
+      return;
+    }
+    showToast(`Client "${client.name}" archivé.`, 'ok');
+    await loadClients();   // recharge (respecte le filtre « Afficher les archivés »)
+  } catch {
+    showToast('Impossible de joindre le serveur.', 'err');
+  }
+}
+
+async function reactivateClient(id) {
+  const client = allClients.find(c => c.id === id);
+  if (!client) return;
+  try {
+    const res = await fetch(`${base()}/clients/${id}/reactivate`, {
+      method: 'PUT',
+      headers: adminHeaders(),
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => '');
+      showToast(msg || 'Réactivation impossible.', 'err');
+      return;
+    }
+    showToast(`Client "${client.name}" réactivé.`, 'ok');
+    await loadClients();
   } catch {
     showToast('Impossible de joindre le serveur.', 'err');
   }

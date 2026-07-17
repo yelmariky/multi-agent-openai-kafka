@@ -59,6 +59,9 @@ public class ConsultantController {
     public ResponseEntity<Object> upsertProfile(@RequestBody ConsultantProfile profile) {
         try {
             java.util.UUID id = weaviateService.upsertConsultantProfile(profile);
+            // Aligner l'accès Keycloak sur l'état du profil : désactivé ⇒ ne peut plus se connecter
+            boolean active = profile.active() == null || profile.active();
+            keycloakService.setUserEnabled(TenantContext.getRealm(), profile.email(), active);
             return ResponseEntity.ok(Map.of(
                     "id", id.toString(),
                     "email", profile.email() == null ? "" : profile.email()));

@@ -15,11 +15,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.ResponseEntity;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,6 +30,7 @@ class ClientControllerTest {
 
     @Mock ClientRepository clientRepository;
     @Mock OrganizationRepository organizationRepository;
+    @Mock org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @InjectMocks ClientController controller;
 
@@ -89,5 +92,67 @@ class ClientControllerTest {
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(((Client) res.getBody()).getName()).isEqualTo("INFOGENE DIGITAL");
+    }
+
+    @Test
+    @DisplayName("list(includeInactive=true) → renvoie tous les clients ; false → actifs seulement")
+    void listRespectsIncludeInactiveFlag() {
+        when(clientRepository.findByTenantId(tenantId)).thenReturn(List.of(client(clientId, "A", true)));
+        when(clientRepository.findByTenantIdAndActiveTrue(tenantId)).thenReturn(List.of());
+
+        assertThat(controller.list(true)).hasSize(1);
+        assertThat(controller.list(false)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("réactivation d'un client archivé → active=true")
+    void reactivateSucceeds() {
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client(clientId, "ACME", false)));
+        when(clientRepository.findByTenantIdAndName(tenantId, "ACME")).thenReturn(Optional.empty());
+        when(clientRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<?> res = controller.reactivate(clientId);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(200);
+        assertThat(((Client) res.getBody()).isActive()).isTrue();
+    }
+
+    @Test
+    @DisplayName("archivage bloqué si un consultant ACTIF est rattaché")
+    void archiveBlockedByActiveConsultant() {
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client(clientId, "ACME", true)));
+        when(jdbcTemplate.queryForList(any(String.class), eq(String.class), any(), any(), any()))
+                .thenReturn(List.of("Alice Martin"));
+
+        ResponseEntity<?> res = controller.delete(clientId);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        assertThat((String) res.getBody()).contains("Alice Martin").contains("ACME");
+    }
+
+    @Test
+    @DisplayName("archivage autorisé si aucun consultant actif (tous inactifs ou aucun)")
+    void archiveSucceedsWhenNoActiveConsultant() {
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client(clientId, "ACME", true)));
+        when(jdbcTemplate.queryForList(any(String.class), eq(String.class), any(), any(), any()))
+                .thenReturn(List.of());
+        when(clientRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<?> res = controller.delete(clientId);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(204);
+    }
+
+    @Test
+    @DisplayName("réactivation bloquée si un client actif porte déjà le même nom")
+    void reactivateBlockedByActiveNamesake() {
+        when(clientRepository.findById(clientId)).thenReturn(Optional.of(client(clientId, "ACME", false)));
+        when(clientRepository.findByTenantIdAndName(tenantId, "ACME"))
+                .thenReturn(Optional.of(client(UUID.randomUUID(), "ACME", true)));
+
+        ResponseEntity<?> res = controller.reactivate(clientId);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        assertThat((String) res.getBody()).contains("actif").contains("ACME");
     }
 }

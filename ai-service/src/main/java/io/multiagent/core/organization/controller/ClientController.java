@@ -23,10 +23,26 @@ public class ClientController {
 
     private final ClientRepository clientRepository;
     private final OrganizationRepository organizationRepository;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    /** Consultants ACTIFS rattachés à un client (via affectation ou champ texte hérité). */
+    private List<String> activeConsultantsOnClient(UUID tenantId, String clientName) {
+        return jdbcTemplate.queryForList("""
+                SELECT DISTINCT cp.name FROM consultant_profile cp
+                WHERE cp.tenant_id = ? AND cp.active = TRUE AND (
+                    LOWER(cp.client_name) = LOWER(?)
+                    OR EXISTS (SELECT 1 FROM consultant_assignment ca
+                               JOIN client c ON c.id = ca.client_id
+                               WHERE ca.consultant_profile_id = cp.id AND LOWER(c.name) = LOWER(?)))
+                """, String.class, tenantId, clientName, clientName);
+    }
 
     @GetMapping
-    public List<Client> list() {
-        return clientRepository.findByTenantIdAndActiveTrue(TenantContext.getTenantId());
+    public List<Client> list(@RequestParam(name = "includeInactive", defaultValue = "false") boolean includeInactive) {
+        UUID tenantId = TenantContext.getTenantId();
+        return includeInactive
+                ? clientRepository.findByTenantId(tenantId)
+                : clientRepository.findByTenantIdAndActiveTrue(tenantId);
     }
 
     @PostMapping
@@ -89,13 +105,40 @@ public class ClientController {
         return ResponseEntity.ok(clientRepository.save(existing));
     }
 
+    /** Archive un client (soft delete, réversible). Refusé si un consultant ACTIF y est rattaché. */
     @DeleteMapping("/{id}")
     @Transactional
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+    public ResponseEntity<?> delete(@PathVariable UUID id) {
+        UUID tenantId = TenantContext.getTenantId();
         Client client = clientRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
+        List<String> activeConsultants = activeConsultantsOnClient(tenantId, client.getName());
+        if (!activeConsultants.isEmpty()) {
+            return ResponseEntity.status(409)
+                    .body("Impossible d'archiver \"" + client.getName() + "\" — consultant(s) actif(s) rattaché(s) : "
+                          + String.join(", ", activeConsultants) + ".");
+        }
         client.setActive(false);
         clientRepository.save(client);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Réactive un client archivé — refusé si un client actif porte déjà le même nom. */
+    @PutMapping("/{id}/reactivate")
+    @Transactional
+    public ResponseEntity<?> reactivate(@PathVariable UUID id) {
+        UUID tenantId = TenantContext.getTenantId();
+        Client client = clientRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
+        boolean nameTaken = clientRepository.findByTenantIdAndName(tenantId, client.getName())
+                .filter(c -> !c.getId().equals(id) && c.isActive())
+                .isPresent();
+        if (nameTaken) {
+            return ResponseEntity.status(409)
+                    .body("Un client actif porte déjà le nom \"" + client.getName()
+                          + "\". Renommez ou fusionnez avant de réactiver.");
+        }
+        client.setActive(true);
+        return ResponseEntity.ok(clientRepository.save(client));
     }
 }

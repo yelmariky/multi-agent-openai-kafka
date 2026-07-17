@@ -150,6 +150,28 @@ public class KeycloakProvisioningService {
         }
     }
 
+    /**
+     * Active ou désactive l'accès Keycloak d'un utilisateur (par email) dans un realm.
+     * Aligne l'accès de connexion sur l'état actif/inactif du profil consultant.
+     * Non bloquant : un échec Keycloak ne doit pas empêcher la mise à jour du profil.
+     */
+    public void setUserEnabled(String realmName, String email, boolean enabled) {
+        if (realmName == null || email == null || email.isBlank()) return;
+        try (Keycloak kc = buildAdminClient()) {
+            List<UserRepresentation> matches = kc.realm(realmName).users().searchByEmail(email, true);
+            if (matches.isEmpty()) {
+                log.warn("[setUserEnabled] utilisateur introuvable realm={} email={}", realmName, email);
+                return;
+            }
+            UserRepresentation user = matches.get(0);
+            user.setEnabled(enabled);
+            kc.realm(realmName).users().get(user.getId()).update(user);
+            log.info("[setUserEnabled] realm={} email={} enabled={}", realmName, email, enabled);
+        } catch (Exception e) {
+            log.warn("[setUserEnabled] échec realm={} email={}: {}", realmName, email, e.getMessage());
+        }
+    }
+
     public String createConsultantUser(String realmName, String email, String firstName,
                                        String lastName, String tempPassword) {
         try (Keycloak kc = buildAdminClient()) {
