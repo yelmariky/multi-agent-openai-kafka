@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 public class SecurityConfig {
 
     private static final String ROLE_ADMIN = "admin";
+    private static final String ROLE_MANAGER = "manager";
 
     private final TenantFilter tenantFilter;
     private final String keycloakInternalUrl;
@@ -52,6 +53,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/invoices/delete", "/invoices/delete-by-text").hasRole(ROLE_ADMIN)
                 // Facturation des abonnements SaaS — console plateforme ou admin IA-INSIGHT
                 .requestMatchers(HttpMethod.POST, "/invoices/subscription/run-billing").hasAnyRole(ROLE_ADMIN, "platform_admin")
+                // Relances de factures impayées — admin/manager (relance manuelle et batch)
+                .requestMatchers(HttpMethod.POST, "/invoices/run-dunning").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER, "platform_admin")
+                .requestMatchers(HttpMethod.POST, "/invoices/*/dunning").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2

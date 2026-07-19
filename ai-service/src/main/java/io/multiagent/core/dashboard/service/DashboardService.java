@@ -1,11 +1,14 @@
 package io.multiagent.core.dashboard.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.multiagent.core.cra.entity.CraEntity;
 import io.multiagent.core.cra.repository.CraJpaRepository;
 import io.multiagent.core.dashboard.model.DashboardSummary;
 import io.multiagent.core.dashboard.repository.InvoiceDashboardRepository;
 import io.multiagent.core.expense.repository.ExpenseJpaRepository;
 import io.multiagent.core.infrastructure.tenant.TenantContext;
+import io.multiagent.core.organization.entity.ConsultantAssignmentEntity;
 import io.multiagent.core.organization.repository.ConsultantAssignmentRepository;
 import io.multiagent.core.settings.entity.ConsultantProfileEntity;
 import io.multiagent.core.settings.repository.ConsultantProfileJpaRepository;
@@ -16,10 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.MonthDay;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -33,6 +41,7 @@ public class DashboardService {
     private final CraJpaRepository                craRepo;
     private final ExpenseJpaRepository            expenseRepo;
     private final InvoiceDashboardRepository      invoiceRepo;
+    private final ObjectMapper                    objectMapper;
 
     public DashboardSummary summary(String month) {
         UUID tenantId = TenantContext.getTenantId();
@@ -71,10 +80,11 @@ public class DashboardService {
                 jours   = cra.getTotalDays() != null ? cra.getTotalDays().doubleValue() : 0;
             }
 
-            // TJM : assignment en priorité, sinon profil
+            // TJM : assignment en priorité, sinon profil (pour affichage indicatif)
             double tjm = resolvedTjm(cp, tenantId);
 
-            double ca    = jours * tjm;
+            // CA : ventilé par projet du CRA (chaque jour au TJM de son projet), sinon jours × TJM
+            double ca    = computeCa(cp, craOpt.orElse(null), jours, tenantId, tjm);
             double taux  = joursOuvres > 0 ? Math.round((jours / joursOuvres) * 1000.0) / 10.0 : 0;
 
             // Marge par consultant (uniquement si daily_cost renseigné)
@@ -156,16 +166,72 @@ public class DashboardService {
         return 0;
     }
 
-    /** Compte les jours ouvrés (lundi-vendredi) du mois. */
+    /**
+     * CA facturable = somme, pour chaque jour travaillé du CRA, de (valeur × TJM du projet de ce jour).
+     * Un consultant peut travailler sur plusieurs projets/clients à TJM différents dans le même mois.
+     * Repli sur jours × fallbackTjm si le CRA n'a pas d'entrées exploitables.
+     */
+    private double computeCa(ConsultantProfileEntity cp, CraEntity cra, double totalDays,
+                             UUID tenantId, double fallbackTjm) {
+        // Table projet → TJM depuis les affectations du consultant
+        Map<String, Double> tjmByProject = new HashMap<>();
+        for (ConsultantAssignmentEntity a : assignmentRepo.findByConsultantProfileIdAndTenantId(cp.getId(), tenantId)) {
+            if (a.getProject() != null && a.getProject().getId() != null && a.getTjm() != null) {
+                tjmByProject.put(a.getProject().getId().toString(), a.getTjm().doubleValue());
+            }
+        }
+
+        if (cra == null || cra.getEntriesJson() == null || cra.getEntriesJson().isBlank() || tjmByProject.isEmpty()) {
+            return Math.round(totalDays * fallbackTjm * 100.0) / 100.0;
+        }
+
+        try {
+            JsonNode entries = objectMapper.readTree(cra.getEntriesJson());
+            double ca = 0, matchedDays = 0;
+            for (JsonNode e : entries) {
+                if (!"TRAVAIL".equals(e.path("type").asText())) continue;
+                double value = e.path("value").asDouble(0);
+                String projectId = e.hasNonNull("projectId") ? e.get("projectId").asText() : null;
+                Double projectTjm = projectId != null ? tjmByProject.get(projectId) : null;
+                ca += value * (projectTjm != null ? projectTjm : fallbackTjm);
+                matchedDays += value;
+            }
+            // Jours non couverts par les entrées (défensif) : au TJM de repli
+            if (matchedDays < totalDays) ca += (totalDays - matchedDays) * fallbackTjm;
+            return Math.round(ca * 100.0) / 100.0;
+        } catch (Exception ex) {
+            log.warn("[Dashboard] CRA entries illisibles pour {} — repli jours×TJM : {}", cp.getEmail(), ex.getMessage());
+            return Math.round(totalDays * fallbackTjm * 100.0) / 100.0;
+        }
+    }
+
+    /** Jours ouvrés du mois = lundi-vendredi hors jours fériés fixes français. */
     private int countWorkingDays(YearMonth ym) {
+        Set<MonthDay> holidays = frenchFixedHolidays();
         int count = 0;
         LocalDate d = ym.atDay(1);
         LocalDate end = ym.atEndOfMonth();
         while (!d.isAfter(end)) {
             DayOfWeek dow = d.getDayOfWeek();
-            if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY) count++;
+            if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY && !holidays.contains(MonthDay.from(d))) {
+                count++;
+            }
             d = d.plusDays(1);
         }
         return count;
+    }
+
+    /** Jours fériés fixes français (mêmes que le calcul frais km / factures — cohérence système). */
+    private Set<MonthDay> frenchFixedHolidays() {
+        Set<MonthDay> h = new HashSet<>();
+        h.add(MonthDay.of(1, 1));    // Jour de l'an
+        h.add(MonthDay.of(5, 1));    // Fête du travail
+        h.add(MonthDay.of(5, 8));    // Victoire 1945
+        h.add(MonthDay.of(7, 14));   // Fête nationale
+        h.add(MonthDay.of(8, 15));   // Assomption
+        h.add(MonthDay.of(11, 1));   // Toussaint
+        h.add(MonthDay.of(11, 11));  // Armistice
+        h.add(MonthDay.of(12, 25));  // Noël
+        return h;
     }
 }

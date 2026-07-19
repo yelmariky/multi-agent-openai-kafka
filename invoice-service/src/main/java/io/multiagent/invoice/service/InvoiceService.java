@@ -159,6 +159,16 @@ public class InvoiceService {
     /** Version enrichie incluant id + champs de suivi paiement. */
     public List<Map<String, Object>> findInvoicesByPeriodEnriched(String start, String end, String company, String consultantEmail) {
         LocalDate today = LocalDate.now();
+        // Dernière relance (palier max + date) par facture, en une requête
+        Map<Object, Map<String, Object>> lastDunning = new java.util.HashMap<>();
+        try {
+            jdbcTemplate.queryForList(
+                "SELECT invoice_id, MAX(stage) AS stage, MAX(sent_at) AS sent_at "
+                + "FROM invoice_dunning_log GROUP BY invoice_id"
+            ).forEach(row -> lastDunning.put(row.get("invoice_id"),
+                    Map.of("stage", row.get("stage"), "sentAt", row.get("sent_at"))));
+        } catch (Exception ignored) { /* table absente en env dégradé — non bloquant */ }
+
         return findEntitiesByPeriod(start, end, company, consultantEmail).stream()
                 .map(e -> {
                     // Calculer EN_RETARD dynamiquement
@@ -184,6 +194,9 @@ public class InvoiceService {
                     m.put("sentDate",            e.getSentDate());
                     m.put("daysCount",           e.getDaysExact());
                     m.put("unitPriceHt",         e.getUnitPriceHt());
+                    Map<String, Object> d = lastDunning.get(e.getId());
+                    m.put("lastDunningStage",    d != null ? d.get("stage")  : null);
+                    m.put("lastDunningDate",     d != null ? d.get("sentAt") : null);
                     return m;
                 })
                 .toList();

@@ -2002,22 +2002,28 @@ function renderInvoiceList(items, cons) {
     const scolor  = INV_STATUS_COLOR[status] || 'grey';
     const due     = inv.paymentDueDate ? ` · Éch. ${escapeHtml(inv.paymentDueDate)}` : '';
     const invId   = inv.id || '';
+    const dunLabel = { 1: 'R1 rappel', 2: 'R2 relance', 3: 'R3 mise en demeure' };
+    const dunInfo = inv.lastDunningStage
+      ? ` · <span style="color:#f59e0b">Relancé ${dunLabel[inv.lastDunningStage] || 'R' + inv.lastDunningStage}${inv.lastDunningDate ? ' le ' + escapeHtml(String(inv.lastDunningDate).slice(0, 10).split('-').reverse().join('/')) : ''}</span>` : '';
 
     const actionSent = status === 'EN_ATTENTE'
       ? `<button class="btn-secondary inv-mark-sent" data-id="${escapeHtml(invId)}" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px" title="Marquer comme envoyée">Envoyée</button>` : '';
     const actionPaid = (status === 'ENVOYEE' || status === 'EN_RETARD')
       ? `<button class="btn-primary inv-mark-paid" data-id="${escapeHtml(invId)}" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px;background:linear-gradient(120deg,#16a34a,#15803d)" title="Marquer comme payée">Payée ✓</button>` : '';
+    const actionDun = (status === 'ENVOYEE' || status === 'EN_RETARD')
+      ? `<button class="btn-secondary inv-dun" data-id="${escapeHtml(invId)}" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px;border-color:rgba(245,158,11,.4);color:#f59e0b" title="Envoyer une relance au client">Relancer</button>` : '';
 
     return `
       <div class="approval-row" data-inv-idx="${idx}">
         <div class="approval-meta">
           <span class="approval-name">${escapeHtml(name)}</span>
-          <span class="approval-detail">${escapeHtml(bm)} — ${escapeHtml(client)}${due}</span>
+          <span class="approval-detail">${escapeHtml(bm)} — ${escapeHtml(client)}${due}${dunInfo}</span>
         </div>
         <div class="approval-right">
           <span class="status-badge ${scolor}">${escapeHtml(slabel)}</span>
           <span class="approval-amount">${escapeHtml(total)}</span>
           ${actionSent}
+          ${actionDun}
           ${actionPaid}
           <button class="btn-secondary inv-dl-pdf" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px">PDF</button>
           <button class="btn-inv-delete inv-delete" data-inv-idx="${idx}" title="Supprimer">
@@ -2059,6 +2065,22 @@ function renderInvoiceList(items, cons) {
         showToast('Facture marquée comme payée ✓', 'ok');
         loadConsInvoices(cons);
       } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = 'Payée ✓'; }
+    });
+  });
+  wrap.querySelectorAll('.inv-dun').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Envoyer une relance de paiement au client pour cette facture ?')) return;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await fetch(`${invoiceBase()}/invoices/${btn.dataset.id}/dunning`, { method: 'POST', headers: adminHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'HTTP ' + res.status);
+        if (data.status === 'SENT') showToast(`Relance envoyée au client (${data.recipient}).`, 'ok');
+        else if (data.status === 'NO_EMAIL') showToast(`Aucun email de contact pour le client « ${data.client} ». Renseignez-le dans la fiche client.`, 'err');
+        else if (data.status === 'SKIPPED_PAID') showToast('Facture déjà payée — pas de relance.', 'ok');
+        else showToast('Relance non envoyée.', 'err');
+        loadConsInvoices(cons);
+      } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = 'Relancer'; }
     });
   });
 
@@ -2440,10 +2462,14 @@ function renderAssignmentsList(assignments) {
         <span>Projet</span>
         <span>Client</span>
         <span>TJM</span>
+        <span>Prix achat</span>
         <span>Délai</span>
         <span></span>
       </div>
-      ${assignments.map(a => `
+      ${assignments.map(a => {
+        const cost = currentConsultant?.dailyCost;
+        const marge = (a.tjm != null && cost != null) ? (a.tjm - cost) : null;
+        return `
         <div class="data-list-row dl-assign-grid">
           <div class="cell-primary">
             <div class="row-icon ${rowIconVariant(a.project?.name)}">${getInitials(a.project?.name)}</div>
@@ -2453,6 +2479,11 @@ function renderAssignmentsList(assignments) {
             <span class="dl-badge dl-badge-blue">${escapeHtml(a.client?.name || '—')}</span>
           </div>
           <div class="cell-amount">${a.tjm != null ? a.tjm + ' €/j' : '—'}</div>
+          <div class="cell-amount">
+            ${cost != null
+              ? `${cost} €/j${marge != null ? `<div style="font-size:11px;color:${marge >= 0 ? 'var(--accent)' : '#f87171'};font-weight:500">marge ${marge >= 0 ? '+' : ''}${marge} €/j</div>` : ''}`
+              : '<span style="color:var(--muted)">non renseigné</span>'}
+          </div>
           <div><span class="dl-badge dl-badge-muted">${a.paymentTermsDays === 45 ? '45j' : a.paymentTermsDays === 60 ? '2 mois' : '1 mois'}</span></div>
           <div class="cell-actions">
             <button class="btn-row-edit"
@@ -2465,7 +2496,8 @@ function renderAssignmentsList(assignments) {
               <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
             </button>
           </div>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>`;
 }
 

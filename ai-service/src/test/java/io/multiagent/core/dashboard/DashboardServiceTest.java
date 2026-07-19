@@ -10,12 +10,17 @@ import io.multiagent.core.infrastructure.tenant.TenantContext;
 import io.multiagent.core.organization.repository.ConsultantAssignmentRepository;
 import io.multiagent.core.settings.entity.ConsultantProfileEntity;
 import io.multiagent.core.settings.repository.ConsultantProfileJpaRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.multiagent.core.organization.entity.Client;
+import io.multiagent.core.organization.entity.ConsultantAssignmentEntity;
+import io.multiagent.core.organization.entity.ProjectEntity;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -36,6 +41,7 @@ class DashboardServiceTest {
     @Mock CraJpaRepository                craRepo;
     @Mock ExpenseJpaRepository            expenseRepo;
     @Mock InvoiceDashboardRepository      invoiceRepo;
+    @Spy  ObjectMapper                    objectMapper = new ObjectMapper();
 
     @InjectMocks DashboardService service;
 
@@ -125,7 +131,81 @@ class DashboardServiceTest {
         }
     }
 
-    // --- helper ---
+    @Test
+    @DisplayName("CA ventilé par projet : jours répartis sur 2 clients à TJM différents")
+    void ca_ventile_par_projet() {
+        // albert : 2j sur projet P1 (500€) + 7j sur projet P2 (550€) = 4850€
+        ConsultantProfileEntity albert = profile("albert@test.com", 0.0, 450.0);
+        UUID p1 = UUID.randomUUID(), p2 = UUID.randomUUID();
+
+        CraEntity cra = new CraEntity();
+        cra.setStatus("VALIDE");
+        cra.setTotalDays(BigDecimal.valueOf(9));
+        cra.setEntriesJson("[" +
+            "{\"date\":\"2026-07-01\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p1 + "\"}," +
+            "{\"date\":\"2026-07-02\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p1 + "\"}," +
+            "{\"date\":\"2026-07-03\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p2 + "\"}," +
+            "{\"date\":\"2026-07-06\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p2 + "\"}," +
+            "{\"date\":\"2026-07-07\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p2 + "\"}," +
+            "{\"date\":\"2026-07-08\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p2 + "\"}," +
+            "{\"date\":\"2026-07-09\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p2 + "\"}," +
+            "{\"date\":\"2026-07-10\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p2 + "\"}," +
+            "{\"date\":\"2026-07-13\",\"value\":1.0,\"type\":\"TRAVAIL\",\"projectId\":\"" + p2 + "\"}]");
+
+        try (MockedStatic<TenantContext> tc = mockStatic(TenantContext.class)) {
+            tc.when(TenantContext::getTenantId).thenReturn(TENANT);
+            when(consultantProfileRepo.findByTenantIdAndActiveTrue(TENANT)).thenReturn(List.of(albert));
+            when(assignmentRepo.findByConsultantProfileIdAndTenantId(any(), eq(TENANT)))
+                .thenReturn(List.of(assignment(p1, 500.0), assignment(p2, 550.0)));
+            when(craRepo.findByTenantIdAndConsultantIgnoreCaseAndBillingMonth(any(), any(), any()))
+                .thenReturn(Optional.of(cra));
+            when(expenseRepo.findByTenantIdAndApprovalStatus(any(), any())).thenReturn(List.of());
+            when(invoiceRepo.findOverdue(any(), any())).thenReturn(List.of());
+
+            DashboardSummary summary = service.summary("2026-07");
+
+            DashboardSummary.ConsultantRow row = summary.getConsultants().get(0);
+            assertThat(row.getCaFacturable()).isEqualTo(4_850.0);       // 2×500 + 7×550
+            assertThat(row.getCoutTotal()).isEqualTo(4_050.0);          // 9 × 450
+            assertThat(row.getMargeNette()).isEqualTo(800.0);           // 4850 - 4050
+        }
+    }
+
+    @Test
+    @DisplayName("Jours ouvrés : juillet 2026 = 22 (23 lun-ven − 14 juillet férié)")
+    void jours_ouvres_excluent_feries() {
+        ConsultantProfileEntity alice = profile("alice@test.com", 500.0, null);
+        CraEntity cra = new CraEntity();
+        cra.setStatus("VALIDE");
+        cra.setTotalDays(BigDecimal.valueOf(22));  // taux 100% attendu
+
+        try (MockedStatic<TenantContext> tc = mockStatic(TenantContext.class)) {
+            tc.when(TenantContext::getTenantId).thenReturn(TENANT);
+            when(consultantProfileRepo.findByTenantIdAndActiveTrue(TENANT)).thenReturn(List.of(alice));
+            when(assignmentRepo.findByConsultantProfileIdAndTenantId(any(), eq(TENANT))).thenReturn(List.of());
+            when(craRepo.findByTenantIdAndConsultantIgnoreCaseAndBillingMonth(any(), any(), any()))
+                .thenReturn(Optional.of(cra));
+            when(expenseRepo.findByTenantIdAndApprovalStatus(any(), any())).thenReturn(List.of());
+            when(invoiceRepo.findOverdue(any(), any())).thenReturn(List.of());
+
+            DashboardSummary summary = service.summary("2026-07");
+            DashboardSummary.ConsultantRow row = summary.getConsultants().get(0);
+            assertThat(row.getJoursOuvres()).isEqualTo(22);
+            assertThat(row.getTauxActivite()).isEqualTo(100.0);   // 22 / 22
+        }
+    }
+
+    // --- helpers ---
+    private ConsultantAssignmentEntity assignment(UUID projectId, double tjm) {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        ConsultantAssignmentEntity a = new ConsultantAssignmentEntity();
+        a.setProject(project);
+        a.setClient(new Client());
+        a.setTjm(BigDecimal.valueOf(tjm));
+        return a;
+    }
+
     private ConsultantProfileEntity profile(String email, double tjm, Double dailyCost) {
         ConsultantProfileEntity p = new ConsultantProfileEntity();
         p.setId(UUID.randomUUID());

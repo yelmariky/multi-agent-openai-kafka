@@ -6,6 +6,8 @@ import io.multiagent.invoice.model.SubscriptionInvoiceRequest;
 import io.multiagent.invoice.service.DeleteInvoiceService;
 import io.multiagent.invoice.service.InvoiceService;
 import io.multiagent.invoice.service.InvoicePaymentService;
+import io.multiagent.invoice.infrastructure.tenant.TenantContext;
+import io.multiagent.invoice.service.InvoiceDunningService;
 import io.multiagent.invoice.service.SubscriptionBillingScheduler;
 import io.multiagent.invoice.service.SubscriptionInvoiceService;
 import lombok.extern.slf4j.Slf4j;
@@ -31,18 +33,21 @@ public class InvoiceController {
     private final InvoicePaymentService      invoicePaymentService;
     private final SubscriptionInvoiceService subscriptionInvoiceService;
     private final SubscriptionBillingScheduler subscriptionBillingScheduler;
+    private final InvoiceDunningService      invoiceDunningService;
 
     public InvoiceController(
             InvoiceService invoiceService,
             DeleteInvoiceService deleteInvoiceService,
             InvoicePaymentService invoicePaymentService,
             SubscriptionInvoiceService subscriptionInvoiceService,
-            SubscriptionBillingScheduler subscriptionBillingScheduler) {
+            SubscriptionBillingScheduler subscriptionBillingScheduler,
+            InvoiceDunningService invoiceDunningService) {
         this.invoiceService               = invoiceService;
         this.deleteInvoiceService         = deleteInvoiceService;
         this.invoicePaymentService        = invoicePaymentService;
         this.subscriptionInvoiceService   = subscriptionInvoiceService;
         this.subscriptionBillingScheduler = subscriptionBillingScheduler;
+        this.invoiceDunningService        = invoiceDunningService;
     }
 
     @GetMapping("/report")
@@ -76,6 +81,30 @@ public class InvoiceController {
         } catch (Exception e) {
             log.error("runBilling failed: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body("Billing run failed: " + e.getMessage());
+        }
+    }
+
+    /** Déclenche immédiatement les relances de factures impayées (sinon : cron quotidien 08h00). */
+    @PostMapping("/run-dunning")
+    public ResponseEntity<Object> runDunning() {
+        try {
+            return ResponseEntity.ok(invoiceDunningService.runAll());
+        } catch (Exception e) {
+            log.error("runDunning failed: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError().body("Dunning run failed: " + e.getMessage());
+        }
+    }
+
+    /** Relance manuelle d'une facture précise (« Relancer maintenant »). */
+    @PostMapping("/{id}/dunning")
+    public ResponseEntity<Object> dunInvoice(@PathVariable UUID id) {
+        try {
+            return ResponseEntity.ok(invoiceDunningService.dunManually(TenantContext.getTenantId(), id));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("dunInvoice failed for {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.internalServerError().body("Dunning failed: " + e.getMessage());
         }
     }
 

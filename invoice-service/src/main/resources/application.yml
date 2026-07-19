@@ -17,10 +17,29 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   flyway:
     enabled: false
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
   servlet:
     multipart:
       max-file-size: 20MB
       max-request-size: 20MB
+
+# Relances automatiques de factures impayées (dunning)
+dunning:
+  enabled: ${DUNNING_ENABLED:false}
+  from: ${MAIL_FROM:noreply@ia-insightservices.fr}
+  cron: ${DUNNING_CRON:0 0 8 * * *}
+  frontend-url: ${DUNNING_FRONTEND_URL:http://localhost:3000}
 keycloak:
   base-url: ${KEYCLOAK_BASE_URL:http://localhost:8090}
   internal-url: ${KEYCLOAK_INTERNAL_URL:${KEYCLOAK_BASE_URL:http://localhost:8090}}
@@ -50,6 +69,10 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+  # Le serveur mail ne conditionne jamais la disponibilité du service (panne SMTP = relances échouent proprement)
+  health:
+    mail:
+      enabled: false
 
 logging:
   level:
