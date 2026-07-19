@@ -33,7 +33,7 @@ public class ChatbotController {
         if (!chatbotService.allow(clientIp(http))) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(new ChatReply("Vous allez un peu vite pour moi ! Réessayez dans une minute, "
-                            + "ou appelez-nous directement au 06 69 00 91 08."));
+                            + "ou appelez-nous directement au 06 75 71 77 43."));
         }
         return ResponseEntity.ok(new ChatReply(chatbotService.reply(request.message())));
     }

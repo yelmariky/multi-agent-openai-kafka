@@ -67,7 +67,7 @@ class ChatbotServiceTest {
                 .thenThrow(new LLMClientException("Groq down"));
 
         String reply = service.reply("tarifs ?");
-        assertThat(reply).contains("demo@ia-insightservices.fr").contains("06 69 00 91 08");
+        assertThat(reply).contains("demo@ia-insightservices.fr").contains("06 75 71 77 43");
     }
 
     @Test
@@ -75,11 +75,11 @@ class ChatbotServiceTest {
     void emptyReplyReturnsFallback() {
         when(llm.extractJSONWithModel(anyString(), anyString(), anyString()))
                 .thenReturn("{\"autre\":\"x\"}");
-        assertThat(service.reply("q")).contains("06 69 00 91 08");
+        assertThat(service.reply("q")).contains("06 75 71 77 43");
 
         when(llm.extractJSONWithModel(anyString(), anyString(), anyString()))
                 .thenReturn("{\"reply\":\"\"}");
-        assertThat(service.reply("q")).contains("06 69 00 91 08");
+        assertThat(service.reply("q")).contains("06 75 71 77 43");
     }
 
     @Test

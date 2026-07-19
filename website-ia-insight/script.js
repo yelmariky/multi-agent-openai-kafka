@@ -41,7 +41,7 @@ billingSwitch.addEventListener('click', () => {
   const input    = document.getElementById('chat-input');
   const badge    = document.getElementById('chat-badge');
 
-  const CONTACT = `<a href="tel:+33669009108">📞 06 69 00 91 08</a> · <a href="mailto:demo@ia-insightservices.fr">demo@ia-insightservices.fr</a>`;
+  const CONTACT = `<a href="tel:+33675717743">📞 06 75 71 77 43</a> · <a href="mailto:demo@ia-insightservices.fr">demo@ia-insightservices.fr</a>`;
 
   const INTENTS = [
     {
@@ -51,12 +51,17 @@ billingSwitch.addEventListener('click', () => {
     },
     {
       keys: ['démo', 'demo', 'essai', 'tester', 'rdv', 'rendez-vous'],
-      reply: `Avec plaisir ! La démo dure <strong>30 minutes</strong>, sur vos cas d'usage réels, sans engagement. Écrivez-nous à <a href="mailto:demo@ia-insightservices.fr?subject=Demande%20de%20d%C3%A9mo%20IA-INSIGHT">demo@ia-insightservices.fr</a> ou appelez le <a href="tel:+33669009108">06 69 00 91 08</a> — un humain décroche, promis.`,
+      reply: `Avec plaisir ! La démo dure <strong>30 minutes</strong>, sur vos cas d'usage réels, sans engagement. Écrivez-nous à <a href="mailto:demo@ia-insightservices.fr?subject=Demande%20de%20d%C3%A9mo%20IA-INSIGHT">demo@ia-insightservices.fr</a> ou appelez le <a href="tel:+33675717743">06 75 71 77 43</a> — un humain décroche, promis.`,
       chips: ['Voir les tarifs', 'Audit IA, c\'est quoi ?']
     },
     {
+      keys: ['relance', 'impayé', 'impaye', 'recouvrement', 'dso', 'retard de paiement', 'ne paie pas', 'mise en demeure'],
+      reply: `Les <strong>relances d'impayés sont automatiques</strong> : rappel courtois à J+3 après l'échéance, relance ferme à J+15, mise en demeure à J+30 (art. L441-10). Tout est tracé et s'arrête dès l'encaissement — votre trésorerie rentre sans y penser. <a href="#plateforme">En savoir plus →</a>`,
+      chips: ['Réserver une démo', 'Voir les tarifs']
+    },
+    {
       keys: ['note de frais', 'frais', 'ocr', 'justificatif', 'cra', 'facture', 'congé', 'conge', 'absence', 'plateforme', 'fonctionnalit', 'module', 'dashboard', 'pilotage', 'marge'],
-      reply: `IA-INSIGHT automatise tout le back-office d'une ESN : <strong>notes de frais dictées en langage naturel</strong> (avec OCR), <strong>factures PDF/Excel</strong>, <strong>CRA temps réel</strong>, congés, et un <strong>dashboard direction</strong> (CA, marge, taux d'activité). <a href="#plateforme">Découvrir les modules →</a>`,
+      reply: `IA-INSIGHT automatise tout le back-office d'une ESN : <strong>notes de frais dictées en langage naturel</strong> (avec OCR), <strong>factures avec relances d'impayés automatiques</strong>, <strong>CRA temps réel</strong> (retardataires relancés automatiquement), congés, et un <strong>dashboard direction</strong> exact — CA au TJM réel de chaque mission, marge par consultant et par projet. <a href="#plateforme">Découvrir les modules →</a>`,
       chips: ['Voir les tarifs', 'Réserver une démo']
     },
     {

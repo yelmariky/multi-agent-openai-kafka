@@ -46,7 +46,7 @@ Si vous préférez déployer à chaque `git push` :
 - [ ] La bascule Mensuel/Annuel change les prix
 - [ ] Les liens `mailto:` ouvrent bien un email vers `demo@ia-insightservices.fr` (démo) et `adv@ia-insightservices.fr` (contact/devis)
 - [ ] Les boîtes `demo@` et `adv@ia-insightservices.fr` existent côté IONOS et sont relevées régulièrement
-- [ ] Le lien téléphone `06 69 00 91 08` lance bien un appel sur mobile (`tel:+33669009108`)
+- [ ] Le lien téléphone `06 75 71 77 43` lance bien un appel sur mobile (`tel:+33675717743`)
 - [ ] Ajouter le domaine dans Google Search Console (SEO)
 
 ## Personnalisation rapide
