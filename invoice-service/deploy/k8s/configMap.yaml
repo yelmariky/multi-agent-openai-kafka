@@ -11,6 +11,15 @@ data:
   WEAVIATE_SCHEME: "http"
   AI_CORE_COMPANY_NAME: "IA-INSIGHT"
   AI_CORE_INVOICES_STORAGE_PATH: "/data/invoices"
+  # ── SMTP externalisé — changer de fournisseur ici (puis kubectl apply + restart) ─────
+  # Gmail/Brevo/Mailjet : port 587, STARTTLS=true, SSL=false. SMTP SSL : port 465, SSL=true, STARTTLS=false.
+  # Identifiants (MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM) : dans le Secret openai-secret.
+  MAIL_HOST: "smtp.gmail.com"
+  MAIL_PORT: "587"
+  MAIL_SMTP_AUTH: "true"
+  MAIL_STARTTLS: "true"
+  MAIL_SSL_ENABLE: "false"
+  MAIL_TIMEOUT_MS: "10000"
   OPENAI_MODEL: "gpt-4o-mini"
   OPENAI_EMBEDDING_MODEL: "text-embedding-3-large"
   OPENAI_EMBEDDING_DIMENSIONS: "2000"

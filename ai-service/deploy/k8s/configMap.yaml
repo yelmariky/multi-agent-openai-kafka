@@ -12,8 +12,6 @@ data:
   KEYCLOAK_ADMIN_REALM: "master"
   KEYCLOAK_ADMIN_CLIENT_ID: "admin-cli"
   KAFKA_BOOTSTRAP_SERVERS: "kafka.agent-system.svc.cluster.local:9092"
-  MAIL_HOST: "smtp.gmail.com"
-  MAIL_PORT: "587"
   FRONTEND_CONSULTANT_URL: "https://votre-domaine.com"
   CRA_REMINDER_ENABLED: "true"
   CRA_REMINDER_FROM: "noreply@ia-insight.fr"
@@ -693,6 +691,15 @@ data:
 
     Réponds UNIQUEMENT en JSON strict : {"reply": "ta réponse"}
 
+  # ── SMTP externalisé — changer de fournisseur ici (puis kubectl apply + restart) ─────
+  # Gmail/Brevo/Mailjet : port 587, STARTTLS=true, SSL=false. SMTP SSL : port 465, SSL=true, STARTTLS=false.
+  # Identifiants (MAIL_USERNAME / MAIL_PASSWORD / MAIL_FROM) : dans le Secret openai-secret.
+  MAIL_HOST: "smtp.gmail.com"
+  MAIL_PORT: "587"
+  MAIL_SMTP_AUTH: "true"
+  MAIL_STARTTLS: "true"
+  MAIL_SSL_ENABLE: "false"
+  MAIL_TIMEOUT_MS: "10000"
   AI_CORE_RECEIPTS_STORAGE_PATH: "/data/receipts"
   AI_CORE_OCR_TESSERACT_CMD: "tesseract"
   AI_CORE_OCR_PDFTOPPM_CMD: "pdftoppm"

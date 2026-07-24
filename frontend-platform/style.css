@@ -534,3 +534,6 @@ input:disabled {
 @media (max-width: 700px) {
   .billing-kpis { grid-template-columns: 1fr; }
 }
+
+/* Factures d'abonnement — badge retard */
+.plan-badge.inv-late { background: rgba(239,68,68,.14); color: #f87171; }

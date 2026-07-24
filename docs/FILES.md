@@ -59,7 +59,7 @@ deploy/
   kafka/       KRaft 3 noeuds
   gateway/     Kong DB-less
 
-frontend/                   <- console admin — :3000/{slug}/
+frontend-admin/             <- console admin — :3000/{slug}/
 frontend-consultant/        <- espace consultant — :3001/{slug}/
 frontend-platform/          <- console plateforme — :3002 (realm: platform)
 ```

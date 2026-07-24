@@ -17,6 +17,9 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   flyway:
     enabled: false
+  # SMTP 100% externalisé — changer de fournisseur (Gmail, Brevo, Mailjet, OVH…)
+  # = modifier les variables MAIL_* du ConfigMap, aucun rebuild.
+  # Gmail/Brevo/Mailjet : port 587 + MAIL_STARTTLS=true. SMTP SSL classique : port 465 + MAIL_SSL_ENABLE=true.
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
@@ -25,10 +28,15 @@ spring:
     properties:
       mail:
         smtp:
-          auth: true
+          auth: ${MAIL_SMTP_AUTH:true}
           starttls:
-            enable: true
-            required: true
+            enable: ${MAIL_STARTTLS:true}
+            required: ${MAIL_STARTTLS:true}
+          ssl:
+            enable: ${MAIL_SSL_ENABLE:false}
+          connectiontimeout: ${MAIL_TIMEOUT_MS:10000}
+          timeout: ${MAIL_TIMEOUT_MS:10000}
+          writetimeout: ${MAIL_TIMEOUT_MS:10000}
   servlet:
     multipart:
       max-file-size: 20MB

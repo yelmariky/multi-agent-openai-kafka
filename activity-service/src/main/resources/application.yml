@@ -31,14 +31,20 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
+# SMTP 100% externalisé — changer de fournisseur = modifier les MAIL_* du ConfigMap
 spring.mail:
   host: ${MAIL_HOST:smtp.gmail.com}
   port: ${MAIL_PORT:587}
   username: ${MAIL_USERNAME:}
   password: ${MAIL_PASSWORD:}
   properties:
-    mail.smtp.auth: true
-    mail.smtp.starttls.enable: true
+    mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+    mail.smtp.starttls.enable: ${MAIL_STARTTLS:true}
+    mail.smtp.starttls.required: ${MAIL_STARTTLS:true}
+    mail.smtp.ssl.enable: ${MAIL_SSL_ENABLE:false}
+    mail.smtp.connectiontimeout: ${MAIL_TIMEOUT_MS:10000}
+    mail.smtp.timeout: ${MAIL_TIMEOUT_MS:10000}
+    mail.smtp.writetimeout: ${MAIL_TIMEOUT_MS:10000}
 
 cra:
   reminder:

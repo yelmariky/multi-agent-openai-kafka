@@ -107,6 +107,7 @@ function initApp() {
 
   // Billing SaaS
   document.getElementById('billing-refresh-btn').addEventListener('click', loadBilling);
+  document.getElementById('sub-invoices-refresh-btn')?.addEventListener('click', loadSubscriptionInvoices);
   document.getElementById('billing-run-btn').addEventListener('click', runBillingNow);
   document.getElementById('billing-save').addEventListener('click', saveBillingModal);
   document.getElementById('billing-cancel').addEventListener('click', closeBillingModal);
@@ -118,6 +119,110 @@ function initApp() {
 
   loadTenants();
   loadBilling();
+  loadSubscriptionInvoices();
+}
+
+// ============================================================
+// FACTURES D'ABONNEMENT — statut, encaissement, relances
+// ============================================================
+function invoiceBase() {
+  return ((globalThis.APP_CONFIG || {}).invoiceBase || 'http://localhost:8083').replace(/\/$/, '');
+}
+
+const SUB_INV_STATUS = {
+  EN_ATTENTE: { label: 'En attente', cls: 'starter' },
+  ENVOYEE:    { label: 'Envoyée',    cls: 'enterprise' },
+  PAYEE:      { label: 'Payée',      cls: 'pro' },
+  EN_RETARD:  { label: 'En retard',  cls: 'inv-late' },
+};
+const DUN_LABEL = { 1: 'R1 rappel', 2: 'R2 relance', 3: 'R3 mise en demeure' };
+
+async function loadSubscriptionInvoices() {
+  const statusEl = document.getElementById('sub-invoices-status');
+  const listEl   = document.getElementById('sub-invoices-list');
+  if (!listEl) return;
+  setStatus(statusEl, 'Chargement...');
+  try {
+    const res = await fetch(`${invoiceBase()}/invoices/platform/subscription-invoices`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const invoices = await res.json();
+
+    if (!invoices.length) {
+      setStatus(statusEl, '');
+      listEl.innerHTML = `<p style="color:var(--muted);font-size:13px">Aucune facture d'abonnement émise pour l'instant — affectez une offre puis « Facturer maintenant ».</p>`;
+      return;
+    }
+
+    const late = invoices.filter(i => i.paymentStatus === 'EN_RETARD');
+    const lateSum = late.reduce((s, i) => s + (i.totalTtc || 0), 0);
+    setStatus(statusEl, late.length
+      ? `⚠ ${late.length} facture(s) en retard — ${fmtEur(lateSum)} TTC à recouvrer`
+      : `${invoices.length} facture(s) — encaissements à jour`, late.length ? 'err' : 'ok');
+
+    listEl.innerHTML = `<div class="tenant-grid">` + invoices.map(inv => {
+      const st = SUB_INV_STATUS[inv.paymentStatus] || SUB_INV_STATUS.EN_ATTENTE;
+      const dun = inv.lastDunningStage
+        ? `<span style="color:#f59e0b">Relancé ${DUN_LABEL[inv.lastDunningStage] || 'R' + inv.lastDunningStage}${inv.lastDunningDate ? ' le ' + String(inv.lastDunningDate).slice(0, 10).split('-').reverse().join('/') : ''}</span>` : '';
+      const canSend = inv.paymentStatus === 'EN_ATTENTE';
+      const canPayOrDun = inv.paymentStatus === 'ENVOYEE' || inv.paymentStatus === 'EN_RETARD';
+      return `
+      <div class="tenant-row">
+        <div class="status-dot ${inv.paymentStatus === 'PAYEE' ? 'active' : 'inactive'}"></div>
+        <div class="tenant-info">
+          <p class="tenant-name">${escapeHtml(inv.invoiceName)} — ${escapeHtml(inv.clientCompanyName || '—')}</p>
+          <div class="tenant-meta">
+            <span>${fmtEur(inv.totalTtc)} TTC</span>
+            ${inv.paymentDueDate ? `<span>Échéance : ${escapeHtml(inv.paymentDueDate)}</span>` : ''}
+            ${dun ? `<span>${dun}</span>` : ''}
+          </div>
+        </div>
+        <span class="plan-badge ${st.cls}">${st.label}</span>
+        <div class="tenant-actions">
+          ${canSend ? `<button class="btn-edit" data-sub-inv-action="sent" data-id="${inv.id}">Envoyée</button>` : ''}
+          ${canPayOrDun ? `<button class="btn-edit" data-sub-inv-action="dun" data-id="${inv.id}" style="color:#f59e0b;border-color:rgba(245,158,11,.4)">Relancer</button>` : ''}
+          ${canPayOrDun ? `<button class="btn-edit" data-sub-inv-action="paid" data-id="${inv.id}" style="color:var(--accent);border-color:rgba(var(--accent-rgb),.4)">Payée ✓</button>` : ''}
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
+
+    listEl.querySelectorAll('[data-sub-inv-action]').forEach(btn =>
+      btn.addEventListener('click', () => subInvoiceAction(btn.dataset.subInvAction, btn.dataset.id, btn)));
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+  }
+}
+
+async function subInvoiceAction(action, id, btn) {
+  const statusEl = document.getElementById('sub-invoices-status');
+  const conf = {
+    sent: { method: 'PUT',  path: 'mark-sent', confirm: null,                                        ok: 'Facture marquée envoyée.' },
+    paid: { method: 'PUT',  path: 'mark-paid', confirm: null,                                        ok: 'Facture marquée payée ✓' },
+    dun:  { method: 'POST', path: 'dunning',   confirm: 'Envoyer une relance de paiement au client ?', ok: 'Relance envoyée.' },
+  }[action];
+  if (!conf) return;
+  if (conf.confirm && !confirm(conf.confirm)) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${invoiceBase()}/invoices/platform/${id}/${conf.path}`, {
+      method: conf.method,
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: conf.method === 'PUT' && conf.path === 'mark-paid' ? JSON.stringify({}) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (action === 'dun') {
+      if (data.status === 'SENT') setStatus(statusEl, `Relance envoyée (${data.recipient}).`, 'ok');
+      else if (data.status === 'NO_EMAIL') setStatus(statusEl, `Aucun email de contact pour « ${data.client} » — renseignez la fiche client du tenant vendeur.`, 'err');
+      else if (data.status === 'ERROR') setStatus(statusEl, `Échec d'envoi : ${data.error || 'serveur mail indisponible'}`, 'err');
+      else setStatus(statusEl, conf.ok, 'ok');
+    } else {
+      setStatus(statusEl, conf.ok, 'ok');
+    }
+    loadSubscriptionInvoices();
+  } catch (e) {
+    setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+    btn.disabled = false;
+  }
 }
 
 // ============================================================

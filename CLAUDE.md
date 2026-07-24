@@ -26,13 +26,13 @@ Plateforme SaaS **multi-tenant** d'automatisation d'entreprise pour ESN/cabinets
 | OCR | Tesseract + poppler (`pdftoppm`) |
 | Auth | Keycloak 24.0.2 — realm-per-tenant + `JwtIssuerAuthenticationManagerResolver` |
 | Gateway | Kong DB-less (namespace `kong`) |
-| Frontends | Vanilla JS — `frontend/` :3000, `frontend-consultant/` :3001, `frontend-platform/` :3002 |
+| Frontends | Vanilla JS — `frontend-admin/` :3000, `frontend-consultant/` :3001, `frontend-platform/` :3002 |
 | Infra | Kubernetes, Docker |
 
 ## Architecture microservices
 
 ```
-[frontend/ :3000]  [frontend-consultant/ :3001]  [frontend-platform/ :3002]
+[frontend-admin/ :3000]  [frontend-consultant/ :3001]  [frontend-platform/ :3002]
         |                      |                          |
         +--------- Kong :8000 -+--------------------------+
                        |
@@ -85,7 +85,7 @@ cd activity-service && mvn spring-boot:run   # :8085, flyway disabled
 cd invoice-service  && mvn spring-boot:run   # :8083, flyway disabled
 
 # Frontends
-cd frontend && python server.py
+cd frontend-admin && python server.py
 cd frontend-consultant && python server.py
 cd frontend-platform && python server.py
 

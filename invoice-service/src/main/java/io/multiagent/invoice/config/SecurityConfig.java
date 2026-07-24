@@ -56,6 +56,8 @@ public class SecurityConfig {
                 // Relances de factures impayées — admin/manager (relance manuelle et batch)
                 .requestMatchers(HttpMethod.POST, "/invoices/run-dunning").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER, "platform_admin")
                 .requestMatchers(HttpMethod.POST, "/invoices/*/dunning").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
+                // Console plateforme — suivi des factures d'abonnement du tenant vendeur
+                .requestMatchers("/invoices/platform/**").hasRole("platform_admin")
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2
