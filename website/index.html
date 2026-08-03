@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="IA Insight — plateforme SaaS d'automatisation pour ESN et cabinets de conseil IT : notes de frais IA, CRA, factures, congés, RAG documentaire. Multi-tenant, RGPD, hébergement EU.">
+  <title>IA Insight — L'ESN augmentée par l'IA</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E%E2%97%86%3C/text%3E%3C/svg%3E">
+<style>
+/* ══ TOKENS ══ */
+:root {
+  --bg:       #F0F4FF; --sf:  #FFFFFF; --s2: #E5EBFF; --bd: #C5D0EE;
+  --tx:       #0D1535; --mu:  #5868A0; --fa: #8A96C0;
+  --blue:     #2563EB; --blue-dk: #1D4ED8; --blue-s: #EEF3FF; --blue-bd: #BFCDF8;
+  --green:    #059669; --green-dk: #047857; --green-s: #ECFDF5; --green-bd: #A7F3D0;
+  --amber:    #D97706; --amber-s: #FFFBEB; --amber-bd: #FDE68A;
+  --hero-bg:  #07101E; --hero-tx: #D0DCFF; --hero-mu: #6878A8;
+  --r: 6px; --rl: 12px;
+  --mono: "SF Mono", ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #07101E; --sf: #0C1628; --s2: #112034; --bd: #1A2C48;
+  --tx: #D0DCFF; --mu: #6878A8; --fa: #3A4870;
+  --blue-s: #0C1E3C; --blue-bd: #1A3060;
+  --green-s: #071E18; --green-bd: #0C3028;
+  --amber-s: #1C1608; --amber-bd: #342810;
+}}
+:root[data-theme="dark"] {
+  --bg: #07101E; --sf: #0C1628; --s2: #112034; --bd: #1A2C48;
+  --tx: #D0DCFF; --mu: #6878A8; --fa: #3A4870;
+  --blue-s: #0C1E3C; --blue-bd: #1A3060;
+  --green-s: #071E18; --green-bd: #0C3028;
+  --amber-s: #1C1608; --amber-bd: #342810;
+}
+:root[data-theme="light"] {
+  --bg: #F0F4FF; --sf: #FFFFFF; --s2: #E5EBFF; --bd: #C5D0EE;
+  --tx: #0D1535; --mu: #5868A0; --fa: #8A96C0;
+  --blue-s: #EEF3FF; --blue-bd: #BFCDF8;
+  --green-s: #ECFDF5; --green-bd: #A7F3D0;
+  --amber-s: #FFFBEB; --amber-bd: #FDE68A;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--sans); background: var(--bg); color: var(--tx); line-height: 1.65; }
+
+/* ══ NAV ══ */
+.nav {
+  position: sticky; top: 0; z-index: 200;
+  background: rgba(7,16,30,0.92);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 0 32px; display: flex; align-items: center; height: 58px; gap: 32px;
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 15px; font-weight: 700;
+  color: #fff; text-decoration: none; flex-shrink: 0;
+}
+.nav-logo-mark {
+  width: 28px; height: 28px; border-radius: 6px; background: var(--blue);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: #fff; font-weight: 800; letter-spacing: -0.03em;
+}
+.nav-links { display: flex; gap: 24px; flex: 1; }
+.nav-links a {
+  font-size: 13px; color: rgba(255,255,255,0.6); text-decoration: none;
+  transition: color .18s;
+}
+.nav-links a:hover { color: rgba(255,255,255,0.95); }
+.nav-cta {
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  padding: 8px 16px; background: var(--blue); color: #fff; border-radius: var(--r);
+  text-decoration: none; letter-spacing: 0.02em; white-space: nowrap;
+  transition: background .18s;
+}
+.nav-cta:hover { background: var(--blue-dk); }
+@media (max-width: 680px) { .nav-links { display: none; } }
+
+/* ══ HERO ══ */
+.hero {
+  background: var(--hero-bg); color: var(--hero-tx);
+  min-height: calc(100vh - 58px); display: flex; align-items: center;
+  padding: 80px 32px; position: relative; overflow: hidden;
+}
+.hero::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 65% 65% at 22% 55%, rgba(37,99,235,.15) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 55% at 78% 20%, rgba(5,150,105,.09) 0%, transparent 60%);
+}
+.hero::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.hero-inner {
+  max-width: 1140px; margin: 0 auto; width: 100%;
+  display: grid; grid-template-columns: 55fr 45fr;
+  gap: 60px; align-items: center; position: relative; z-index: 1;
+}
+@media (max-width: 900px) {
+  .hero-inner { grid-template-columns: 1fr; }
+  .hero-term  { display: none; }
+  .hero { min-height: auto; padding: 64px 24px; }
+}
+.hero-eye {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--blue); margin-bottom: 20px;
+  display: flex; align-items: center; gap: 10px;
+}
+.hero-eye::before { content: ''; display: inline-block; width: 22px; height: 1.5px; background: var(--blue); }
+.hero h1 {
+  font-size: clamp(30px, 5vw, 52px); font-weight: 800;
+  letter-spacing: -0.04em; line-height: 1.08;
+  text-wrap: balance; color: #EDF1FF; margin-bottom: 22px;
+}
+.hero h1 em { font-style: normal; color: var(--blue); }
+.hero-sub {
+  font-size: clamp(14px, 2vw, 16px); line-height: 1.75;
+  color: var(--hero-mu); margin-bottom: 36px; max-width: 480px;
+}
+.hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+.btn-p {
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  padding: 13px 24px; background: var(--blue); color: #fff; border-radius: var(--r);
+  text-decoration: none; letter-spacing: 0.02em;
+  transition: background .18s, transform .14s;
+}
+.btn-p:hover { background: var(--blue-dk); transform: translateY(-1px); }
+.btn-s {
+  font-family: var(--mono); font-size: 13px; padding: 13px 24px;
+  color: rgba(255,255,255,.65); border: 1px solid rgba(255,255,255,.15);
+  border-radius: var(--r); text-decoration: none;
+  transition: border-color .18s, color .18s;
+}
+.btn-s:hover { border-color: rgba(255,255,255,.4); color: #fff; }
+.hero-trust {
+  display: flex; align-items: center; gap: 24px; margin-top: 40px;
+  padding-top: 32px; border-top: 1px solid rgba(255,255,255,.06); flex-wrap: wrap;
+}
+.trust-i {
+  font-family: var(--mono); font-size: 11px; color: var(--hero-mu);
+  display: flex; align-items: center; gap: 7px;
+}
+.trust-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+/* ══ TERMINAL ══ */
+.hero-term {
+  background: #080E1C; border: 1px solid rgba(255,255,255,.08);
+  border-radius: var(--rl); overflow: hidden;
+  font-family: var(--mono); font-size: 12.5px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.5);
+}
+.term-bar {
+  display: flex; align-items: center; gap: 7px;
+  padding: 11px 16px; background: rgba(255,255,255,.03);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.td { width: 11px; height: 11px; border-radius: 50%; }
+.td.r { background: #FF5F57; } .td.y { background: #FFBD2E; } .td.g { background: #28CA41; }
+.term-title { font-size: 10.5px; color: rgba(255,255,255,.3); letter-spacing: .07em; margin: 0 auto; }
+.term-body { padding: 20px 20px 24px; min-height: 240px; line-height: 1.7; }
+.tl { margin-bottom: 2px; }
+.tl.cmd  { color: #A5B4FC; }
+.tl.inp  { color: #FDE68A; }
+.tl.proc { color: rgba(255,255,255,.35); }
+.tl.out  { color: #86EFAC; }
+.tl.ok   { color: #34D399; font-weight: 600; }
+.cursor  {
+  display: inline-block; width: 7px; height: 13px;
+  background: #A5B4FC; vertical-align: middle; margin-left: 1px;
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* ══ STATS BAR ══ */
+.stats-bar { background: var(--sf); border-bottom: 1px solid var(--bd); padding: 36px 32px; }
+.stats-inner {
+  max-width: 1140px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(4,1fr); gap: 24px;
+}
+@media (max-width: 640px) { .stats-inner { grid-template-columns: repeat(2,1fr); } }
+.s-item { text-align: center; }
+.s-num {
+  font-family: var(--mono); font-size: 30px; font-weight: 700;
+  letter-spacing: -0.04em; font-variant-numeric: tabular-nums; line-height: 1;
+}
+.s-num.b { color: var(--blue); } .s-num.g { color: var(--green); }
+.s-num.a { color: var(--amber); } .s-num.n { color: var(--tx); }
+.s-desc { font-size: 12px; color: var(--mu); margin-top: 6px; line-height: 1.4; }
+
+/* ══ SECTION LAYOUT ══ */
+.wrap { max-width: 1140px; margin: 0 auto; padding: 80px 32px; }
+.wrap-bg { padding: 80px 32px; }
+.wrap-bg > .wi { max-width: 1140px; margin: 0 auto; }
+@media (max-width: 600px) { .wrap, .wrap-bg { padding: 60px 20px; } }
+
+.sec-head {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 48px;
+}
+.sec-head::before, .sec-head::after { content: ''; flex: 1; border-top: 1px solid var(--bd); }
+.sec-lbl {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--fa); white-space: nowrap;
+}
+
+/* ══ FEATURES ══ */
+.feat-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 18px; }
+@media (max-width: 720px) { .feat-grid { grid-template-columns: 1fr; } }
+
+.feat-card {
+  background: var(--sf); border: 1px solid var(--bd); border-radius: var(--rl);
+  padding: 28px; position: relative; overflow: hidden;
+  transition: transform .2s, box-shadow .2s;
+}
+.feat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,.07); }
+.feat-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+}
+.fc-b::before  { background: var(--blue); }
+.fc-g::before  { background: var(--green); }
+.fc-a::before  { background: var(--amber); }
+.fc-ai::before { background: linear-gradient(90deg, var(--blue) 0%, var(--green) 100%); }
+
+.feat-ico {
+  width: 44px; height: 44px; border-radius: 10px; display: flex;
+  align-items: center; justify-content: center; margin-bottom: 18px;
+}
+.fi-b  { background: var(--blue-s);  color: var(--blue); }
+.fi-g  { background: var(--green-s); color: var(--green); }
+.fi-a  { background: var(--amber-s); color: var(--amber); }
+.fi-ai { background: var(--blue-s);  color: var(--blue); }
+
+.feat-card h3 { font-size: 17px; font-weight: 650; margin-bottom: 10px; letter-spacing: -0.01em; }
+.feat-card p  { font-size: 13.5px; color: var(--mu); line-height: 1.7; margin-bottom: 18px; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font-family: var(--mono); font-size: 10px; padding: 3px 8px;
+  border-radius: 4px; font-weight: 600; letter-spacing: 0.04em;
+}
+.ch-b  { background: var(--blue-s);  color: var(--blue-dk);  border: 1px solid var(--blue-bd); }
+.ch-g  { background: var(--green-s); color: var(--green-dk); border: 1px solid var(--green-bd); }
+.ch-a  { background: var(--amber-s); color: var(--amber);    border: 1px solid var(--amber-bd); }
+.ch-ai { background: var(--blue-s);  color: var(--blue-dk);  border: 1px solid var(--blue-bd); }
+
+/* ══ AI SECTION ══ */
+.ai-bg {
+  background: var(--hero-bg); color: var(--hero-tx);
+  padding: 80px 32px; position: relative; overflow: hidden;
+}
+.ai-bg::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 70% at 80% 50%, rgba(5,150,105,.12) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 50% at 20% 30%, rgba(37,99,235,.10) 0%, transparent 60%);
+}
+.ai-inner {
+  max-width: 1140px; margin: 0 auto; position: relative; z-index: 1;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;
+}
+@media (max-width: 820px) { .ai-inner { grid-template-columns: 1fr; } }
+.ai-text .sec-head::before, .ai-text .sec-head::after { border-top-color: rgba(255,255,255,.1); }
+.ai-text .sec-lbl { color: rgba(255,255,255,.3); }
+.ai-text h2 {
+  font-size: clamp(22px, 3vw, 32px); font-weight: 700;
+  letter-spacing: -0.03em; line-height: 1.2; margin-bottom: 16px; color: #EDF1FF;
+}
+.ai-text p { font-size: 13.5px; color: var(--hero-mu); line-height: 1.8; margin-bottom: 18px; }
+
+.ai-stack { display: flex; flex-direction: column; gap: 10px; }
+.ai-item {
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.07);
+  border-radius: var(--r); padding: 14px 16px;
+  display: flex; gap: 14px; align-items: flex-start;
+}
+.ai-ico {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: -0.02em;
+}
+.ai-ico.b { background: rgba(37,99,235,.2); color: #93BBFF; border: 1px solid rgba(37,99,235,.3); }
+.ai-ico.g { background: rgba(5,150,105,.2); color: #6EE7B7; border: 1px solid rgba(5,150,105,.3); }
+.ai-ico.a { background: rgba(217,119,6,.2); color: #FCD34D; border: 1px solid rgba(217,119,6,.3); }
+.ai-lbl { font-family: var(--mono); font-size: 12px; font-weight: 600; color: #D0DCFF; margin-bottom: 3px; }
+.ai-dsc { font-size: 12px; color: var(--hero-mu); line-height: 1.55; }
+
+/* ══ TENANT ══ */
+.tenant-bg { background: var(--s2); border-top: 1px solid var(--bd); border-bottom: 1px solid var(--bd); padding: 80px 32px; }
+.tenant-inner { max-width: 1140px; margin: 0 auto; }
+.tenant-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; }
+@media (max-width: 700px) { .tenant-grid { grid-template-columns: 1fr; } }
+.tc {
+  background: var(--sf); border: 1px solid var(--bd); border-radius: var(--rl); padding: 24px;
+}
+.tc h4 { font-size: 14px; font-weight: 650; margin-bottom: 8px; }
+.tc p { font-size: 12.5px; color: var(--mu); line-height: 1.7; }
+.tc-code {
+  font-family: var(--mono); font-size: 11px; line-height: 1.7;
+  background: var(--s2); border: 1px solid var(--bd); border-radius: var(--r);
+  padding: 10px 12px; margin-top: 14px; color: var(--blue);
+}
+.ic { font-family: var(--mono); font-size: 11px; background: var(--s2); border: 1px solid var(--bd); border-radius: 3px; padding: 1px 5px; }
+
+/* ══ CTA ══ */
+.cta-bg { background: var(--hero-bg); padding: 100px 32px; text-align: center; position: relative; overflow: hidden; }
+.cta-bg::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 60% 80% at 50% 100%, rgba(37,99,235,.12) 0%, transparent 60%);
+}
+.cta-bg h2 {
+  font-size: clamp(24px, 4vw, 40px); font-weight: 800; letter-spacing: -0.03em;
+  color: #EDF1FF; margin-bottom: 16px; position: relative; z-index: 1;
+}
+.cta-bg p { font-size: 15px; color: var(--hero-mu); margin-bottom: 36px; max-width: 480px; margin-left: auto; margin-right: auto; position: relative; z-index: 1; }
+.cta-bg .btn-p { font-size: 14px; padding: 15px 32px; position: relative; z-index: 1; display: inline-block; }
+
+/* ══ FOOTER ══ */
+footer {
+  background: var(--hero-bg); border-top: 1px solid rgba(255,255,255,.06);
+  padding: 36px 32px;
+}
+.foot-inner {
+  max-width: 1140px; margin: 0 auto;
+  display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; gap: 16px;
+}
+.foot-logo { font-family: var(--mono); font-size: 14px; font-weight: 700; color: #fff; letter-spacing: -0.01em; }
+.foot-links { display: flex; gap: 20px; }
+.foot-links a { font-size: 12px; color: var(--hero-mu); text-decoration: none; transition: color .15s; }
+.foot-links a:hover { color: rgba(255,255,255,.8); }
+.foot-copy { font-family: var(--mono); font-size: 10.5px; color: var(--hero-mu); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ NAV ═══════════════════ -->
+<nav class="nav">
+  <a href="#top" class="nav-logo">
+    <span class="nav-logo-mark">IA</span>
+    IA Insight
+  </a>
+  <nav class="nav-links">
+    <a href="#features">Fonctionnalités</a>
+    <a href="#ai">Fiabilité</a>
+    <a href="#tenant">Multi-tenant</a>
+    <a href="#cta">Contact</a>
+  </nav>
+  <a href="#cta" class="nav-cta">Demander une démo</a>
+</nav>
+
+<!-- ═══════════════════ HERO ═══════════════════ -->
+<section class="hero" id="top">
+  <div class="hero-inner">
+
+    <!-- Texte -->
+    <div>
+      <div class="hero-eye">Plateforme SaaS · ESN &amp; Conseil IT</div>
+      <h1>L'ESN <em>augmentée</em><br>par l'intelligence<br>artificielle</h1>
+      <p class="hero-sub">
+        Notes de frais en texte libre, CRA mensuel, factures PDF — automatisés par l'IA.
+        Workflows d'approbation, OCR, RAG documentaire et notifications temps réel,
+        le tout en multi-tenant Keycloak.
+      </p>
+      <div class="hero-ctas">
+        <a href="#cta" class="btn-p">Demander une démo</a>
+        <a href="#features" class="btn-s">Voir les fonctionnalités</a>
+      </div>
+      <div class="hero-trust">
+        <div class="trust-i"><span class="trust-dot" style="background:var(--green)"></span>RGPD · Hébergement EU</div>
+        <div class="trust-i"><span class="trust-dot" style="background:var(--blue)"></span>IA disponible 24/7</div>
+        <div class="trust-i"><span class="trust-dot" style="background:var(--amber)"></span>Multi-tenant Keycloak</div>
+      </div>
+    </div>
+
+    <!-- Terminal -->
+    <div class="hero-term">
+      <div class="term-bar">
+        <span class="td r"></span><span class="td y"></span><span class="td g"></span>
+        <span class="term-title">ia-insight · expense analyzer</span>
+      </div>
+      <div class="term-body" id="term"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════ STATS ═══════════════════ -->
+<div class="stats-bar">
+  <div class="stats-inner">
+    <div class="s-item">
+      <div class="s-num b">3</div>
+      <div class="s-desc">modules métier<br>Frais · CRA · Factures</div>
+    </div>
+    <div class="s-item">
+      <div class="s-num g">100%</div>
+      <div class="s-desc">hébergement EU<br>Hetzner DE · conforme RGPD</div>
+    </div>
+    <div class="s-item">
+      <div class="s-num a">0</div>
+      <div class="s-desc">saisie manuelle<br>texte libre → JSON structuré</div>
+    </div>
+    <div class="s-item">
+      <div class="s-num n">∞</div>
+      <div class="s-desc">tenants supportés<br>realm-per-tenant Keycloak</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ FEATURES ═══════════════════ -->
+<div class="wrap" id="features">
+  <div class="sec-head"><span class="sec-lbl">Fonctionnalités</span></div>
+  <div class="feat-grid">
+
+    <div class="feat-card fc-b">
+      <div class="feat-ico fi-b">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <rect x="3" y="2" width="16" height="18" rx="2"/>
+          <line x1="7" y1="7" x2="15" y2="7"/>
+          <line x1="7" y1="11" x2="15" y2="11"/>
+          <line x1="7" y1="15" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <h3>Notes de frais IA</h3>
+      <p>Soumettez en texte libre — <em style="font-style:normal;color:var(--blue)">"Taxi CDG → La Défense, mission SG, 34,50€"</em> — et l'IA classifie automatiquement, extrait le montant et détermine la facturation client. OCR intégré sur reçus PDF et photos avec Tesseract + poppler.</p>
+      <div class="chips">
+        <span class="chip ch-b">Texte libre → JSON</span>
+        <span class="chip ch-b">OCR PDF / image</span>
+        <span class="chip ch-b">PENDING · APPROVED · REFUSED</span>
+      </div>
+    </div>
+
+    <div class="feat-card fc-g">
+      <div class="feat-ico fi-g">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 3a2 2 0 0 1 2-2h8l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V3z"/>
+          <polyline points="14 1 14 7 20 7"/>
+          <polyline points="8 13 10 15 14 11"/>
+        </svg>
+      </div>
+      <h3>Factures &amp; Consulting IT</h3>
+      <p>Génération de factures PDF et Excel depuis un formulaire simple. Suivi du cycle de vie complet — brouillon, envoi client, paiement reçu — avec notifications automatiques et historique des transactions par mission.</p>
+      <div class="chips">
+        <span class="chip ch-g">PDF · Excel</span>
+        <span class="chip ch-g">mark-sent / mark-paid</span>
+        <span class="chip ch-g">suivi paiement</span>
+      </div>
+    </div>
+
+    <div class="feat-card fc-a">
+      <div class="feat-ico fi-a">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <rect x="2" y="3" width="18" height="18" rx="2"/>
+          <line x1="8" y1="1" x2="8" y2="5"/>
+          <line x1="14" y1="1" x2="14" y2="5"/>
+          <line x1="2" y1="9" x2="20" y2="9"/>
+          <circle cx="7" cy="14" r=".5" fill="currentColor"/>
+          <circle cx="11" cy="14" r=".5" fill="currentColor"/>
+          <circle cx="15" cy="14" r=".5" fill="currentColor"/>
+          <circle cx="7" cy="18" r=".5" fill="currentColor"/>
+          <circle cx="11" cy="18" r=".5" fill="currentColor"/>
+        </svg>
+      </div>
+      <h3>CRA mensuel &amp; Absences</h3>
+      <p>Compte-rendu d'activité mensuel avec workflow numérique complet. Notifications SSE en temps réel à chaque transition d'état. Gestion des absences CP/RTT avec soldes par consultant et validation hiérarchique.</p>
+      <div class="chips">
+        <span class="chip ch-a">BROUILLON → SOUMIS → VALIDÉ</span>
+        <span class="chip ch-a">SSE temps réel</span>
+        <span class="chip ch-a">CP · RTT · absences</span>
+      </div>
+    </div>
+
+    <div class="feat-card fc-ai">
+      <div class="feat-ico fi-ai">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="10" cy="10" r="6"/>
+          <line x1="14.5" y1="14.5" x2="19" y2="19"/>
+          <path d="M7.5 10a2.5 2.5 0 0 1 2.5-2.5"/>
+          <line x1="10" y1="7.5" x2="10" y2="9"/>
+        </svg>
+      </div>
+      <h3>RAG &amp; Base documentaire</h3>
+      <p>Indexation vectorielle de vos documents RH, conventions collectives et politiques de remboursement. Réponses contextualisées avec citations de sources. Pipeline Groq + OpenAI avec fallback automatique et circuit breaker.</p>
+      <div class="chips">
+        <span class="chip ch-ai">pgvector HNSW cosine</span>
+        <span class="chip ch-ai">Groq llama-4-scout-17b</span>
+        <span class="chip ch-ai">text-embedding-3-large</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ AI SECTION ═══════════════════ -->
+<div class="ai-bg" id="ai">
+  <div class="ai-inner">
+    <div class="ai-text">
+      <div class="sec-head"><span class="sec-lbl">Fiabilité &amp; IA</span></div>
+      <h2>Une IA que vous n'avez pas à surveiller</h2>
+      <p>L'IA n'est utile que si elle répond <strong style="color:#EDF1FF">à chaque fois</strong> — pas neuf fois sur dix. IA Insight est conçue pour rester disponible, rapide et sûre sans que personne dans votre équipe n'ait à s'en occuper.</p>
+      <p>Et vos documents ne partent pas chez un tiers : ils sont indexés et interrogés <strong style="color:#EDF1FF">dans votre propre base de données</strong>, isolée par organisation et hébergée en Europe.</p>
+    </div>
+    <div class="ai-stack">
+      <div class="ai-item">
+        <div class="ai-ico g">24/7</div>
+        <div>
+          <div class="ai-lbl">Toujours disponible</div>
+          <div class="ai-dsc">Deux moteurs d'IA en relève automatique : si l'un tombe, l'autre prend le relais instantanément. Vos consultants ne voient jamais de panne.</div>
+        </div>
+      </div>
+      <div class="ai-item">
+        <div class="ai-ico b">&lt;1s</div>
+        <div>
+          <div class="ai-lbl">Rapide, vraiment</div>
+          <div class="ai-dsc">Analyse d'une note de frais en moins d'une seconde. Assez rapide pour être utilisée en réunion, sur mobile, entre deux rendez-vous.</div>
+        </div>
+      </div>
+      <div class="ai-item">
+        <div class="ai-ico b">EU</div>
+        <div>
+          <div class="ai-lbl">Vos données restent chez vous</div>
+          <div class="ai-dsc">Documents RH et politiques internes indexés dans votre base, hébergée en Europe. Rien n'est envoyé pour entraîner un modèle tiers.</div>
+        </div>
+      </div>
+      <div class="ai-item">
+        <div class="ai-ico a">SEC</div>
+        <div>
+          <div class="ai-lbl">Protégée contre les abus</div>
+          <div class="ai-dsc">Chaque saisie passe par un pare-feu dédié à l'IA avant tout traitement : tentatives de manipulation bloquées, débit limité, texte assaini.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ MULTI-TENANT ═══════════════════ -->
+<div class="tenant-bg" id="tenant">
+  <div class="tenant-inner">
+    <div class="sec-head"><span class="sec-lbl">Multi-tenant · Architecture Keycloak</span></div>
+    <div class="tenant-grid">
+
+      <div class="tc">
+        <h4>Realm-per-tenant Keycloak</h4>
+        <p>Chaque organisation dispose d'un realm Keycloak dédié. Isolation totale des utilisateurs, rôles et tokens entre clients. Provisioning automatique à l'onboarding.</p>
+        <div class="tc-code">realm: {slug}-esn<br>issuer: /realms/{slug}<br>JWT → TenantContext</div>
+      </div>
+
+      <div class="tc">
+        <h4>URL slug &amp; TenantFilter</h4>
+        <p>Le <span class="ic">TenantFilter</span> intercepte chaque requête, résout l'organisation depuis le JWT, et injecte le tenant dans un ThreadLocal — transparent pour tous les services.</p>
+        <div class="tc-code">https://{slug}.ia-insight.fr/<br>→ Organization → tenant_id<br>→ toutes les requêtes JPA filtrées</div>
+      </div>
+
+      <div class="tc">
+        <h4>Console plateforme dédiée</h4>
+        <p>Les platform admins accèdent à une console centralisée (realm <span class="ic">platform</span>, rôle <span class="ic">platform_admin</span>) pour gérer les tenants, surveiller la consommation et configurer les quotas.</p>
+        <div class="tc-code">frontend-platform :3002<br>Kong → ai-service :8081<br>role: platform_admin</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ CTA ═══════════════════ -->
+<div class="cta-bg" id="cta">
+  <h2>Prêt à automatiser votre ESN ?</h2>
+  <p>Demandez une démo personnalisée — nous adaptons la plateforme à votre organisation en moins d'une heure.</p>
+  <a href="mailto:ia.insightsvc@gmail.com?subject=Demande%20de%20d%C3%A9mo%20IA%20Insight" class="btn-p">
+    Demander une démo →
+  </a>
+</div>
+
+<!-- ═══════════════════ FOOTER ═══════════════════ -->
+<footer>
+  <div class="foot-inner">
+    <div class="foot-logo">◆ IA Insight</div>
+    <div class="foot-links">
+      <a href="#features">Fonctionnalités</a>
+      <a href="#ai">Fiabilité</a>
+      <a href="#tenant">Multi-tenant</a>
+    </div>
+    <div class="foot-copy">© 2026 IA Insight · RGPD · Hébergement EU</div>
+  </div>
+</footer>
+
+<!-- ═══════════════════ TERMINAL ANIMATION ═══════════════════ -->
+<script>
+(function() {
+  var el = document.getElementById('term');
+  if (!el) return;
+
+  var SEQ = [
+    { cls:'cmd',  text:'$ ia-insight analyze --type expense' },
+    { cls:'',     text:'' },
+    { cls:'inp',  text:'> "Taxi CDG → La Défense, mission SG"' },
+    { cls:'inp',  text:'> montant détecté: 34,50 €' },
+    { cls:'',     text:'' },
+    { cls:'proc', text:'  Groq llama-4-scout-17b · analyzing...' },
+    { cls:'proc', text:'  PromptGuard · OK · no injection' },
+    { cls:'',     text:'' },
+    { cls:'out',  text:'  {' },
+    { cls:'out',  text:'    "category": "TRANSPORT",' },
+    { cls:'out',  text:'    "amount": 34.50,' },
+    { cls:'out',  text:'    "billable": true,' },
+    { cls:'out',  text:'    "status": "PENDING"' },
+    { cls:'out',  text:'  }' },
+    { cls:'',     text:'' },
+    { cls:'ok',   text:'  ✓ Kafka event · admin notifié' },
+  ];
+
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (reduced) {
+    SEQ.forEach(function(s) {
+      var d = document.createElement('div');
+      d.className = 'tl' + (s.cls ? ' ' + s.cls : '');
+      d.textContent = s.text;
+      el.appendChild(d);
+    });
+    return;
+  }
+
+  var si = 0, ci = 0, cur = null, curDiv = null;
+
+  function mkCursor() {
+    if (cur) cur.remove();
+    cur = document.createElement('span');
+    cur.className = 'cursor';
+    el.appendChild(cur);
+  }
+
+  function tick() {
+    if (si >= SEQ.length) {
+      if (cur) cur.remove();
+      setTimeout(function() {
+        el.innerHTML = '';
+        si = 0; ci = 0; curDiv = null; cur = null;
+        mkCursor();
+        setTimeout(tick, 300);
+      }, 3000);
+      return;
+    }
+    var s = SEQ[si];
+    if (ci === 0) {
+      if (cur) { cur.remove(); cur = null; }
+      curDiv = document.createElement('div');
+      curDiv.className = 'tl' + (s.cls ? ' ' + s.cls : '');
+      curDiv.textContent = '';
+      el.appendChild(curDiv);
+      if (!s.text) { si++; setTimeout(tick, 55); return; }
+      mkCursor();
+    }
+    if (ci < s.text.length) {
+      curDiv.textContent = s.text.slice(0, ci + 1);
+      if (cur) curDiv.appendChild(cur);
+      ci++;
+      var spd = s.cls === 'proc' ? 16 : s.cls === 'out' ? 13 : 28;
+      setTimeout(tick, spd + Math.random() * 10);
+    } else {
+      ci = 0; si++;
+      var pause = (si === 3 || si === 5) ? 420 : (si === 7) ? 550 : 75;
+      setTimeout(tick, pause);
+    }
+  }
+
+  setTimeout(function() { mkCursor(); setTimeout(tick, 500); }, 700);
+})();
+</script>
+
+</body>
+</html>
