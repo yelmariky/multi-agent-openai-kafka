@@ -59,9 +59,9 @@ body { font-family: var(--sans); background: var(--bg); color: var(--tx); line-h
   color: #fff; text-decoration: none; flex-shrink: 0;
 }
 .nav-logo-mark {
-  width: 28px; height: 28px; border-radius: 6px; background: var(--blue);
+  width: 28px; height: 28px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 11px; color: #fff; font-weight: 800; letter-spacing: -0.03em;
+  color: var(--blue);
 }
 .nav-links { display: flex; gap: 24px; flex: 1; }
 .nav-links a {
@@ -287,6 +287,31 @@ body { font-family: var(--sans); background: var(--bg); color: var(--tx); line-h
 .ai-lbl { font-family: var(--mono); font-size: 12px; font-weight: 600; color: #D0DCFF; margin-bottom: 3px; }
 .ai-dsc { font-size: 12px; color: var(--hero-mu); line-height: 1.55; }
 
+/* ══ PRICING ══ */
+.pricing-bg { background: var(--sf); border-top: 1px solid var(--bd); padding: 80px 32px; }
+.pricing-inner { max-width: 1140px; margin: 0 auto; }
+.pricing-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; margin-top: 48px; }
+@media (max-width: 900px) { .pricing-grid { grid-template-columns: 1fr; } }
+.price-card {
+  background: var(--sf); border: 2px solid var(--bd); border-radius: var(--rl); padding: 36px 28px;
+  position: relative; display: flex; flex-direction: column;
+  transition: transform .2s, box-shadow .2s, border-color .2s;
+}
+.price-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,.08); border-color: var(--blue); }
+.price-card.featured { border-color: var(--blue); box-shadow: 0 12px 32px rgba(37,99,235,.1); }
+.price-badge { position: absolute; top: -12px; left: 24px; background: var(--blue); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; }
+.price-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--tx); }
+.price-desc { font-size: 12px; color: var(--mu); margin-bottom: 24px; line-height: 1.6; }
+.price-amount { font-size: 36px; font-weight: 800; color: var(--blue); margin-bottom: 4px; letter-spacing: -0.02em; }
+.price-period { font-size: 13px; color: var(--mu); margin-bottom: 32px; }
+.price-features { flex: 1; margin-bottom: 32px; }
+.price-feature { font-size: 13px; color: var(--tx); margin-bottom: 12px; display: flex; gap: 10px; align-items: flex-start; }
+.price-feature::before { content: '✓'; color: var(--green); font-weight: 800; flex-shrink: 0; }
+.price-cta { padding: 13px 24px; background: var(--blue); color: #fff; border: none; border-radius: var(--r); font-family: var(--mono); font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; transition: background .18s; }
+.price-cta:hover { background: var(--blue-dk); }
+.price-card.featured .price-cta { background: var(--green); }
+.price-card.featured .price-cta:hover { background: var(--green-dk); }
+
 /* ══ TENANT ══ */
 .tenant-bg { background: var(--s2); border-top: 1px solid var(--bd); border-bottom: 1px solid var(--bd); padding: 80px 32px; }
 .tenant-inner { max-width: 1140px; margin: 0 auto; }
@@ -343,13 +368,18 @@ footer {
 <!-- ═══════════════════ NAV ═══════════════════ -->
 <nav class="nav">
   <a href="#top" class="nav-logo">
-    <span class="nav-logo-mark">IA</span>
+    <svg class="nav-logo-mark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="6" fill="currentColor"/>
+      <circle cx="16" cy="10" r="2.5" fill="white" opacity="0.9"/>
+      <path d="M16 13v6M12 14l2.8 4M20 14l-2.8 4" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+    </svg>
     IA Insight
   </a>
   <nav class="nav-links">
     <a href="#features">Fonctionnalités</a>
     <a href="#ai">Fiabilité</a>
-    <a href="#tenant">Multi-tenant</a>
+    <a href="#pricing">Tarification</a>
+    <a href="#tenant">Isolation</a>
     <a href="#cta">Contact</a>
   </nav>
   <a href="#cta" class="nav-cta">Demander une démo</a>
@@ -537,6 +567,64 @@ footer {
   </div>
 </div>
 
+<!-- ═══════════════════ PRICING ═══════════════════ -->
+<div class="pricing-bg" id="pricing">
+  <div class="pricing-inner">
+    <div class="sec-head"><span class="sec-lbl">Tarification</span></div>
+    <div class="pricing-grid">
+
+      <div class="price-card">
+        <h3 class="price-title">Startup</h3>
+        <p class="price-desc">Pour les petites équipes qui commencent</p>
+        <div class="price-amount">890€</div>
+        <div class="price-period">par mois · jusqu'à 20 consultants</div>
+        <div class="price-features">
+          <div class="price-feature">Notes de frais IA illimitées</div>
+          <div class="price-feature">CRA et absences</div>
+          <div class="price-feature">1 administrateur</div>
+          <div class="price-feature">Support par email</div>
+          <div class="price-feature">Documentation</div>
+        </div>
+        <a href="mailto:ia.insightsvc@gmail.com?subject=Intérêt%20plan%20Startup" class="price-cta">Essayer</a>
+      </div>
+
+      <div class="price-card featured">
+        <div class="price-badge">Recommandé</div>
+        <h3 class="price-title">Professionnel</h3>
+        <p class="price-desc">Pour les ESN en croissance</p>
+        <div class="price-amount">1 890€</div>
+        <div class="price-period">par mois · jusqu'à 100 consultants</div>
+        <div class="price-features">
+          <div class="price-feature">Tout de Startup</div>
+          <div class="price-feature">Gestion des factures PDF/Excel</div>
+          <div class="price-feature">RAG &amp; base documentaire</div>
+          <div class="price-feature">5 administrateurs</div>
+          <div class="price-feature">Support prioritaire</div>
+          <div class="price-feature">Rapports avancés</div>
+        </div>
+        <a href="mailto:ia.insightsvc@gmail.com?subject=Intérêt%20plan%20Professionnel" class="price-cta">Demander une démo</a>
+      </div>
+
+      <div class="price-card">
+        <h3 class="price-title">Entreprise</h3>
+        <p class="price-desc">Pour les grandes structures</p>
+        <div class="price-amount">Sur devis</div>
+        <div class="price-period">configurations illimitées</div>
+        <div class="price-features">
+          <div class="price-feature">Tout de Professionnel</div>
+          <div class="price-feature">Consultants illimités</div>
+          <div class="price-feature">Administrateurs illimités</div>
+          <div class="price-feature">API complète</div>
+          <div class="price-feature">SLA 99.9%</div>
+          <div class="price-feature">Support dédié 24/7</div>
+        </div>
+        <a href="mailto:ia.insightsvc@gmail.com?subject=Demande%20plan%20Entreprise" class="price-cta">Contacter</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════ MULTI-TENANT ═══════════════════ -->
 <div class="tenant-bg" id="tenant">
   <div class="tenant-inner">
@@ -580,7 +668,8 @@ footer {
     <div class="foot-links">
       <a href="#features">Fonctionnalités</a>
       <a href="#ai">Fiabilité</a>
-      <a href="#tenant">Multi-tenant</a>
+      <a href="#pricing">Tarification</a>
+      <a href="#tenant">Isolation</a>
     </div>
     <div class="foot-copy">© 2026 IA Insight · RGPD · Hébergement EU</div>
   </div>
