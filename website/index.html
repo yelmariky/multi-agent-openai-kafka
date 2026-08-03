@@ -365,8 +365,8 @@ footer {
       <h1>L'ESN <em>augmentée</em><br>par l'intelligence<br>artificielle</h1>
       <p class="hero-sub">
         Notes de frais en texte libre, CRA mensuel, factures PDF — automatisés par l'IA.
-        Workflows d'approbation, OCR, RAG documentaire et notifications temps réel,
-        le tout en multi-tenant Keycloak.
+        Workflows d'approbation, OCR, recherche intelligente dans vos documents et notifications temps réel,
+        complètement isolé pour chaque client.
       </p>
       <div class="hero-ctas">
         <a href="#cta" class="btn-p">Demander une démo</a>
@@ -375,7 +375,7 @@ footer {
       <div class="hero-trust">
         <div class="trust-i"><span class="trust-dot" style="background:var(--green)"></span>RGPD · Hébergement EU</div>
         <div class="trust-i"><span class="trust-dot" style="background:var(--blue)"></span>IA disponible 24/7</div>
-        <div class="trust-i"><span class="trust-dot" style="background:var(--amber)"></span>Multi-tenant Keycloak</div>
+        <div class="trust-i"><span class="trust-dot" style="background:var(--amber)"></span>Données isolées par client</div>
       </div>
     </div>
 
@@ -407,7 +407,7 @@ footer {
     </div>
     <div class="s-item">
       <div class="s-num n">∞</div>
-      <div class="s-desc">tenants supportés<br>realm-per-tenant Keycloak</div>
+      <div class="s-desc">clients supportés<br>Isolation complète de données</div>
     </div>
   </div>
 </div>
@@ -485,11 +485,11 @@ footer {
         </svg>
       </div>
       <h3>RAG &amp; Base documentaire</h3>
-      <p>Indexation vectorielle de vos documents RH, conventions collectives et politiques de remboursement. Réponses contextualisées avec citations de sources. Pipeline Groq + OpenAI avec fallback automatique et circuit breaker.</p>
+      <p>Indexez vos documents RH, conventions collectives et politiques de remboursement. L'IA les comprend et répond à vos questions avec références exactes. Deux moteurs IA en relève automatique pour garantir la disponibilité.</p>
       <div class="chips">
-        <span class="chip ch-ai">pgvector HNSW cosine</span>
-        <span class="chip ch-ai">Groq llama-4-scout-17b</span>
-        <span class="chip ch-ai">text-embedding-3-large</span>
+        <span class="chip ch-ai">Recherche sémantique</span>
+        <span class="chip ch-ai">IA redondante 24/7</span>
+        <span class="chip ch-ai">Citations de sources</span>
       </div>
     </div>
   </div>
@@ -540,25 +540,25 @@ footer {
 <!-- ═══════════════════ MULTI-TENANT ═══════════════════ -->
 <div class="tenant-bg" id="tenant">
   <div class="tenant-inner">
-    <div class="sec-head"><span class="sec-lbl">Multi-tenant · Architecture Keycloak</span></div>
+    <div class="sec-head"><span class="sec-lbl">Isolation &amp; Sécurité</span></div>
     <div class="tenant-grid">
 
       <div class="tc">
-        <h4>Realm-per-tenant Keycloak</h4>
-        <p>Chaque organisation dispose d'un realm Keycloak dédié. Isolation totale des utilisateurs, rôles et tokens entre clients. Provisioning automatique à l'onboarding.</p>
-        <div class="tc-code">realm: {slug}-esn<br>issuer: /realms/{slug}<br>JWT → TenantContext</div>
+        <h4>Espace complètement isolé</h4>
+        <p>Chaque client reçoit son propre espace sécurisé. Les utilisateurs, rôles et données d'une organisation ne sont jamais visibles pour une autre, même par erreur. Configuration automatique à la signature.</p>
+        <div class="tc-code">✓ Données complètement isolées<br>✓ Utilisateurs séparés par client<br>✓ Provisioning instantané</div>
       </div>
 
       <div class="tc">
-        <h4>URL slug &amp; TenantFilter</h4>
-        <p>Le <span class="ic">TenantFilter</span> intercepte chaque requête, résout l'organisation depuis le JWT, et injecte le tenant dans un ThreadLocal — transparent pour tous les services.</p>
-        <div class="tc-code">https://{slug}.ia-insight.fr/<br>→ Organization → tenant_id<br>→ toutes les requêtes JPA filtrées</div>
+        <h4>Domaine personnalisé</h4>
+        <p>Chaque client accède via son domaine unique. Tous les outils — notes de frais, CRA, factures — sont servis sous votre domaine, jamais chez nous. Vous contrôlez complètement l'URL que vos utilisateurs voient.</p>
+        <div class="tc-code">✓ https://votreentreprise.io/<br>✓ Branding personnalisé<br>✓ Audit des accès</div>
       </div>
 
       <div class="tc">
-        <h4>Console plateforme dédiée</h4>
-        <p>Les platform admins accèdent à une console centralisée (realm <span class="ic">platform</span>, rôle <span class="ic">platform_admin</span>) pour gérer les tenants, surveiller la consommation et configurer les quotas.</p>
-        <div class="tc-code">frontend-platform :3002<br>Kong → ai-service :8081<br>role: platform_admin</div>
+        <h4>Tableau de bord administrateur</h4>
+        <p>Console centralisée pour gérer vos clients, surveiller l'usage en temps réel, et configurer les limites de débit. Chaque administrateur voit uniquement ses données, jamais celles des autres organisations.</p>
+        <div class="tc-code">✓ Suivi de consommation<br>✓ Gestion des quotas<br>✓ Rapports audit</div>
       </div>
     </div>
   </div>
