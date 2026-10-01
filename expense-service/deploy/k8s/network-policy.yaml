@@ -1,0 +1,71 @@
+# NetworkPolicy — Isolation réseau pour expense-service
+# Seul Kong (namespace 'gateway') peut appeler expense-service en HTTP.
+# Tout autre pod (même dans le cluster) est bloqué au niveau réseau K8s.
+# Prérequis : le CNI doit supporter NetworkPolicy (Calico, Cilium, Weave).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: expense-service-ingress
+  namespace: multi-agent
+spec:
+  podSelector:
+    matchLabels:
+      app: expense-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Autoriser uniquement Kong (namespace gateway)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gateway
+      ports:
+        - protocol: TCP
+          port: 8082
+  egress:
+    # Kafka
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-system
+      ports:
+        - protocol: TCP
+          port: 9092
+    # Keycloak (validation JWT)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+    # PostgreSQL (namespace db)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: db
+      ports:
+        - protocol: TCP
+          port: 5432
+    # DNS K8s (obligatoire pour toute résolution de nom de service)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Groq / OpenAI API (internet — sortie vers n'importe quelle IP externe)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

@@ -33,13 +33,17 @@ async function initKeycloak() {
   });
 
   if (!authenticated) {
-    _keycloak.login();
+    _keycloak.login({ prompt: 'login' });
     return null;
   }
 
-  // Rafraichit le token 30s avant expiration
+  // Rafraichit le token 30s avant expiration. En cas d'échec (session expirée),
+  // prompt:'login' force la ré-authentification explicite — sans ça, Keycloak
+  // accepterait silencieusement toute session SSO active dans le navigateur pour
+  // ce realm (ex: un autre rôle connecté dans un autre onglet), faisant basculer
+  // cet onglet sur une identité différente sans que l'utilisateur s'en aperçoive.
   setInterval(() => {
-    _keycloak.updateToken(30).catch(() => _keycloak.login());
+    _keycloak.updateToken(30).catch(() => _keycloak.login({ prompt: 'login' }));
   }, 60000);
 
   return _keycloak;
@@ -1484,6 +1488,13 @@ async function generateOneInvoice(cra, cons, { clientName, clientAddress, client
 async function generateInvoiceOnValidation(cra, cons) {
   await loadSellerSettings();
 
+  // Anti-doublon : ce point d'entrée est appelé à la fois automatiquement (validation du CRA)
+  // et manuellement (bouton "📄 Générer la facture") — règle métier : jamais deux factures pour
+  // le même (mois, client). Si une regénération est demandée, on supprime l'ancienne d'abord.
+  // Exception : une facture déjà marquée Payée n'est jamais supprimée automatiquement (ça
+  // correspondrait à annuler un encaissement déjà enregistré) — on bloque et on alerte à la place.
+  const existingInvoices = await fetchExistingInvoicesForMonth(cra.billingMonth, cons.email);
+
   // Grouper les entries TRAVAIL par projectId
   const projectDays = {};
   for (const entry of (cra.entries || [])) {
@@ -1508,8 +1519,13 @@ async function generateInvoiceOnValidation(cra, cons) {
       const days = projectDays[projectId];
       const tjm  = parseFloat(assignment.tjm) || 0;
       if (tjm <= 0 || days <= 0) continue;
+      const clientName = assignment.client?.name || '';
+      if (!(await replaceExistingInvoicesForClient(existingInvoices, clientName, cra.billingMonth))) {
+        generated++; // bloqué par une facture payée — traité, ne pas retomber sur le fallback
+        continue;
+      }
       await generateOneInvoice(cra, cons, {
-        clientName:    assignment.client?.name    || '',
+        clientName,
         clientAddress: assignment.client?.address || '',
         clientRcs:     assignment.client?.rcs     || '',
         projectName:   assignment.project?.name   || '',
@@ -1525,14 +1541,61 @@ async function generateInvoiceOnValidation(cra, cons) {
   const tjm  = parseFloat(cons.tjm) || 0;
   const days = parseFloat(cra.totalDays) || 0;
   if (tjm <= 0 || days <= 0) return;
+  const clientNameFallback = (cons.clientName || '').trim() || (cra.clientCompany || '').trim();
+  if (!(await replaceExistingInvoicesForClient(existingInvoices, clientNameFallback, cra.billingMonth))) return;
   await generateOneInvoice(cra, cons, {
-    clientName:    (cons.clientName || '').trim() || (cra.clientCompany || '').trim(),
+    clientName:    clientNameFallback,
     clientAddress: cons.clientAddress || '',
     clientRcs:     cons.clientRcs     || '',
     projectName:   '',
     tjm,
     days,
   });
+}
+
+/** Renvoie toutes les factures existantes pour ce consultant/mois. */
+async function fetchExistingInvoicesForMonth(billingMonth, consultantEmail) {
+  try {
+    const p = new URLSearchParams({ start: billingMonth, end: billingMonth });
+    if (consultantEmail) p.set('consultantEmail', consultantEmail);
+    const res = await fetch(`${invoiceBase()}/invoices/report?${p}`, { headers: adminHeaders() });
+    if (!res.ok) return [];
+    return (await res.json()) || [];
+  } catch {
+    return []; // non-bloquant : en cas d'échec de la vérification, on laisse la génération continuer
+  }
+}
+
+/**
+ * Supprime les factures existantes pour (client, mois) avant régénération.
+ * Retourne false (et bloque la génération) si l'une d'elles est déjà marquée Payée.
+ */
+async function replaceExistingInvoicesForClient(existingInvoices, clientName, billingMonth) {
+  const norm = clientName.trim().toLowerCase();
+  const matches = existingInvoices.filter(i => (i.clientCompanyName || '').trim().toLowerCase() === norm);
+  if (!matches.length) return true;
+
+  const paid = matches.find(i => i.paymentStatus === 'PAYEE');
+  if (paid) {
+    showToast(`Facture ${paid.invoiceName} déjà payée pour ${clientName} (${billingMonth}) — génération bloquée, traitez-la manuellement.`, 'err');
+    return false;
+  }
+
+  for (const inv of matches) {
+    try {
+      await fetch(`${invoiceBase()}/invoices/delete`, {
+        method:  'POST',
+        headers: adminHeaders(),
+        body: JSON.stringify({
+          invoiceName:       inv.invoiceName       || '',
+          billingMonth:      inv.billingMonth       || '',
+          sellerCompanyName: inv.sellerCompanyName  || '',
+        }),
+      });
+    } catch { /* non-bloquant */ }
+  }
+  showToast(`Facture existante pour ${clientName} (${billingMonth}) remplacée.`, '');
+  return true;
 }
 
 /**
@@ -1773,6 +1836,7 @@ async function loadConsNotes(cons) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data  = await res.json();
     const expenses = Array.isArray(data) ? data : (data.expenses || []);
+    expenses.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     loadedExpenses = expenses;
 
     if (!expenses.length) {
@@ -1797,6 +1861,39 @@ async function loadConsNotes(cons) {
   } catch (e) {
     setStatus(statusEl, 'Erreur : ' + e.message, 'err');
   }
+}
+
+async function viewReceipt(expenseId) {
+  if (!expenseId) return;
+  try {
+    const res = await fetch(`${base()}/expenses/${expenseId}/receipt`, { headers: authHeaders() });
+    if (!res.ok) { showToast('Justificatif introuvable.', 'err'); return; }
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    if (blob.type === 'application/pdf') {
+      window.open(objUrl, '_blank');
+    } else {
+      showReceiptModal(objUrl);
+    }
+  } catch (e) {
+    showToast('Erreur lors du chargement du justificatif : ' + e.message, 'err');
+  }
+}
+
+function showReceiptModal(imageUrl) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;'
+    + 'align-items:center;justify-content:center;z-index:9999;padding:24px';
+  overlay.innerHTML = `
+    <div style="position:relative;max-width:90vw;max-height:90vh">
+      <img src="${imageUrl}" alt="Justificatif" style="max-width:90vw;max-height:90vh;border-radius:8px;display:block">
+      <button type="button" aria-label="Fermer" style="position:absolute;top:-14px;right:-14px;width:32px;height:32px;
+        border-radius:50%;border:none;background:#fff;color:#111;font-size:16px;cursor:pointer">✕</button>
+    </div>`;
+  const close = () => { overlay.remove(); URL.revokeObjectURL(imageUrl); };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay || e.target.tagName === 'BUTTON') close(); });
+  document.addEventListener('keydown', function onEsc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } });
+  document.body.appendChild(overlay);
 }
 
 function renderExpenseList(expenses) {
@@ -1829,11 +1926,13 @@ function renderExpenseList(expenses) {
     return `
       <div class="approval-row">
         <div class="approval-meta">
-          <span class="approval-name">${escapeHtml(exp.date || '—')} — ${escapeHtml(exp.type || '—')}</span>
+          <span class="approval-name">${escapeHtml(exp.date || '—')} — ${escapeHtml(exp.type || '—')}${exp.km != null ? ` (${Number(exp.km).toFixed(0)} km)` : ''}</span>
+          ${(exp.company || exp.address) ? `<span class="approval-place">${escapeHtml(exp.company || '—')}${exp.address ? ' · ' + escapeHtml(exp.address) : ''}</span>` : ''}
           <span class="approval-detail">${escapeHtml(exp.description || '—')}</span>
         </div>
         <div class="approval-right">
           <span class="approval-amount">${exp.amount != null ? Number(exp.amount).toFixed(2) + ' ' + (exp.currency || 'EUR') : '—'}</span>
+          ${exp.hasReceipt && expenseId ? `<button type="button" class="btn-view-receipt" data-id="${escapeHtml(expenseId)}" title="Voir le justificatif">📎 Justificatif</button>` : ''}
           <span class="approval-mode">${escapeHtml(exp.paymentMode || '')}</span>
           ${badge}
           ${approvalStatus === 'REFUSED' && exp.approvalNote ? `<p class="refused-reason">${escapeHtml(exp.approvalNote)}</p>` : ''}
@@ -1844,6 +1943,10 @@ function renderExpenseList(expenses) {
 }
 
 function wireExpenseActions(container, cons) {
+  container.querySelectorAll('.btn-view-receipt').forEach(btn => {
+    btn.addEventListener('click', () => viewReceipt(btn.dataset.id));
+  });
+
   container.querySelectorAll('.btn-approve').forEach(btn => {
     btn.addEventListener('click', async () => {
       const expenseId = btn.dataset.id;
@@ -1907,18 +2010,37 @@ async function approveAllNotes(cons) {
   loadDetailKpis(cons);
 }
 
-function downloadNotesPdf(cons) {
+async function downloadNotesPdf(cons) {
   const month = document.getElementById('cons-notes-month').value;
   if (!month) { showToast('Sélectionnez un mois.', 'err'); return; }
   const p = new URLSearchParams({ month, consultantEmail: cons.email });
-  window.open(`${base()}/expenses/report/pdf/month?${p}`, '_blank');
+  await downloadAuthedFile(`${base()}/expenses/report/pdf/month?${p}`, `notes-${cons.email}-${month}.pdf`);
 }
 
-function downloadNotesExcel(cons) {
+async function downloadNotesExcel(cons) {
   const month = document.getElementById('cons-notes-month').value;
   if (!month) { showToast('Sélectionnez un mois.', 'err'); return; }
-  const p = new URLSearchParams({ month, consultantEmail: cons.email });
-  window.open(`${base()}/expenses/report/excel?${p}`, '_blank');
+  const [y, mo] = month.split('-').map(Number);
+  const start = `${month}-01`;
+  const end   = `${month}-${new Date(y, mo, 0).getDate()}`;
+  const p = new URLSearchParams({ start, end, consultantEmail: cons.email });
+  await downloadAuthedFile(`${base()}/expenses/report/excel?${p}`, `notes-${cons.email}-${month}.xlsx`);
+}
+
+/** Télécharge un fichier depuis un endpoint protégé (window.open n'envoie pas le Bearer token). */
+async function downloadAuthedFile(url, filename) {
+  try {
+    const res = await fetch(url, { headers: adminHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const link = document.createElement('a');
+    link.href     = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (e) {
+    showToast('Erreur téléchargement : ' + e.message, 'err');
+  }
 }
 
 // ============================================================

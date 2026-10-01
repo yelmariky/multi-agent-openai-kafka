@@ -88,8 +88,6 @@ data:
           - name: ai-core-routes
             paths:
               - /reasoning
-              - /expenses
-              - /receipts
               - /cra
               - /admin
               - /settings
@@ -97,7 +95,7 @@ data:
               - /platform
             strip_path: false
             preserve_host: true
-        plugins:
+        plugins: &default-plugins
           # --- Validation JWT ---
           # En prod : remplacer par le plugin OIDC ou configurer les consumers avec la clé publique Keycloak.
           # En dev : commenter ce bloc pour désactiver la validation JWT.
@@ -105,10 +103,8 @@ data:
             config:
               secret_is_base64: false
               key_claim_name: iss
-              # Algorithmes acceptés (Keycloak utilise RS256 par défaut)
-              algorithms:
-                - RS256
-                - HS256
+              # L'algorithme (RS256 pour Keycloak) se configure par credential consumer
+              # (POST /consumers/{id}/jwt {"algorithm":"RS256",...}), pas au niveau du plugin.
           # --- Rate limiting — protection contre les abus ---
           - name: rate-limiting
             config:
@@ -142,6 +138,21 @@ data:
               add:
                 headers:
                   - "X-Gateway: kong"
+
+      - name: expense-service
+        # Route interne K8s vers expense-service (notes de frais, OCR, saisie texte libre)
+        url: http://expense-service.multi-agent.svc.cluster.local:8082
+        connect_timeout: 60000
+        write_timeout: 60000
+        read_timeout: 60000
+        routes:
+          - name: expense-service-routes
+            paths:
+              - /expenses
+              - /receipts
+            strip_path: false
+            preserve_host: true
+        plugins: *default-plugins
 
     # Les consumers JWT sont configurés dynamiquement via l'Admin API Kong
     # ou via le plugin OIDC avec Keycloak (découverte automatique).

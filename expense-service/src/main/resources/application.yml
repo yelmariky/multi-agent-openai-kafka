@@ -22,6 +22,14 @@ spring:
     multipart:
       max-file-size: 8MB
       max-request-size: 8MB
+  mvc:
+    async:
+      # Défaut Spring (30s) trop court : le retry Groq seul peut consommer ~22s
+      # (voir LLMAIClient — 4 tentatives, backoff exponentiel) avant même de basculer
+      # sur le fallback OpenAI, qui a lui-même besoin de temps (+ OCR/Vision en amont
+      # pour /receipts/upload). Sans marge, le fallback est tué par AsyncRequestTimeoutException
+      # avant d'avoir pu répondre.
+      request-timeout: ${SPRING_MVC_ASYNC_TIMEOUT_MS:60000}
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka.agent-system.svc.cluster.local:9092}
     producer:

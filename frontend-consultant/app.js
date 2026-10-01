@@ -24,13 +24,17 @@ async function initKeycloak() {
   });
 
   if (!authenticated) {
-    _keycloak.login();
+    _keycloak.login({ prompt: 'login' });
     return null;
   }
 
-  // Rafraîchit le token 30s avant expiration
+  // Rafraîchit le token 30s avant expiration. En cas d'échec (session expirée),
+  // prompt:'login' force la ré-authentification explicite — sans ça, Keycloak
+  // accepterait silencieusement toute session SSO active dans le navigateur pour
+  // ce realm (ex: un autre rôle connecté dans un autre onglet), faisant basculer
+  // cet onglet sur une identité différente sans que l'utilisateur s'en aperçoive.
   setInterval(() => {
-    _keycloak.updateToken(30).catch(() => _keycloak.login());
+    _keycloak.updateToken(30).catch(() => _keycloak.login({ prompt: 'login' }));
   }, 60000);
 
   return _keycloak;
@@ -448,6 +452,7 @@ const CRA_READONLY = () => craStatus === 'SOUMIS' || craStatus === 'VALIDE';
 async function initCra(user) {
   currentUser = user;
   document.getElementById('cra-load').addEventListener('click',             () => loadCra(user));
+  document.getElementById('cra-prefill').addEventListener('click',          prefillCra);
   document.getElementById('cra-save').addEventListener('click',             () => saveCra('/cra/save'));
   document.getElementById('cra-submit').addEventListener('click',           submitCra);
   document.getElementById('cra-recall').addEventListener('click',           () => recallCra(user));
@@ -1179,6 +1184,44 @@ function renderCraGrid() {
   refreshProjectDays();
 }
 
+function prefillCra() {
+  if (CRA_READONLY() || !currentSelectedProjectId) return;
+  const monthStr = document.getElementById('cra-month')?.value;
+  if (!monthStr || !allProjectEntries[currentSelectedProjectId]) return;
+
+  const [y, m] = monthStr.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const holidays = craHolidays(y);
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = new Date(y, m - 1, d).getDay();
+    if (dow === 0 || dow === 6) continue; // weekend
+    const dateStr = `${y}-${pad(m)}-${pad(d)}`;
+    if (holidays.has(dateStr)) continue; // férié
+
+    const e = allProjectEntries[currentSelectedProjectId][dateStr];
+    if (!e || e.type !== 'EMPTY') continue; // déjà saisi — on ne touche pas
+
+    const absVal = allProjectEntries['__ABSENCE__']?.[dateStr]?.value || 0;
+    const otherSum = craProjects
+      .filter(p => p.id !== currentSelectedProjectId)
+      .reduce((s, p) => {
+        const oe = (allProjectEntries[p.id] || {})[dateStr];
+        return s + (oe?.type === 'TRAVAIL' ? oe.value : 0);
+      }, 0);
+    const budget = 1 - otherSum - absVal;
+
+    if (budget >= 1) {
+      allProjectEntries[currentSelectedProjectId][dateStr] = { value: 1, type: 'TRAVAIL' };
+    } else if (budget >= 0.5) {
+      allProjectEntries[currentSelectedProjectId][dateStr] = { value: 0.5, type: 'TRAVAIL' };
+    }
+  }
+
+  craEntries = allProjectEntries[currentSelectedProjectId] || {};
+  renderCraGrid();
+}
+
 function updateCraTotal() { updateCraProgress(); }
 
 function updateCraProgress() {
@@ -1269,6 +1312,8 @@ function updateCraButtons() {
     submitBtn.title = '';
   }
   document.getElementById('cra-save').disabled        = CRA_READONLY();
+  const prefillBtn = document.getElementById('cra-prefill');
+  if (prefillBtn) prefillBtn.disabled = CRA_READONLY();
   // Masquer barre de progression et légende quand CRA non modifiable (VALIDE / CLOTURE)
   const isReadonlyFinal = effectiveStatus === 'VALIDE' || effectiveStatus === 'CLOTURE';
   const progressWrap = document.getElementById('cra-progress-wrap');
@@ -1618,25 +1663,117 @@ let notesAbsences = []; // [{ from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' }]
 
 function initNotes(user) {
   document.getElementById('notes-load-absences').addEventListener('click', () => loadAbsencesForNotes(user));
-  document.getElementById('notes-submit').addEventListener('click',        () => submitNotesSaisie(user));
-  document.getElementById('notes-upload-btn').addEventListener('click',    () => uploadJustificatif(user));
+  document.getElementById('notes-submit').addEventListener('click',        () => analyzeReceipt(user));
+  document.getElementById('notes-confirm').addEventListener('click',       () => confirmExpenseCreation(user));
+  document.getElementById('notes-cancel').addEventListener('click',        () => cancelExpensePreview());
   document.getElementById('notes-report-load').addEventListener('click',   () => loadNotesReport(user));
   document.getElementById('notes-report-pdf').addEventListener('click',    () => downloadNotesReport('pdf',   user));
   document.getElementById('notes-report-excel').addEventListener('click',  () => downloadNotesReport('excel', user));
 
-  // Exemples express — pré-remplissent le textarea
-  document.querySelectorAll('.btn-example').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const textarea = document.getElementById('notes-text');
-      const tpl = btn.dataset.exampleTpl;
-      const currentMonth = new Date().toLocaleString('fr-FR', { month: 'long' });
-      textarea.value = tpl
-        ? tpl.replace('{month}', currentMonth).replace('{company}', tenantName())
-        : btn.dataset.example;
-      textarea.focus();
-      textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
+  // Bouton "Analyser le justificatif" grisé tant qu'aucun fichier n'est joint (motif optionnel)
+  document.getElementById('notes-file').addEventListener('change', () => {
+    validateNotesFileClientSide();
+    updateNotesSubmitState();
   });
+  updateNotesSubmitState();
+
+  // Frais kilométriques — formulaire dédié, sans justificatif
+  document.getElementById('km-submit').addEventListener('click', () => submitKmExpense(user));
+  document.getElementById('km-distance').addEventListener('input', updateKmSubmitState);
+  document.getElementById('km-frequence').addEventListener('change', () => {
+    const monthly = document.getElementById('km-frequence').value === 'mensuel';
+    document.getElementById('km-mois-wrap').style.display = monthly ? '' : 'none';
+    document.getElementById('km-date-wrap').style.display  = monthly ? 'none' : '';
+    updateKmSubmitState();
+  });
+  updateKmSubmitState();
+}
+
+function updateNotesSubmitState() {
+  const hasFile = document.getElementById('notes-file').files?.length > 0;
+  document.getElementById('notes-submit').disabled = !hasFile;
+}
+
+const NOTES_ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
+const NOTES_MAX_FILE_SIZE = 8 * 1024 * 1024; // 8 Mo — aligné avec le backend (spring.servlet.multipart.max-file-size)
+
+function validateNotesFileClientSide() {
+  const fileInput = document.getElementById('notes-file');
+  const statusEl  = document.getElementById('notes-status');
+  const file = fileInput.files?.[0];
+  if (!file) return true;
+
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!NOTES_ALLOWED_EXTENSIONS.includes(ext)) {
+    setStatus(statusEl, 'Format non autorisé — seuls les fichiers PDF, JPG et PNG sont acceptés.', 'err');
+    fileInput.value = '';
+    return false;
+  }
+  if (file.size > NOTES_MAX_FILE_SIZE) {
+    setStatus(statusEl, 'Fichier trop volumineux (8 Mo maximum).', 'err');
+    fileInput.value = '';
+    return false;
+  }
+  setStatus(statusEl, '');
+  return true;
+}
+
+function updateKmSubmitState() {
+  const km = parseFloat(document.getElementById('km-distance').value);
+  document.getElementById('km-submit').disabled = !(km > 0);
+}
+
+async function submitKmExpense(user) {
+  const distanceEl  = document.getElementById('km-distance');
+  const trajetEl    = document.getElementById('km-trajet');
+  const allerRetour = document.getElementById('km-aller-retour').checked;
+  const frequence   = document.getElementById('km-frequence').value;
+  const statusEl    = document.getElementById('km-status');
+
+  const km = parseFloat(distanceEl.value);
+  if (!(km > 0)) { setStatus(statusEl, 'Indiquez une distance en km.', 'err'); return; }
+
+  const trajet = trajetEl.value.trim();
+  const trajetSuffix = trajet ? ` (${trajet})` : '';
+  const arText = allerRetour ? 'aller-retour ' : '';
+
+  let text;
+  if (frequence === 'mensuel') {
+    const monthInput = document.getElementById('notes-km-month');
+    if (!monthInput.value) { setStatus(statusEl, 'Sélectionnez un mois.', 'err'); return; }
+    const [y, m] = monthInput.value.split('-').map(Number);
+    const moisLisible = new Date(y, m - 1, 1).toLocaleString('fr-FR', { month: 'long' }) + ' ' + y;
+    text = `Frais kilométriques ${moisLisible} : ${km} km ${arText}par jour${trajetSuffix}`;
+    text += buildAbsenceInjection();
+  } else {
+    const dateEl = document.getElementById('km-date');
+    if (!dateEl.value) { setStatus(statusEl, 'Sélectionnez une date.', 'err'); return; }
+    text = `Frais kilométriques le ${dateEl.value} : ${km} km ${arText}${trajetSuffix}`;
+  }
+
+  const paymentMode = document.getElementById('km-payment-mode').value;
+
+  setStatus(statusEl, 'Création en cours…');
+  try {
+    const res = await fetch(`${base()}/reasoning/analyze`, {
+      method:  'POST',
+      headers: { ...authHeaders(), 'X-Source': 'consultant-frontend' },
+      body:    JSON.stringify({ text, consultantEmail: user.email, paymentMode }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setStatus(statusEl, body.error || ('Erreur serveur (' + res.status + ')'), 'err');
+      return;
+    }
+    await res.json();
+    showToast('Note de frais kilométrique enregistrée.', 'ok');
+    setStatus(statusEl, '');
+    distanceEl.value = '';
+    trajetEl.value = '';
+    updateKmSubmitState();
+  } catch (e) {
+    setStatus(statusEl, 'Erreur lors de l\'enregistrement. Réessayez ou contactez votre administrateur.', 'err');
+  }
 }
 
 async function loadNotesReport(user) {
@@ -1657,6 +1794,7 @@ async function loadNotesReport(user) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data     = await res.json();
     const expenses = Array.isArray(data) ? data : (data.expenses || []);
+    expenses.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
 
     const kpisEl = document.getElementById('notes-report-kpis');
     if (!expenses.length) {
@@ -1714,13 +1852,20 @@ function renderConsultantExpenses(expenses) {
     const refusalNote = exp.approvalStatus === 'REFUSED' && exp.approvalNote
       ? `<span class="cell-sub refused-reason" style="font-style:italic">Motif : ${escapeHtml(exp.approvalNote)}</span>`
       : '';
-    const typeLabel = (exp.type || '—').replace(/_/g, ' ');
+    const typeLabel = (exp.type || '—').replace(/_/g, ' ') + (exp.km != null ? ` (${Number(exp.km).toFixed(0)} km)` : '');
+    const place = (exp.company || exp.address)
+      ? `<span class="cell-sub" style="font-size:11px;color:var(--muted)">${escapeHtml(exp.company || '—')}${exp.address ? ' · ' + escapeHtml(exp.address) : ''}</span>`
+      : '';
+    const paymentLabel = (exp.paymentMode || '').toLowerCase().includes('business') ? 'Paiement : Business' : 'Paiement : Personnel';
+    const payment = `<span class="cell-sub" style="font-size:11px;color:var(--muted)">💳 ${escapeHtml(paymentLabel)}</span>`;
     html += `
       <div class="data-list-row" style="grid-template-columns:${COLS}">
         <span style="font-size:12px;font-weight:600;color:var(--accent-2)">${escapeHtml(exp.date || '—')}</span>
         <span class="expense-type-cell">${escapeHtml(typeLabel)}</span>
         <div class="cell-primary">
           <span class="cell-name" style="font-size:13px;font-weight:500">${escapeHtml(exp.description || '')}</span>
+          ${place}
+          ${payment}
           ${refusalNote}
         </div>
         <span class="cell-amount">${escapeHtml(amount)}</span>
@@ -1927,71 +2072,15 @@ function buildAbsenceInjection() {
   return ' [absences: ' + lines.join(', ') + ']';
 }
 
-// Mots-clés bloqués côté client avant même d'appeler le serveur.
-// Double protection : le serveur bloque aussi, mais on évite l'appel réseau inutile.
-// Note : "facture" seul n'est PAS bloqué car un consultant peut écrire
-// "j'ai payé une facture de taxi/restaurant" — c'est une note de frais légitime.
-const EXPENSE_BLOCKED_PATTERNS = [
-  // Verbes destructifs FR
-  /\b(supprim|effac|enlev|retir|vider|détruir|nettoy|écras)/i,
-  // Verbes destructifs EN
-  /\b(delete|remove|erase|wipe|destroy|drop|truncate|purge)\b/i,
-  // Gestion de factures en masse (pas "une facture de restaurant")
-  /\bfactures\b.{0,40}(du mois|de mai|de juin|de janvier|de f[eé]vrier|de mars|d'avril|de juillet|d'ao[uû]t|de septembre|d'octobre|de novembre|de d[eé]cembre|\d{4})/i,
-  /\b(toutes?|tous?)\s+(les|des)\s+(factures?|invoices?|clients?|utilisateurs?|comptes?|consultants?)\b/i,
-];
-
-function isBlockedExpenseInput(text) {
-  return EXPENSE_BLOCKED_PATTERNS.some(p => p.test(text));
-}
-
-async function submitNotesSaisie(user) {
-  const textEl   = document.getElementById('notes-text');
-  const statusEl = document.getElementById('notes-status');
-  const resultEl = document.getElementById('notes-result');
-  const text     = textEl.value.trim();
-
-  if (!text) { setStatus(statusEl, 'Saisissez un texte.', 'err'); return; }
-
-  // ── Garde client : rejeter les saisies hors périmètre sans appel serveur ──
-  if (isBlockedExpenseInput(text)) {
-    setStatus(statusEl,
-      'Saisie non autorisée. Ce champ accepte uniquement des notes de frais (repas, transport, hébergement…). ' +
-      'Les suppressions et les opérations sur les factures ne sont pas acceptées ici.', 'err');
-    return;
-  }
-
-  const fullText = text + buildAbsenceInjection();
-  setStatus(statusEl, 'Analyse en cours…');
-  resultEl.style.display = 'none';
-
-  try {
-    const res = await fetch(`${base()}/reasoning/analyze`, {
-      method:  'POST',
-      headers: { ...authHeaders(), 'X-Source': 'consultant-frontend' },
-      body:    JSON.stringify({ text: fullText, consultantEmail: user.email }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      const msg  = body.error || ('Erreur serveur (' + res.status + ')');
-      setStatus(statusEl, msg, 'err');
-      return;
-    }
-    await res.json();
-    showToast('Note de frais enregistrée avec succès.', 'ok');
-    setStatus(statusEl, '');
-    textEl.value = '';
-  } catch (e) {
-    setStatus(statusEl, 'Erreur lors de l\'enregistrement. Réessayez ou contactez votre administrateur.', 'err');
-  }
-}
-
-async function uploadJustificatif(user) {
+// Étape 1 : upload du justificatif → extraction, sans création. Remplit l'aperçu éditable.
+async function analyzeReceipt(user) {
   const fileInput = document.getElementById('notes-file');
   const modeEl    = document.getElementById('notes-payment-mode');
-  const statusEl  = document.getElementById('notes-upload-status');
+  const statusEl  = document.getElementById('notes-status');
+  const resultEl  = document.getElementById('notes-result');
 
   if (!fileInput.files?.length) { setStatus(statusEl, 'Sélectionnez un fichier.', 'err'); return; }
+  if (!validateNotesFileClientSide()) return;
 
   const fd = new FormData();
   fd.append('file', fileInput.files[0]);
@@ -1999,6 +2088,7 @@ async function uploadJustificatif(user) {
   fd.append('consultantEmail', user.email);
 
   setStatus(statusEl, 'Analyse du justificatif en cours… (peut prendre quelques secondes)');
+  resultEl.style.display = 'none';
 
   try {
     const token = _keycloak?.token;
@@ -2010,29 +2100,101 @@ async function uploadJustificatif(user) {
     if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
     const data = await res.json();
 
-    // Déterminer le mois de la dépense créée (date extraite ou mois courant)
-    let expenseMonth = null;
-    try {
-      const expJson = data?.extractedExpenseJson ? JSON.parse(data.extractedExpenseJson) : null;
-      if (expJson?.date) expenseMonth = expJson.date.substring(0, 7); // YYYY-MM
-    } catch { /* ignore */ }
-    if (!expenseMonth) expenseMonth = new Date().toISOString().substring(0, 7);
+    if (data.success === false) {
+      setStatus(statusEl, data.reason || 'Impossible d\'analyser ce document.', 'err');
+      return;
+    }
 
-    showToast('Justificatif traité — note de frais créée pour ' + expenseMonth + '.', 'ok');
+    let expJson = null;
+    try { expJson = data?.extractedExpenseJson ? JSON.parse(data.extractedExpenseJson) : null; } catch { /* ignore */ }
+
+    resultEl.dataset.receiptId = data.id;
+    document.getElementById('preview-type').value        = expJson?.type || '';
+    document.getElementById('preview-amount').value       = expJson?.amount ?? '';
+    document.getElementById('preview-currency').value     = expJson?.currency || 'EUR';
+    document.getElementById('preview-date').value          = (expJson?.date || '').substring(0, 10);
+    document.getElementById('preview-company').value      = expJson?.company || '';
+    document.getElementById('preview-address').value      = expJson?.address || '';
+    document.getElementById('preview-description').value  = expJson?.description || '';
+    // Le choix explicite du consultant (menu déroulant du haut) prime sur l'extraction du document —
+    // un ticket ne précise jamais Personnel/Business, l'extraction retombe donc presque toujours sur
+    // "Personnel" par défaut et écraserait sinon systématiquement le choix réel du consultant.
+    document.getElementById('preview-payment-mode').value = modeEl.value || expJson?.paymentMode || 'Personnel';
+    resultEl.style.display = '';
+    setStatus(statusEl, 'Vérifiez et corrigez les informations extraites si besoin, puis confirmez.', 'ok');
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (e) {
+    setStatus(statusEl, 'Erreur lors de l\'upload : ' + e.message + '. Réessayez.', 'err');
+  }
+}
+
+// Étape 2 : confirmation de l'aperçu (éventuellement édité) → création effective.
+async function confirmExpenseCreation(user) {
+  const resultEl  = document.getElementById('notes-result');
+  const statusEl  = document.getElementById('notes-status');
+  const textEl    = document.getElementById('notes-text');
+  const fileInput = document.getElementById('notes-file');
+  const receiptId = resultEl.dataset.receiptId;
+
+  if (!receiptId) { setStatus(statusEl, 'Analysez d\'abord un justificatif.', 'err'); return; }
+
+  const amount = parseFloat(document.getElementById('preview-amount').value);
+  if (!(amount > 0)) { setStatus(statusEl, 'Le montant doit être supérieur à 0.', 'err'); return; }
+
+  const payload = {
+    id: receiptId,
+    type: document.getElementById('preview-type').value.trim(),
+    amount,
+    currency: document.getElementById('preview-currency').value.trim() || 'EUR',
+    date: document.getElementById('preview-date').value,
+    company: document.getElementById('preview-company').value.trim(),
+    address: document.getElementById('preview-address').value.trim(),
+    description: document.getElementById('preview-description').value.trim(),
+    motif: textEl.value.trim(),
+    paymentMode: document.getElementById('preview-payment-mode').value,
+    consultantEmail: user.email,
+  };
+
+  setStatus(statusEl, 'Enregistrement…');
+  try {
+    const res = await fetch(`${base()}/receipts/confirm`, {
+      method:  'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
+    const data = await res.json();
+
+    if (data.success === false) {
+      setStatus(statusEl, data.reason || 'Impossible de créer cette note de frais.', 'err');
+      return;
+    }
+
+    const expenseMonth = (payload.date || '').substring(0, 7) || new Date().toISOString().substring(0, 7);
+    showToast('Note de frais créée pour ' + expenseMonth + '.', 'ok');
+    cancelExpensePreview();
     setStatus(statusEl, '');
     fileInput.value = '';
+    textEl.value = '';
+    updateNotesSubmitState();
 
     // Auto-charger le rapport du mois de la dépense créée
     const monthInput = document.getElementById('notes-report-month');
     if (monthInput) {
       monthInput.value = expenseMonth;
-      // Scroll vers le rapport et charger
       monthInput.closest('.card')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       await loadNotesReport(user);
     }
   } catch (e) {
-    setStatus(statusEl, 'Erreur lors de l\'upload : ' + e.message + '. Réessayez.', 'err');
+    setStatus(statusEl, 'Erreur lors de l\'enregistrement : ' + e.message + '. Réessayez.', 'err');
   }
+}
+
+function cancelExpensePreview() {
+  const resultEl = document.getElementById('notes-result');
+  resultEl.style.display = 'none';
+  delete resultEl.dataset.receiptId;
+  document.getElementById('notes-status').textContent = '';
 }
 
 async function downloadNotesReport(format, user) {

@@ -29,6 +29,10 @@ public class ReasoningService {
     }
 
     public ReasoningResult process(String userText, String consultantEmail) {
+        return process(userText, consultantEmail, null);
+    }
+
+    public ReasoningResult process(String userText, String consultantEmail, String paymentModeOverride) {
         IntentResult intent = tryParseIntent(userText);
         String raw;
         if (intent == null) {
@@ -49,7 +53,7 @@ public class ReasoningService {
         return switch (intent.getIntent()) {
 
             // 🔵 Pipeline création d’une note de frais
-            case "create_expense" -> ragService.extractSingleExpense(raw, intent, consultantEmail);
+            case "create_expense" -> ragService.extractSingleExpense(raw, intent, consultantEmail, paymentModeOverride);
 
             // 🟢 Pipeline génération d’un rapport
             case "generate_expense_report" -> ragService.extractExpenseReport(raw, intent);

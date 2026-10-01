@@ -70,8 +70,13 @@ public class SecurityConfig {
                 // Chatbot du site vitrine — anonyme, protégé par PromptGuard + rate-limit IP (ChatbotService)
                 .requestMatchers(HttpMethod.POST, "/public/chatbot").permitAll()
                 .requestMatchers("/admin/notifications/stream", "/consultant/notifications/stream").permitAll()
+                // Serveur MCP (systèmes externes) — auth par clé API dédiée, voir McpApiKeyFilter.
+                // Transport SSE (spring-ai-starter-mcp-server-webmvc) : deux endpoints distincts —
+                // GET /sse (établit le flux) et POST /mcp/message (envoie les messages JSON-RPC).
+                .requestMatchers("/mcp/**", "/sse").permitAll()
                 .requestMatchers("/admin/notifications/**").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers(HttpMethod.POST, "/expenses/approve", "/expenses/refuse").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
+                .requestMatchers(HttpMethod.GET, "/expenses/*/receipt").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers(HttpMethod.POST, "/cra/validate", "/cra/refuse", "/cra/reopen").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers(HttpMethod.POST, "/invoices/delete").hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.POST, "/consultants/invite").hasRole(ROLE_ADMIN)

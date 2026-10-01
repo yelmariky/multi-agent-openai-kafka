@@ -70,6 +70,7 @@ public class SecurityConfig {
                 .requestMatchers("/admin/notifications/stream", "/consultant/notifications/stream").permitAll()
                 .requestMatchers("/admin/notifications/**").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers(HttpMethod.POST, "/expenses/approve", "/expenses/refuse").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
+                .requestMatchers(HttpMethod.GET, "/expenses/*/receipt").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers(HttpMethod.POST, "/cra/validate", "/cra/refuse", "/cra/reopen").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers(HttpMethod.POST, "/invoices/delete").hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.POST, "/consultants/invite").hasRole(ROLE_ADMIN)

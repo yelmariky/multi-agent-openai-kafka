@@ -29,7 +29,9 @@ public class TenantFilter extends OncePerRequestFilter {
     private static final Set<String> PUBLIC_PATHS = Set.of(
             "/actuator",
             "/admin/notifications/stream",
-            "/consultant/notifications/stream"
+            "/consultant/notifications/stream",
+            "/mcp", // auth par clé API (McpApiKeyFilter), pas de JWT — géré séparément
+            "/sse"  // endpoint SSE du serveur MCP (spring-ai-starter-mcp-server-webmvc)
     );
 
     private final OrganizationRepository organizationRepository;

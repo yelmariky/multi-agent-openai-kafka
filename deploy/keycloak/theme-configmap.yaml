@@ -271,6 +271,33 @@ data:
       margin-top: 16px !important;
     }
 
+    /* ── PAGES "INFO" (ex: already logged in / prompt=login) ──
+       Ces pages utilisent info.ftl, pas login.ftl : les ids ciblés plus haut
+       (#kc-content-wrapper, #kc-content::before/::after) n'y existent pas
+       forcément, laissant la carte Patternfly blanche par défaut — on
+       étend donc les mêmes règles à son conteneur générique. */
+    .card-pf {
+      background: var(--card) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--r) !important;
+      box-shadow: 0 8px 40px rgba(0,0,0,.5) !important;
+      padding: 32px !important;
+      color: var(--fg) !important;
+    }
+    .card-pf .instruction,
+    .card-pf p {
+      color: var(--fg) !important;
+      font-size: 14px !important;
+      line-height: 1.6 !important;
+      margin-bottom: 8px !important;
+    }
+    /* Le lien "log in as a different user" doit rester bien visible ici */
+    .card-pf a, .card-pf a:visited {
+      color: var(--accent) !important;
+      font-weight: 600 !important;
+      text-decoration: underline !important;
+    }
+
     /* ── SCROLLBAR ── */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: var(--bg); }

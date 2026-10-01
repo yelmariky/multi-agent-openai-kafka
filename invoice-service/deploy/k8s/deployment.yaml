@@ -25,6 +25,13 @@ spec:
                 name: openai-secret
             - secretRef:
                 name: postgres-secret
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "150m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
           volumeMounts:
             - name: invoices-storage
               mountPath: /data/invoices

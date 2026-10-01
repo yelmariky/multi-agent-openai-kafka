@@ -28,6 +28,10 @@ public interface ExpenseJpaRepository extends JpaRepository<ExpenseEntity, UUID>
 
     List<ExpenseEntity> findByTenantIdAndApprovalStatus(UUID tenantId, String approvalStatus);
 
+    /** Candidats pour la détection de doublons — même consultant, même jour. */
+    List<ExpenseEntity> findByTenantIdAndConsultantEmailIgnoreCaseAndExpenseDate(
+            UUID tenantId, String consultantEmail, LocalDate expenseDate);
+
     void deleteByTenantIdAndExpenseDateBetween(UUID tenantId, LocalDate start, LocalDate end);
 
     @Query("SELECT COUNT(e) > 0 FROM ExpenseEntity e WHERE e.tenantId = :tenantId " +

@@ -87,7 +87,7 @@ tr:nth-child(even) td{background:var(--l)}
 <body>
 
 <div class="cover">
-  <div class="cover-eyebrow">📅 Dossier de Conception Mensuel</div>
+  <div class="cover-eyebrow">📅 Dossier de Conception Mensuel — IA-INSIGHT</div>
   <div class="cover-month">Septembre 2026 — Mois 3 / 4</div>
   <h1>Facturation complète<br><em>& Observabilité</em></h1>
   <p class="cover-sub">Livrer le workflow de facturation end-to-end (CRA validé → facture envoyée → paiement suivi), et déployer la stack d'observabilité complète (métriques, logs, alertes, SLA).</p>
@@ -99,7 +99,8 @@ tr:nth-child(even) td{background:var(--l)}
     <span class="tag">📈 SLA 99.5%</span>
     <span class="tag">🪵 Structured Logging</span>
   </div>
-  <div class="cover-meta">
+  <div class="cover-meta" style="grid-template-columns:repeat(5,1fr)">
+    <div class="meta-item"><div class="meta-label">Société</div><div class="meta-val">IA-INSIGHT</div></div>
     <div class="meta-item"><div class="meta-label">Sprints</div><div class="meta-val">S5 + S6</div></div>
     <div class="meta-item"><div class="meta-label">Durée</div><div class="meta-val">4 semaines</div></div>
     <div class="meta-item"><div class="meta-label">Statut</div><div class="meta-val">📋 Planifié</div></div>
@@ -348,6 +349,36 @@ S8                                                            ██████
         </div>
       </div>
 
+      <h4>Refonte notes de frais : upload seul + aperçu éditable, traçabilité et anti-doublon</h4>
+      <p>Livré en avance sur planning (implémenté pendant le sprint). Avis MOA : la saisie de texte factuel en parallèle du justificatif était redondante avec l'OCR/Vision et causait des rejets frustrants sur de simples différences de formulation. Nouveau flux : upload du justificatif → extraction automatique (type/montant/date/enseigne/ville) → <strong>aperçu éditable</strong> pour relecture/correction → confirmation. Un champ "Motif/contexte" optionnel est conservé pour la justification métier (jamais comparée au document). Le cross-check texte/document (<code>ExpenseMismatchDetector</code>) est supprimé — devenu obsolète sans texte factuel à comparer.</p>
+      <div class="g2">
+        <div>
+          <h4>Backend</h4>
+          <ul class="ul check">
+            <li>Upload en deux étapes : <code>POST /receipts/upload</code> (OCR + Vision + extraction LLM, sans persistance) puis <code>POST /receipts/confirm</code> (persistance des champs, éventuellement édités dans l'aperçu)</li>
+            <li><code>ReceiptFileValidator</code> : format PDF/JPG/PNG vérifié par signature binaire (magic bytes), pas par extension déclarée — rejette un exécutable renommé</li>
+            <li><code>ReceiptStorageService.findById()</code> : relocalise le fichier uploadé entre l'étape d'extraction et celle de confirmation</li>
+            <li>Détection de doublon exécutée aux <strong>deux</strong> étapes (extraction ET confirmation) — bloque dès l'aperçu, et re-vérifie après édition</li>
+            <li>Suppression de <code>ExpenseMismatchDetector</code> (+ tests) et de l'exigence de conformité stricte du texte saisi — obsolète, plus de texte factuel à comparer</li>
+            <li>Classification du type gérée entièrement par le prompt LLM (taxonomie fixe, multilingue) — aucune règle de catégorisation en dur côté code</li>
+            <li>Fix fallback Vision : conversion PDF→PNG correcte avant envoi à l'API Vision (bug bloquant tout PDF halluciné en "format image non supporté")</li>
+            <li>Endpoint <code>GET /expenses/{id}/receipt</code> : sert le justificatif stocké, réservé admin/manager</li>
+            <li><code>DuplicateExpenseMatcher</code> : détection de doublons basée DB (même consultant/jour/type, montant ±1%, description similaire) — inchangé, réutilisé aux deux étapes du nouveau flux</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Frontend</h4>
+          <ul class="ul check">
+            <li>Consultant : carte "Nouvelle note de frais" simplifiée — bouton "Analyser le justificatif" activé dès qu'un fichier est joint (texte factuel supprimé, motif optionnel)</li>
+            <li>Consultant : panneau d'aperçu inline (type, montant, devise, date, enseigne, ville, description) pré-rempli par l'extraction, éditable avant confirmation (boutons Confirmer / Annuler)</li>
+            <li>Consultant : formulaire dédié frais kilométriques (structuré, sans justificatif requis) — inchangé</li>
+            <li>Consultant + Admin : enseigne et ville affichées comme champs distincts (plus seulement noyées dans la description) sur chaque ligne de note de frais</li>
+            <li>Admin : aperçu inline du justificatif ("📎 Justificatif") à côté du montant sur chaque ligne d'approbation — PDF en nouvel onglet, photo en modale agrandie</li>
+            <li>Message d'erreur explicite si extraction impossible, montant absent, ou doublon détecté</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="dod">
         <h4>Definition of Done — Sprint 5</h4>
         <ul>
@@ -356,6 +387,10 @@ S8                                                            ██████
           <li>paymentDueDate = invoiceDate + 45j avec gestion week-end (test unitaire)</li>
           <li>Scheduler relance : déclenché en test avec délai artificiel, alerte SSE reçue</li>
           <li>Export CSV comptabilité : format validé par un comptable (test d'acceptation)</li>
+          <li>Upload justificatif → aperçu éditable → confirmation — livré et testé (build vert ai-service + expense-service)</li>
+          <li>Aperçu justificatif accessible depuis la console admin lors de la validation d'une note de frais — livré</li>
+          <li>Enseigne et ville affichées distinctement (admin + consultant) — livré</li>
+          <li>Détection de doublons bloquante (extraction + confirmation), basée DB — livrée et testée (unit tests DuplicateExpenseMatcher)</li>
         </ul>
       </div>
     </div>
@@ -419,6 +454,50 @@ S8                                                            ██████
         </div>
       </div>
 
+      <h4>Serveur MCP — ouverture aux systèmes externes</h4>
+      <p>Livré en avance sur planning (implémenté pendant le sprint) — un serveur MCP (Model Context
+      Protocol) en lecture seule expose les notes de frais et factures d'un tenant à des systèmes
+      externes (agents IA, outils partenaires), sans développement d'intégration sur mesure à chaque
+      nouveau cas d'usage.</p>
+      <div class="g2">
+        <div>
+          <h4>Backend</h4>
+          <ul class="ul check">
+            <li>Serveur MCP (transport SSE) intégré à ai-service — aucun microservice supplémentaire,
+            pour limiter l'empreinte ressources sur le cluster</li>
+            <li>4 outils en lecture seule : <code>list_expenses</code>, <code>get_expense_summary</code>,
+            <code>list_invoices</code>, <code>get_invoice_status</code> — tous réutilisent les services
+            métier existants, aucune duplication de logique</li>
+            <li><code>InvoiceEntity</code>/<code>InvoiceJpaRepository</code> (nouveau, lecture seule) :
+            accès direct à la table <code>invoice</code> partagée, tenant-scopé nativement — évite un
+            appel réseau vers invoice-service et le gap de propagation de tenant qui existait sur ce
+            chemin serveur-à-serveur</li>
+            <li><code>McpApiKeyFilter</code> : authentification par clé API dédiée par tenant, pose le
+            même <code>TenantContext</code> que le JWT standard — isolation stricte garantie</li>
+            <li>Rate limiting (30 req/min par défaut) + journalisation de chaque appel d'outil pour
+            l'audit</li>
+            <li>Spring AI MCP upgradé en 1.1.8 (depuis 1.0.0) : API de session officielle
+            (<code>McpSyncServerExchange.sessionId()</code>) — simplifie la résolution de tenant sur
+            les threads Reactor et réduit la dépendance à la réflexion sur les classes internes du SDK</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Sécurité, tests &amp; documentation</h4>
+          <ul class="ul check">
+            <li>Aucune mutation possible en v1 — consultation uniquement, surface de risque minimale
+            pour un canal externe sans utilisateur humain qui confirme dans une UI</li>
+            <li>Clé API révocable indépendamment par tenant, stockée en Secret K8s (jamais committée)</li>
+            <li>Testé de bout en bout avec un client MCP tiers (MCP Inspector) et des scripts de
+            validation JSON-RPC/SSE dédiés — isolation stricte par tenant confirmée (une clé API d'un
+            tenant ne peut jamais voir les données d'un autre)</li>
+            <li>Guide d'intégration technique complet : <code>docs/MCP-Integration-Guide.pdf</code>
+            (paramètres de connexion, exemples de requêtes, modèle de sécurité)</li>
+            <li>Présentation commerciale dédiée : <code>docs/PITCH-MCP.pdf</code> — cas d'usage pour
+            démontrer l'ouverture de la plateforme à des clients/partenaires</li>
+          </ul>
+        </div>
+      </div>
+
       <h4>User stories Sprint 6</h4>
       <ul class="ul">
         <li>En tant que DevOps, je reçois une alerte Slack en moins de 5 minutes si un pod crashe ou si la latence LLM dépasse 5s</li>
@@ -437,6 +516,12 @@ S8                                                            ██████
           <li>Logs JSON de tous les services centralisés dans Loki</li>
           <li>SLO Error Budget calculé et visible sur le dashboard Platform Overview</li>
           <li>Runbook pour 5 alertes critiques documenté dans docs/RUNBOOK-OPS.md</li>
+          <li>Serveur MCP (lecture seule notes de frais + factures) livré et testé — isolation tenant
+          vérifiée par clé API, build vert (unit tests McpApiKeyFilter + ExpenseInvoiceMcpTools)</li>
+          <li>Validation avec un client MCP tiers (MCP Inspector) sur le transport SSE : connexion,
+          liste des 4 outils, appels réels avec clé API valide/invalide, isolation cross-tenant testée</li>
+          <li>Documentation d'intégration MCP livrée (docs/MCP-Integration-Guide.pdf) et présentation
+          commerciale dédiée (docs/PITCH-MCP.pdf)</li>
         </ul>
       </div>
     </div>

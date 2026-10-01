@@ -20,12 +20,17 @@ async function initKeycloak() {
   });
 
   if (!authenticated) {
-    _keycloak.login();
+    _keycloak.login({ prompt: 'login' });
     return null;
   }
 
+  // En cas d'échec de rafraîchissement (session expirée), prompt:'login' force la
+  // ré-authentification explicite — sans ça, Keycloak accepterait silencieusement
+  // toute session SSO active dans le navigateur pour ce realm (ex: un autre rôle
+  // connecté dans un autre onglet), faisant basculer cet onglet sur une identité
+  // différente sans que l'utilisateur s'en aperçoive.
   setInterval(() => {
-    _keycloak.updateToken(30).catch(() => _keycloak.login());
+    _keycloak.updateToken(30).catch(() => _keycloak.login({ prompt: 'login' }));
   }, 60000);
 
   return _keycloak;

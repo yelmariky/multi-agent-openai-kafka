@@ -91,6 +91,11 @@ public class ExpenseDataService {
 
     @Transactional
     public void indexExpense(String id, ExpenseItem item, String source, boolean duplicate, String hash) {
+        indexExpense(id, item, source, duplicate, hash, null);
+    }
+
+    @Transactional
+    public void indexExpense(String id, ExpenseItem item, String source, boolean duplicate, String hash, String receiptPath) {
         try {
             if (item == null || item.getAmount() == null
                     || isNullOrBlank(item.getCurrency()) || isNullOrBlank(item.getType())
@@ -122,6 +127,7 @@ public class ExpenseDataService {
                     ? item.getConsultantEmail().toLowerCase(Locale.ROOT) : null);
             entity.setDuplicateFlag(duplicate);
             entity.setHash(hash);
+            entity.setReceiptPath(receiptPath);
             entity.setApprovalStatus(item.getApprovalStatus() != null ? item.getApprovalStatus() : "PENDING");
             entity.setApprovalNote(item.getApprovalNote());
             if (item.getAbsencePeriods() != null && !item.getAbsencePeriods().isEmpty()) {
@@ -205,6 +211,30 @@ public class ExpenseDataService {
         } catch (Exception e) { log.error("deleteExpenseById exception: {}", e.getMessage(), e); return -1; }
     }
 
+    /** Recherche une dépense par id, filtrée par tenant courant — utilisé pour servir le justificatif. */
+    public ExpenseEntity findByIdForCurrentTenant(String entityId) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID id = UUID.fromString(entityId);
+        return expenseRepo.findById(id).filter(e -> tenantId.equals(e.getTenantId())).orElse(null);
+    }
+
+    /**
+     * Vérifie si {@code candidate} (même consultant, même jour {@code date}) correspond déjà à une
+     * dépense persistée — même type, montant proche, description similaire. Voir {@link DuplicateExpenseMatcher}.
+     */
+    public boolean hasDuplicate(ExpenseItem candidate, LocalDate date) {
+        if (candidate == null || date == null || isNullOrBlank(candidate.getConsultantEmail())) return false;
+        try {
+            UUID tenantId = TenantContext.getTenantId();
+            List<ExpenseEntity> sameDay = expenseRepo.findByTenantIdAndConsultantEmailIgnoreCaseAndExpenseDate(
+                    tenantId, candidate.getConsultantEmail(), date);
+            return sameDay.stream().anyMatch(existing -> DuplicateExpenseMatcher.isDuplicate(existing, candidate));
+        } catch (Exception e) {
+            log.warn("hasDuplicate check failed, on laisse passer par prudence : {}", e.getMessage());
+            return false;
+        }
+    }
+
     @Transactional
     public ExpenseEntity updateExpenseApproval(String entityId, String status, String note) {
         UUID id = UUID.fromString(entityId);
@@ -280,6 +310,7 @@ public class ExpenseDataService {
         item.setCompany(e.getCompany()); item.setConsultantEmail(e.getConsultantEmail());
         item.setApprovalStatus(e.getApprovalStatus()); item.setApprovalNote(e.getApprovalNote());
         item.setWeaviateId(e.getId().toString()); item.setStatus(e.getApprovalStatus());
+        item.setHasReceipt(e.getReceiptPath() != null && !e.getReceiptPath().isBlank());
         if (e.getAbsencePeriodsJson() != null && !e.getAbsencePeriodsJson().isBlank()) {
             try {
                 item.setAbsencePeriods(objectMapper.readValue(e.getAbsencePeriodsJson(),

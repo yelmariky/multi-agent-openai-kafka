@@ -82,6 +82,28 @@ public class OcrService {
         }
     }
 
+    /**
+     * Retourne un chemin d'image compatible avec l'API Vision (png/jpeg/gif/webp).
+     * Convertit un PDF en PNG si besoin — le fichier retourné doit être supprimé par
+     * l'appelant s'il diffère de {@code file} (fichier temporaire de conversion).
+     * Retourne {@code null} si la conversion échoue (l'appelant doit alors renoncer au fallback Vision).
+     */
+    public Path prepareImageForVision(Path file) {
+        String lower = file.getFileName().toString().toLowerCase();
+        if (!lower.endsWith(".pdf")) {
+            return file; // déjà une image — format déjà validé en amont (ReceiptFileValidator)
+        }
+        try {
+            Path base = Files.createTempFile("receipt-vision-", "");
+            Files.deleteIfExists(base); // pdftoppm ajoute l'extension
+            runCommand(List.of(pdftoppmCmd, "-singlefile", "-png", file.toString(), base.toString()));
+            return Path.of(base + ".png");
+        } catch (Exception e) {
+            log.warn("⚠️ Conversion PDF→PNG pour Vision échouée : {}", e.getMessage());
+            return null;
+        }
+    }
+
     private void runCommand(List<String> command) throws Exception {
         log.debug("OCR exec: {}", String.join(" ", command));
         ProcessBuilder pb = new ProcessBuilder(command);

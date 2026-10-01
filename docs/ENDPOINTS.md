@@ -61,6 +61,12 @@
 | POST | `/consultants/profiles` | Upsert un profil consultant |
 | DELETE | `/consultants/profiles/{email}` | Supprime un profil consultant |
 
+## MCP -- ai-service :8081
+
+| Methode | Route | Role |
+|---|---|---|
+| POST | `/mcp` | Serveur MCP (Streamable HTTP) -- lecture seule notes de frais + factures pour systemes externes. Auth par cle API dediee (`X-MCP-Api-Key`), voir `McpApiKeyFilter` + `docs/MCP-Integration-Guide.pdf` |
+
 ## Factures -- invoice-service :8083
 
 | Methode | Route | Role |

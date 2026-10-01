@@ -109,6 +109,10 @@ public class RAGService {
     }
 
     public ReasoningResult extractSingleExpense(String text, IntentResult intent, String consultantEmail) {
+        return extractSingleExpense(text, intent, consultantEmail, null);
+    }
+
+    public ReasoningResult extractSingleExpense(String text, IntentResult intent, String consultantEmail, String paymentModeOverride) {
         log.info("🔵 Pipeline: create_expense");
         long start = System.currentTimeMillis();
 
@@ -130,7 +134,7 @@ public class RAGService {
                         "Le service LLM est temporairement indisponible. " +
                         "Pour les frais kilométriques, reformulez ainsi : '44 km aller-retour domicile-bureau par jour juin'.");
             }
-            ReasoningResult kmValidation = prepareExpense(kmItem, text, consultantEmail);
+            ReasoningResult kmValidation = prepareExpense(kmItem, text, consultantEmail, paymentModeOverride);
             if (kmValidation != null) return kmValidation;
             boolean kmMonthly = isKmMonthly(kmItem, text);
             List<ExpenseItem> kmExpanded = kmMonthly ? expandKmMonthly(kmItem, text) : List.of(kmItem);
@@ -161,7 +165,7 @@ public class RAGService {
         }
 
         ExpenseItem expense = items.get(0);
-        ReasoningResult validationError = prepareExpense(expense, text, consultantEmail);
+        ReasoningResult validationError = prepareExpense(expense, text, consultantEmail, paymentModeOverride);
         if (validationError != null) return validationError;
 
         boolean monthly = isKmMonthly(expense, text);
@@ -237,7 +241,15 @@ public class RAGService {
     private static final int    MAX_EXPENSE_DATE_DAYS_AGO = 730;  // 2 ans
 
     /** Enrichit, normalise et valide une expense avant indexation. Retourne une erreur si invalide, null sinon. */
-    private ReasoningResult prepareExpense(ExpenseItem expense, String text, String consultantEmail) {
+    /**
+     * @param paymentModeOverride Attribution budgétaire explicite (Personnel/Business) fournie par le
+     *                            formulaire structuré frais km — prime sur l'inférence LLM. Le champ
+     *                            paymentMode n'y représente pas un moyen de paiement réel (le barème km
+     *                            couvre déjà carburant/usure/assurance d'un véhicule personnel) mais une
+     *                            décision d'imputation : facturer ce trajet au client (Business) ou le
+     *                            prendre en charge en interne (Personnel). Ignoré pour les autres types.
+     */
+    private ReasoningResult prepareExpense(ExpenseItem expense, String text, String consultantEmail, String paymentModeOverride) {
         enrichFromText(expense, text);
         normalizeExpense(expense, text);
 
@@ -247,18 +259,35 @@ public class RAGService {
 
         ReasoningResult kmError = enrichKm(expense, text, consultantEmail);
         if (kmError != null) return kmError;
+        // Justificatif obligatoire : toute dépense hors frais_km/carte_transport doit passer par l'upload
+        // photo/PDF (seul chemin qui persiste un receiptPath) — la saisie texte libre est bloquée pour ces
+        // types. frais_km (indemnité calculée) et carte_transport (remboursement forfaitaire 50%, calculé
+        // uniquement dans ce chemin texte) n'ont pas de facture à joindre et restent exemptés.
+        if (!"frais_km".equalsIgnoreCase(expense.getType()) && !"carte_transport".equalsIgnoreCase(expense.getType())) {
+            return ReasoningResult.error(
+                    "Un justificatif (photo ou PDF de la facture) est requis pour ce type de dépense. "
+                    + "Utilisez le bouton d'envoi de justificatif plutôt que la saisie texte seule.");
+        }
         if ("carte_transport".equalsIgnoreCase(expense.getType())) {
             applyTransportCardReimbursement(expense);
         }
         ReasoningResult exclusivityError = checkMonthlyExclusivity(consultantEmail, expense);
         if (exclusivityError != null) return exclusivityError;
-        if (isBlank(expense.getPaymentMode())) expense.setPaymentMode(PAYMENT_MODE_PERSONNEL);
+        if (!isBlank(paymentModeOverride) && "frais_km".equalsIgnoreCase(expense.getType())) {
+            expense.setPaymentMode(paymentModeOverride);
+        } else if (isBlank(expense.getPaymentMode())) {
+            expense.setPaymentMode(PAYMENT_MODE_PERSONNEL);
+        }
         if (!isBlank(consultantEmail)) {
             if (!consultantEmail.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
                 log.warn("⚠️ consultantEmail invalide ignoré : format non conforme");
             } else {
                 expense.setConsultantEmail(consultantEmail.toLowerCase(java.util.Locale.ROOT));
             }
+        }
+        if (expenseDataService.hasDuplicate(expense, resolveDate(expense.getDate()))) {
+            return ReasoningResult.error(
+                    "Une note de frais identique (même type, montant et description) existe déjà pour ce jour — évitez les doublons.");
         }
         if (isBlank(expense.getCompany()) && !isBlank(defaultCompanyName)) expense.setCompany(defaultCompanyName);
         if (isBlank(expense.getCompany())) {

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guide d'intégration MCP — IA-INSIGHT Platform</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Space Grotesk',system-ui;font-size:11pt;line-height:1.65;color:#1a1a2e;background:#fff}
+:root{--p:#0891b2;--g:#16a34a;--o:#d97706;--r:#dc2626;--v:#7c3aed;--m:#64748b;--l:#f0f9ff;--b:#e2e8f0;--d:#0f172a}
+.page{max-width:920px;margin:0 auto;padding:0 40px}
+.cover{min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+  background:linear-gradient(135deg,#0f172a 0%,#0c4a6e 50%,#0891b2 100%);
+  color:#fff;padding:80px 60px;page-break-after:always}
+.cover-eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 16px;
+  font-size:10pt;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:28px}
+.cover-month{font-size:13pt;color:#67e8f9;font-weight:600;margin-bottom:6px;letter-spacing:1px;text-transform:uppercase}
+.cover h1{font-size:36pt;font-weight:800;line-height:1.15;margin-bottom:12px}
+.cover h1 em{color:#2ce5a7;font-style:normal}
+.cover-sub{font-size:14pt;color:#94a3b8;margin-bottom:44px;max-width:600px}
+.cover-tags{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:48px}
+.tag{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:5px 14px;font-size:9.5pt;color:#cbd5e1}
+.cover-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid rgba(255,255,255,.12);padding-top:28px}
+.meta-item{padding:0 24px 0 0}
+.meta-label{font-size:8.5pt;color:#475569;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+.meta-val{font-size:12pt;font-weight:600;color:#e2e8f0}
+.section{padding:52px 0 28px;page-break-before:always}
+.section:first-of-type{page-break-before:auto}
+.eyebrow{font-size:9pt;font-weight:700;color:var(--p);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px}
+h2.stitle{font-size:22pt;font-weight:800;color:var(--d);margin-bottom:22px;padding-bottom:12px;border-bottom:3px solid var(--p)}
+h3{font-size:13pt;font-weight:700;color:var(--d);margin:26px 0 11px}
+h4{font-size:11pt;font-weight:600;color:var(--p);margin:18px 0 8px}
+p{margin-bottom:11px;color:#334155}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:10pt}
+th{background:var(--d);color:#fff;padding:9px 14px;text-align:left;font-weight:600;font-size:9.5pt}
+td{padding:8px 14px;border-bottom:1px solid var(--b);vertical-align:top}
+tr:nth-child(even) td{background:var(--l)}
+.ul{list-style:none;margin:10px 0}
+.ul li{display:flex;gap:9px;padding:6px 0;border-bottom:1px solid var(--b);font-size:10.5pt;color:#334155}
+.ul li:last-child{border-bottom:none}
+.ul li::before{content:"→";color:var(--p);font-weight:700;flex-shrink:0}
+.check li::before{content:"✓";color:var(--g)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:14px 0}
+.box{background:var(--l);border:1px solid var(--b);border-radius:10px;padding:16px}
+.note{border-left:4px solid var(--p);background:var(--l);padding:14px 18px;margin:16px 0;border-radius:0 8px 8px 0}
+.note.g{border-color:var(--g);background:#f0fdf4}
+.note.o{border-color:var(--o);background:#fffbeb}
+.note.r{border-color:var(--r);background:#fef2f2}
+.badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:9pt;font-weight:600}
+.bg{background:#dcfce7;color:#15803d}
+.bb{background:#dbeafe;color:#1d4ed8}
+code{background:#f1f5f9;border:1px solid var(--b);border-radius:4px;padding:1px 6px;font-family:'SF Mono',Menlo,monospace;font-size:9.5pt;color:#be185d}
+pre{background:var(--d);color:#e2e8f0;border-radius:10px;padding:18px 20px;margin:14px 0;overflow-x:auto;font-family:'SF Mono',Menlo,monospace;font-size:9pt;line-height:1.55;page-break-inside:avoid}
+pre .c1{color:#67e8f9}
+pre .c2{color:#86efac}
+pre .c3{color:#fbbf24}
+.footer{margin-top:60px;padding:20px 0;border-top:1px solid var(--b);text-align:center;color:var(--m);font-size:9pt}
+@media print{
+  body{font-size:10pt}
+  .cover,.section{page-break-before:always;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .cover{page-break-before:avoid}
+}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-eyebrow">🔌 Documentation technique</div>
+  <div class="cover-month">Intégration système externe</div>
+  <h1>Serveur <em>MCP</em><br>Notes de frais &amp; Factures</h1>
+  <p class="cover-sub">Guide d'intégration pour tout système externe (agent IA, outil tiers) souhaitant
+  consulter les notes de frais et factures d'un tenant IA-INSIGHT via le protocole MCP (Model Context
+  Protocol).</p>
+  <div class="cover-tags">
+    <span class="tag">Lecture seule</span>
+    <span class="tag">Isolation stricte par tenant</span>
+    <span class="tag">Auth par clé API</span>
+    <span class="tag">Transport SSE</span>
+  </div>
+  <div class="cover-meta">
+    <div class="meta-item"><div class="meta-label">Service</div><div class="meta-val">ai-service :8081</div></div>
+    <div class="meta-item"><div class="meta-label">Endpoint</div><div class="meta-val">/mcp</div></div>
+    <div class="meta-item"><div class="meta-label">Version</div><div class="meta-val">1.0.0</div></div>
+  </div>
+</div>
+
+<div class="page">
+
+  <div class="section">
+    <p class="eyebrow">Vue d'ensemble</p>
+    <h2 class="stitle">Ce que fait ce serveur MCP</h2>
+    <p>Ce serveur expose, via le protocole MCP, un accès en <strong>lecture seule</strong> aux notes de
+    frais et factures d'un tenant IA-INSIGHT. Il permet à un système externe (agent IA, outil de
+    reporting, ERP tiers…) de consulter ces données de façon standardisée, sans avoir à intégrer
+    l'API REST propriétaire de la plateforme ni à gérer un flow d'authentification Keycloak complet.</p>
+
+    <div class="note">
+      <strong>Aucune mutation possible.</strong> Cette première version ne permet ni de créer, ni
+      d'approuver, ni de modifier ou supprimer quoi que ce soit. C'est un choix de conception
+      délibéré : un canal externe sans utilisateur humain qui confirme dans une interface présente un
+      risque plus élevé pour des opérations d'écriture — on commence par la consultation.
+    </div>
+
+    <h3>Les 4 outils exposés</h3>
+    <table>
+      <thead><tr><th>Outil</th><th>Description</th><th>Paramètres</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>list_expenses</code></td>
+          <td>Liste les notes de frais sur une période, avec filtres optionnels.</td>
+          <td>startDate, endDate, consultantEmail?, type?, approvalStatus?</td>
+        </tr>
+        <tr>
+          <td><code>get_expense_summary</code></td>
+          <td>Résumé agrégé d'un mois : totaux Personnel/Business, répartition par statut.</td>
+          <td>month (YYYY-MM)</td>
+        </tr>
+        <tr>
+          <td><code>list_invoices</code></td>
+          <td>Liste les factures sur une plage de mois, avec filtres optionnels.</td>
+          <td>startMonth, endMonth, clientCompanyName?, consultantEmail?</td>
+        </tr>
+        <tr>
+          <td><code>get_invoice_status</code></td>
+          <td>Détail et statut de paiement d'une facture précise.</td>
+          <td>invoiceName (ex: F-202610-01)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <p class="eyebrow">Connexion</p>
+    <h2 class="stitle">Comment se connecter</h2>
+
+    <h3>1. Obtenir une clé API</h3>
+    <p>Chaque tenant dispose d'une clé API dédiée, à demander à l'administrateur de la plateforme
+    IA-INSIGHT. Cette clé est unique, rattachée à votre organisation, et révocable à tout moment sur
+    simple demande — sa compromission n'affecte que votre propre tenant.</p>
+
+    <h3>2. Paramètres de connexion</h3>
+    <table>
+      <tbody>
+        <tr><td style="width:220px"><strong>URL de base</strong></td><td><code>https://&lt;votre-domaine&gt;</code></td></tr>
+        <tr><td><strong>Transport</strong></td><td>SSE (Server-Sent Events) — standard MCP historique</td></tr>
+        <tr><td><strong>Endpoint de connexion</strong></td><td><code>GET /sse</code> — ouvre le flux, renvoie l'URL de session à utiliser pour les appels</td></tr>
+        <tr><td><strong>Endpoint des appels</strong></td><td><code>POST /mcp/message</code> — envoi des messages JSON-RPC (URL exacte fournie par le flux SSE)</td></tr>
+        <tr><td><strong>En-tête d'authentification</strong></td><td><code>X-MCP-Api-Key: &lt;votre_clé&gt;</code> (sur les deux endpoints)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      <strong>Ne pas tester avec un simple <code>curl</code> ponctuel.</strong> Le transport SSE
+      nécessite de maintenir la connexion <code>GET /sse</code> ouverte pour récupérer l'URL de
+      session, puis d'envoyer les appels <code>POST /mcp/message</code> sur cette même session — ce
+      n'est pas un simple aller-retour HTTP. En pratique, ce protocole est géré automatiquement par
+      les SDK MCP (Python, TypeScript) et par tout agent compatible MCP : il suffit de leur fournir
+      l'URL de base et l'en-tête d'authentification.
+    </div>
+
+    <h3>3. Vérifier la connexion — MCP Inspector</h3>
+    <p>L'outil officiel pour tester interactivement un serveur MCP, sans écrire de code :</p>
+    <pre>npx @modelcontextprotocol/inspector</pre>
+    <p>Dans l'interface qui s'ouvre (<code>http://localhost:6274</code>), configurez :</p>
+    <ul class="ul">
+      <li><strong>Transport</strong> : SSE</li>
+      <li><strong>URL</strong> : <code>https://votre-domaine/sse</code></li>
+      <li><strong>En-tête personnalisé</strong> : <code>X-MCP-Api-Key: &lt;votre_clé&gt;</code></li>
+    </ul>
+    <p>Vous verrez la liste des 4 outils, pourrez remplir leurs paramètres dans un formulaire et
+    exécuter les appels un par un.</p>
+
+    <h3>4. Exemple d'appel — lister les notes de frais de septembre 2026</h3>
+    <p>Une fois la session SSE établie par votre client/SDK, le message JSON-RPC envoyé est :</p>
+    <pre><span class="c1">{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "list_expenses",
+    "arguments": {
+      "startDate": "2026-09-01",
+      "endDate": "2026-09-30",
+      "approvalStatus": "APPROVED"
+    }
+  }
+}</span></pre>
+  </div>
+
+  <div class="section">
+    <p class="eyebrow">Sécurité</p>
+    <h2 class="stitle">Modèle de sécurité</h2>
+
+    <div class="g2">
+      <div class="box">
+        <h4>🔒 Isolation par tenant</h4>
+        <p style="margin-bottom:0">Chaque clé API est rattachée à un seul tenant. Toutes les requêtes
+        sont automatiquement filtrées par organisation — une clé ne peut jamais accéder aux données
+        d'un autre tenant, quelle que soit la requête envoyée.</p>
+      </div>
+      <div class="box">
+        <h4>📖 Lecture seule stricte</h4>
+        <p style="margin-bottom:0">Aucun outil exposé ne modifie de données. Toute la logique de
+        lecture réutilise exactement les mêmes services que les consoles admin/consultant — aucune
+        divergence possible entre ce que vous voyez via MCP et via l'interface web.</p>
+      </div>
+      <div class="box">
+        <h4>⏱ Limitation de débit</h4>
+        <p style="margin-bottom:0">Chaque clé API est limitée à un nombre de requêtes par minute
+        configurable côté plateforme (30/min par défaut). Au-delà, les requêtes sont rejetées avec un
+        code <code>429</code> jusqu'à la minute suivante.</p>
+      </div>
+      <div class="box">
+        <h4>📝 Journalisation</h4>
+        <p style="margin-bottom:0">Chaque appel d'outil est journalisé côté plateforme (nom de
+        l'outil, tenant, clé masquée) pour permettre un audit en cas d'usage suspect.</p>
+      </div>
+    </div>
+
+    <h3>Codes de réponse</h3>
+    <table>
+      <thead><tr><th>Code</th><th>Signification</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge bb">200</span></td><td>Requête traitée avec succès</td></tr>
+        <tr><td><span class="badge" style="background:#fee2e2;color:#b91c1c">401</span></td><td>Clé API absente ou invalide</td></tr>
+        <tr><td><span class="badge" style="background:#fee2e2;color:#b91c1c">403</span></td><td>Organisation désactivée</td></tr>
+        <tr><td><span class="badge" style="background:#ffedd5;color:#c2410c">429</span></td><td>Trop de requêtes — limite de débit atteinte</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note o">
+      <strong>Révocation.</strong> En cas de compromission suspectée d'une clé, contactez
+      l'administrateur de la plateforme pour une révocation immédiate et l'émission d'une nouvelle
+      clé — l'opération ne prend que quelques minutes et n'affecte pas les autres tenants.
+    </div>
+  </div>
+
+  <div class="section">
+    <p class="eyebrow">Support</p>
+    <h2 class="stitle">Besoin d'aide ?</h2>
+    <p>Pour toute question sur l'intégration, une demande de clé API, ou l'ajout d'un nouvel outil de
+    consultation, contactez l'équipe technique IA-INSIGHT.</p>
+    <ul class="ul check">
+      <li>Ce document décrit la v1 du serveur MCP — lecture seule uniquement.</li>
+      <li>Les évolutions futures (outils d'écriture, nouveaux filtres) feront l'objet d'une nouvelle
+      version de ce guide.</li>
+    </ul>
+  </div>
+
+  <div class="footer">IA-INSIGHT Platform — Guide d'intégration MCP — Document technique confidentiel</div>
+</div>
+
+</body>
+</html>

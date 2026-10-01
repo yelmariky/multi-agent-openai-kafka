@@ -22,6 +22,14 @@ spring:
     multipart:
       max-file-size: 8MB
       max-request-size: 8MB
+  mvc:
+    async:
+      # Défaut Spring (30s) trop court : le retry Groq seul peut consommer ~22s
+      # (voir LLMAIClient — 4 tentatives, backoff exponentiel) avant même de basculer
+      # sur le fallback OpenAI, qui a lui-même besoin de temps (+ OCR/Vision en amont
+      # pour /receipts/upload). Sans marge, le fallback est tué par AsyncRequestTimeoutException
+      # avant d'avoir pu répondre.
+      request-timeout: ${SPRING_MVC_ASYNC_TIMEOUT_MS:60000}
   # SMTP 100% externalisé — changer de fournisseur = modifier les MAIL_* du ConfigMap
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
@@ -57,6 +65,15 @@ spring:
       auto-offset-reset: latest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  ai:
+    mcp:
+      server:
+        name: ia-insight-expense-invoice-mcp
+        version: 1.0.0
+        type: SYNC
+        instructions: >
+          Consultation en lecture seule des notes de frais et factures du tenant authentifié par la
+          clé API fournie. Aucun outil ne permet de créer, modifier ou supprimer des données.
 
 management:
   endpoints:
@@ -124,6 +141,11 @@ ai-core:
     tesseract-command: ${AI_CORE_OCR_TESSERACT_CMD:tesseract}
     pdftoppm-command: ${AI_CORE_OCR_PDFTOPPM_CMD:pdftoppm}
     lang: ${AI_CORE_OCR_LANG:eng+fra}
+  mcp:
+    # Format : "slug1:cleAPI1,slug2:cleAPI2" — slug = keycloak realm du tenant. En prod, valeur
+    # injectée via Secret K8s (jamais committée), même traitement que OPENAI_API_KEY.
+    api-keys: ${AI_CORE_MCP_API_KEYS:}
+    max-requests-per-minute: ${AI_CORE_MCP_MAX_RPM:30}
     dpi: ${AI_CORE_OCR_DPI:300}
 
 keycloak:

@@ -6,9 +6,17 @@ import io.multiagent.core.infrastructure.kafka.NotificationPayload;
 import io.multiagent.core.service.WeaviateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -56,6 +64,36 @@ public class ExpenseApprovalController {
             log.error("refuse error: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body(e.getMessage());
         }
+    }
+
+    /** Sert le justificatif (photo/PDF) associé à une dépense — réservé admin/manager (voir SecurityConfig). */
+    @GetMapping("/{id}/receipt")
+    public ResponseEntity<Resource> receipt(@PathVariable String id) {
+        ExpenseEntity expense;
+        try {
+            expense = weaviateService.findByIdForCurrentTenant(id);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (expense == null || expense.getReceiptPath() == null || expense.getReceiptPath().isBlank()) {
+            return ResponseEntity.notFound().build();
+        }
+        Path path = Path.of(expense.getReceiptPath());
+        if (!Files.exists(path)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok()
+                .contentType(contentTypeFor(path))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline().filename(path.getFileName().toString()).build().toString())
+                .body(new FileSystemResource(path));
+    }
+
+    private MediaType contentTypeFor(Path path) {
+        String ext = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (ext.endsWith(".pdf")) return MediaType.APPLICATION_PDF;
+        if (ext.endsWith(".png")) return MediaType.IMAGE_PNG;
+        if (ext.endsWith(".jpg") || ext.endsWith(".jpeg")) return MediaType.IMAGE_JPEG;
+        return MediaType.APPLICATION_OCTET_STREAM;
     }
 
     private String expenseLabel(ExpenseEntity e) {

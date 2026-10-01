@@ -1,10 +1,23 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-service-receipts
+  namespace: multi-agent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 2Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ai-service
   namespace: multi-agent
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: ai-service
@@ -25,18 +38,28 @@ spec:
             name: openai-secret
         - secretRef:
             name: postgres-secret
+        env:
+          - name: AI_CORE_OCR_STORAGE_PATH
+            value: /data/receipts
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /actuator/health/liveness
             port: 8081
-          initialDelaySeconds: 60
+          initialDelaySeconds: 120
           periodSeconds: 15
-          failureThreshold: 3
+          failureThreshold: 5
         readinessProbe:
           httpGet:
             path: /actuator/health/readiness
             port: 8081
-          initialDelaySeconds: 45
+          initialDelaySeconds: 90
           periodSeconds: 10
           failureThreshold: 6
         volumeMounts:
@@ -44,7 +67,8 @@ spec:
             mountPath: /data/receipts
       volumes:
         - name: receipts-storage
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: ai-service-receipts
 ---
 apiVersion: v1
 kind: Service

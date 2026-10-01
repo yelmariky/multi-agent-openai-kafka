@@ -8,7 +8,10 @@ import io.multiagent.core.notification.service.ConsultantNotificationService;
 import io.multiagent.core.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,23 +28,30 @@ public class KafkaNotificationConsumer {
     private final ConsultantNotificationService consultantSse;
     private final ObjectMapper                  objectMapper;
 
+    @RetryableTopic(
+            attempts = "4",
+            backoff = @Backoff(delay = 1000, multiplier = 2.0, maxDelay = 10000),
+            dltTopicSuffix = ".DLT",
+            autoCreateTopics = "true"
+    )
     @KafkaListener(
             topics = KafkaTopics.NOTIFICATION,
             containerFactory = "kafkaListenerContainerFactory"
     )
-    public void onNotification(String message) {
-        try {
-            DomainEvent      event = objectMapper.readValue(message, DomainEvent.class);
-            NotificationPayload np = objectMapper.readValue(event.payload(), NotificationPayload.class);
+    public void onNotification(String message) throws Exception {
+        DomainEvent      event = objectMapper.readValue(message, DomainEvent.class);
+        NotificationPayload np = objectMapper.readValue(event.payload(), NotificationPayload.class);
 
-            if (NotificationPayload.TARGET_ADMIN.equals(np.target())) {
-                adminSse.push(np.type(), np.consultantEmail(), np.consultantEmail(), np.message(), np.refId());
-            } else if (NotificationPayload.TARGET_CONSULTANT.equals(np.target())
-                    && np.consultantEmail() != null && !np.consultantEmail().isBlank()) {
-                consultantSse.push(np.consultantEmail(), np.type(), np.message(), np.refId());
-            }
-        } catch (Exception e) {
-            log.warn("[KafkaNotifConsumer] Erreur : {}", e.getMessage());
+        if (NotificationPayload.TARGET_ADMIN.equals(np.target())) {
+            adminSse.push(np.type(), np.consultantEmail(), np.consultantEmail(), np.message(), np.refId());
+        } else if (NotificationPayload.TARGET_CONSULTANT.equals(np.target())
+                && np.consultantEmail() != null && !np.consultantEmail().isBlank()) {
+            consultantSse.push(np.consultantEmail(), np.type(), np.message(), np.refId());
         }
+    }
+
+    @DltHandler
+    public void onNotificationDlt(String message) {
+        log.error("[KafkaNotifConsumer] Message envoyé en DLT après échec des retries : {}", message);
     }
 }

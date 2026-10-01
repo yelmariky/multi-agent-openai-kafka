@@ -1875,6 +1875,7 @@ dialog.modal-backdrop::backdrop {
 
 .approval-name   { font-size: 14px; font-weight: 600; color: var(--accent); }
 .approval-consultant { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 8px; }
+.approval-place  { font-size: 12px; font-weight: 500; color: var(--text); }
 .approval-detail { font-size: 12px; color: var(--muted); }
 
 .approval-right {

@@ -94,22 +94,22 @@ class NotificationKafkaConsumerTest {
     }
 
     @Test
-    @DisplayName("JSON malformé → absorbé sans exception")
-    void malformedJsonAbsorbedSilently() {
-        assertThatCode(() -> consumer.onNotification("not-valid-json"))
-                .doesNotThrowAnyException();
+    @DisplayName("JSON malformé → exception propagée pour déclencher le retry/DLT Kafka")
+    void malformedJsonPropagatesExceptionForRetry() {
+        assertThatThrownBy(() -> consumer.onNotification("not-valid-json"))
+                .isInstanceOf(Exception.class);
         verify(adminSse, never()).push(any(), any());
         verify(consultantSse, never()).push(any(), any(), any());
     }
 
     @Test
-    @DisplayName("Payload invalide → absorbé sans exception")
-    void invalidPayloadAbsorbedSilently() throws Exception {
+    @DisplayName("Payload invalide → exception propagée pour déclencher le retry/DLT Kafka")
+    void invalidPayloadPropagatesExceptionForRetry() throws Exception {
         DomainEvent event = new DomainEvent("T", "id", null, null, "not-json-payload", Instant.now());
         String message = objectMapper.writeValueAsString(event);
 
-        assertThatCode(() -> consumer.onNotification(message))
-                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> consumer.onNotification(message))
+                .isInstanceOf(Exception.class);
     }
 
     @Test

@@ -36,19 +36,25 @@ public class ReceiptUploadService {
     private final ExpenseDataService expenseDataService;
     private final DateProvider dateProvider;
     private final ExpenseIdGenerator idGenerator;
+    private final ReceiptFileValidator fileValidator;
 
+    /**
+     * Étape 1 : analyse pure du justificatif (OCR + Vision + extraction LLM), sans persistance.
+     * Le fichier reste sur disque (retrouvable via {@code id}, voir {@link ReceiptStorageService#findById})
+     * pour que {@link #confirmExpense} puisse l'indexer une fois l'aperçu validé par le consultant.
+     */
     @Async
     public CompletableFuture<ReceiptUploadResponse> handleUpload(
             MultipartFile file, String paymentMode, String consultantEmail,
             UUID tenantId, String realm) {
+        // Validation AVANT tout traitement — pas de try/catch générique pour que l'erreur
+        // remonte telle quelle (400 via l'exception handler), sans être noyée en 500.
+        fileValidator.validate(file);
+
         // Propager le contexte tenant dans le thread async (ThreadLocal non hérité)
         if (tenantId != null) TenantContext.set(tenantId, realm);
 
         try {
-            if (file == null || file.isEmpty()) {
-                throw new IllegalArgumentException("Fichier manquant ou vide");
-            }
-
             String id = UUID.randomUUID().toString();
             byte[] bytes = file.getBytes();
             String binaryHash = sha256(bytes);
@@ -59,10 +65,24 @@ public class ReceiptUploadService {
             String textHash = sha256(normalized.getBytes(StandardCharsets.UTF_8));
 
             ReceiptDuplicateInfo dup = duplicateDetector.track(id, binaryHash, textHash);
-            // Passer le chemin image pour le fallback Vision si OCR trop bruité
-            String extracted = extraction.extractExpenseJson(ocrText, saved);
 
-            ReceiptUploadResponse response = ReceiptUploadResponse.builder()
+            // Image compatible Vision (conversion PDF→PNG si besoin) — distincte du fichier brut,
+            // faute de quoi un PDF envoyé tel quel à l'API Vision est rejeté (format non supporté).
+            Path visionImage = ocr.prepareImageForVision(saved);
+            String extracted;
+            try {
+                extracted = extraction.extractExpenseJson(ocrText, visionImage);
+            } finally {
+                if (visionImage != null && !visionImage.equals(saved)) {
+                    try { java.nio.file.Files.deleteIfExists(visionImage); } catch (Exception ignored) {}
+                }
+            }
+            // Filet de sécurité : malgré la consigne du prompt, le LLM ajoute parfois quand même
+            // une mention "paiement non précisé" dans description/originalText quand le document
+            // ne précise pas la méthode de paiement — on la retire déterministiquement.
+            extracted = stripUnknownPaymentMention(extracted);
+
+            ReceiptUploadResponse.ReceiptUploadResponseBuilder responseBuilder = ReceiptUploadResponse.builder()
                     .id(id)
                     .originalFilename(file.getOriginalFilename())
                     .binaryHash(binaryHash)
@@ -72,36 +92,81 @@ public class ReceiptUploadService {
                     .duplicateOfBinary(dup.binaryOf())
                     .duplicateOfText(dup.textOf())
                     .ocrText(ocrText)
-                    .extractedExpenseJson(extracted)
-                    .build();
+                    .extractedExpenseJson(extracted);
 
-            // Indexer la dépense structurée si possible
+            // Signaler l'échec explicitement (au lieu d'un 200 "silencieux" avec un aperçu vide).
             ExpenseItem expense = parseExpense(extracted);
-            if (expense != null) {
-                try {
-                    // resolveDate() gère LocalDate, LocalDateTime et OffsetDateTime
-                    LocalDate d = resolveDate(expense.getDate());
-                    expense.setId(idGenerator.nextId(d));
-                } catch (Exception e) {
-                    log.warn("⚠️ Impossible de générer l’id incrémental (upload) : {}", e.getMessage());
-                }
-                // Email consultant — propagé pour que approve/refuse SSE fonctionne
-                if (!isBlank(consultantEmail) && isBlank(expense.getConsultantEmail())) {
-                    expense.setConsultantEmail(consultantEmail.toLowerCase(Locale.ROOT).trim());
-                }
-                // Fallbacks légers
-                if (isBlank(expense.getPaymentMode())) {
-                    expense.setPaymentMode(isBlank(paymentMode) ? "Personnel" : paymentMode);
-                }
-                if (isBlank(expense.getAddress())) {
-                    expense.setAddress("inconnue");
-                }
-                expenseDataService.indexExpense(id, expense, "receipt", dup.isBinaryDuplicate() || dup.isTextDuplicate(), binaryHash);
+            if (expense == null) {
+                responseBuilder.success(false)
+                        .reason("Impossible d'extraire une dépense de ce document — vérifiez qu'il s'agit bien d'une facture ou d'un ticket lisible.");
+            } else if (expense.getAmount() == null || expense.getAmount() <= 0) {
+                responseBuilder.success(false)
+                        .reason("Aucun montant détecté sur ce document — vérifiez qu'il s'agit bien d'une facture ou d'un ticket lisible.");
+            } else if (isDuplicate(expense, consultantEmail)) {
+                // Bloqué dès l'extraction — inutile de laisser éditer un doublon dans l'aperçu.
+                responseBuilder.success(false)
+                        .reason("Une note de frais identique (même type, montant et description) existe déjà pour ce jour — évitez les doublons.");
             }
 
-            return CompletableFuture.completedFuture(response);
+            return CompletableFuture.completedFuture(responseBuilder.build());
         } catch (Exception e) {
             throw new IllegalStateException("Upload échoué: " + e.getMessage(), e);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * Étape 2 : confirmation de l'aperçu (éventuellement édité par le consultant) — persiste la dépense.
+     * {@code id} doit correspondre à un upload traité par {@link #handleUpload} (fichier retrouvé sur disque).
+     */
+    @Async
+    public CompletableFuture<ReceiptUploadResponse> confirmExpense(
+            String id, ExpenseItem edited, String paymentMode, String consultantEmail,
+            UUID tenantId, String realm) {
+        if (tenantId != null) TenantContext.set(tenantId, realm);
+        try {
+            Path saved = storage.findById(id).orElse(null);
+            if (saved == null) {
+                return CompletableFuture.completedFuture(ReceiptUploadResponse.builder()
+                        .id(id).success(false)
+                        .reason("Justificatif introuvable — veuillez ré-uploader le document.").build());
+            }
+            if (edited == null || edited.getAmount() == null || edited.getAmount() <= 0) {
+                return CompletableFuture.completedFuture(ReceiptUploadResponse.builder()
+                        .id(id).success(false).reason("Montant invalide.").build());
+            }
+
+            try {
+                LocalDate d = resolveDate(edited.getDate());
+                edited.setId(idGenerator.nextId(d));
+            } catch (Exception e) {
+                log.warn("⚠️ Impossible de générer l’id incrémental (confirm) : {}", e.getMessage());
+            }
+            if (!isBlank(consultantEmail) && isBlank(edited.getConsultantEmail())) {
+                edited.setConsultantEmail(consultantEmail.toLowerCase(Locale.ROOT).trim());
+            }
+            if (isBlank(edited.getPaymentMode())) {
+                edited.setPaymentMode(isBlank(paymentMode) ? "Personnel" : paymentMode);
+            }
+            if (isBlank(edited.getAddress())) {
+                edited.setAddress("inconnue");
+            }
+
+            // Ré-exécuté par sécurité : les champs ont pu être édités dans l'aperçu depuis l'extraction.
+            if (isDuplicate(edited, consultantEmail)) {
+                return CompletableFuture.completedFuture(ReceiptUploadResponse.builder()
+                        .id(id).success(false)
+                        .reason("Une note de frais identique (même type, montant et description) existe déjà pour ce jour — évitez les doublons.")
+                        .build());
+            }
+
+            String binaryHash = sha256(java.nio.file.Files.readAllBytes(saved));
+            expenseDataService.indexExpense(id, edited, "receipt", false, binaryHash, saved.toString());
+
+            return CompletableFuture.completedFuture(ReceiptUploadResponse.builder().id(id).success(true).build());
+        } catch (Exception e) {
+            throw new IllegalStateException("Confirmation échouée: " + e.getMessage(), e);
         } finally {
             TenantContext.clear();
         }
@@ -128,6 +193,14 @@ public class ReceiptUploadService {
         String lower = noAccents.toLowerCase(Locale.ROOT);
         String compact = lower.replaceAll("[^a-z0-9€., ]", " ");
         return compact.replaceAll("\\s+", " ").trim();
+    }
+
+    private static final java.util.regex.Pattern UNKNOWN_PAYMENT_MENTION = java.util.regex.Pattern.compile(
+            "(?i)\\s*[,;\\-\\u2013(]*\\s*paiement\\s+non\\s+pr[ée]cis[ée]?\\)?\\.?");
+
+    private String stripUnknownPaymentMention(String json) {
+        if (json == null || json.isBlank()) return json;
+        return UNKNOWN_PAYMENT_MENTION.matcher(json).replaceAll("");
     }
 
     private ExpenseItem parseExpense(String json) {
@@ -159,6 +232,15 @@ public class ReceiptUploadService {
 
     private boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /** Vérifie les doublons en résolvant l'email effectif (celui de la requête si absent de l'extraction). */
+    private boolean isDuplicate(ExpenseItem expense, String requestConsultantEmail) {
+        if (isBlank(expense.getConsultantEmail()) && !isBlank(requestConsultantEmail)) {
+            expense.setConsultantEmail(requestConsultantEmail.toLowerCase(Locale.ROOT).trim());
+        }
+        LocalDate date = resolveDate(expense.getDate());
+        return expenseDataService.hasDuplicate(expense, date);
     }
 
 }

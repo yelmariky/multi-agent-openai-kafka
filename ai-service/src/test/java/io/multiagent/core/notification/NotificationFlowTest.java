@@ -122,10 +122,10 @@ class NotificationFlowTest {
     // ── Test 3 : Robustesse du consumer ──────────────────────────────────────
 
     @Test
-    @DisplayName("Message JSON malformé → absorbé sans exception")
-    void malformedKafkaMessage_absorbedSilently() {
-        assertThatCode(() -> consumer.onNotification("not-json-at-all"))
-            .doesNotThrowAnyException();
+    @DisplayName("Message JSON malformé → exception propagée pour déclencher le retry/DLT Kafka")
+    void malformedKafkaMessage_propagatesExceptionForRetry() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> consumer.onNotification("not-json-at-all"))
+            .isInstanceOf(Exception.class);
     }
 
     @Test

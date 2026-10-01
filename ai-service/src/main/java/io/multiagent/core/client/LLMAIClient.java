@@ -93,7 +93,7 @@ public class LLMAIClient {
                     .baseUrl(llmBaseUrl)
                     .build();
             this.hasFallback = true;
-            log.info("LLMClient — chatClient pointe vers: {} (fallback OpenAI: {})", llmBaseUrl, fallbackLlmModel);
+            log.info("LLMClient — client LLM primaire configuré (fallback OpenAI: {})", fallbackLlmModel);
         } else {
             this.chatClient = this.client;
             this.hasFallback = false;

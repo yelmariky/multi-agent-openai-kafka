@@ -39,6 +39,9 @@ public class ReasoningController {
             @RequestHeader(value = "X-Source", required = false) String source) {
         String normalizedPayload = normalizePayload(payload);
         String consultantEmail = extractField(payload, "consultantEmail");
+        // Attribution budgétaire explicite (Personnel/Business) — utilisée uniquement par le formulaire
+        // structuré frais km, qui n'a pas de champ texte libre pour exprimer une phrase déclenchante.
+        String paymentModeOverride = extractField(payload, "paymentMode");
         log.info("➡️ AI-Core /reasoning/analyze received payload ({} chars) normalized to {} chars, consultant={}",
                 payload.length(), normalizedPayload.length(), maskEmail(consultantEmail));
 
@@ -61,7 +64,7 @@ public class ReasoningController {
                     "Seule la saisie de notes de frais est acceptée ici.");
         }
 
-        ReasoningResult result = reasoningService.process(normalizedPayload, consultantEmail);
+        ReasoningResult result = reasoningService.process(normalizedPayload, consultantEmail, paymentModeOverride);
 
         // ── Garde post-LLM : bloquer les intents hors périmètre même si l'IA les a classifiés ─
         if (!CONSULTANT_ALLOWED_INTENTS.contains(result.getType())) {
@@ -71,13 +74,9 @@ public class ReasoningController {
                     "Cette opération n'est pas autorisée depuis le portail consultant. " +
                     "Seule la saisie de notes de frais est acceptée ici.");
         }
-        try {
-            log.info("✅ /reasoning/analyze result: {}", objectMapper.writeValueAsString(result));
-        } catch (Exception e) {
-            log.info("✅ /reasoning/analyze result: type={} status={} expenses={}",
-                    result.getType(), result.getStatus(),
-                    result.getExpenses() != null ? result.getExpenses().size() : 0);
-        }
+        log.info("✅ /reasoning/analyze result: type={} status={} expenses={}",
+                result.getType(), result.getStatus(),
+                result.getExpenses() != null ? result.getExpenses().size() : 0);
         return result;
     }
 

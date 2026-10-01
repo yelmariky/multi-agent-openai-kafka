@@ -31,6 +31,10 @@ public class ReasoningService {
     private final ObjectMapper            mapper = new ObjectMapper();
 
     public ReasoningResult process(String userText, String consultantEmail) {
+        return process(userText, consultantEmail, null);
+    }
+
+    public ReasoningResult process(String userText, String consultantEmail, String paymentModeOverride) {
         if (userText == null || userText.isBlank()) {
             return ReasoningResult.error("Texte vide.");
         }
@@ -53,7 +57,7 @@ public class ReasoningService {
         log.info("🎯 Intent détecté: {} (confidence={})", intent.getIntent(), intent.getConfidence());
 
         return switch (intent.getIntent()) {
-            case "create_expense"         -> ragService.extractSingleExpense(raw, intent, consultantEmail);
+            case "create_expense"         -> ragService.extractSingleExpense(raw, intent, consultantEmail, paymentModeOverride);
             case "generate_expense_report"-> ragService.extractExpenseReport(raw, intent);
             case "delete_expense"         -> deleteExpenseService.deleteByText(raw, intent);
             default -> ReasoningResult.builder()

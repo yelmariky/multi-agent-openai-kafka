@@ -46,7 +46,16 @@ metadata:
     app: kafka
 spec:
   serviceName: kafka-headless
-  replicas: 3
+  # Mono-nœud (dev local) — cluster à 3 nœuds surdimensionné pour ce cluster K8s à 5 cœurs.
+  # IMPORTANT : le quorum KRaft (KAFKA_CONTROLLER_QUORUM_VOTERS ci-dessous) est persisté sur le
+  # volume de données au premier démarrage. Passer de 3 à 1 nœud sur un volume déjà initialisé
+  # avec 3 votants NE FONCTIONNE PAS (quorum incohérent) — il faut supprimer les PVC/PV kafka-1
+  # et kafka-2 ET repartir sur un volume vierge pour kafka-0 avant d'appliquer ce manifest :
+  #   kubectl delete statefulset kafka -n agent-system
+  #   kubectl delete pvc data-kafka-0 data-kafka-1 data-kafka-2 -n agent-system
+  #   kubectl apply -f deploy/kafka/statefulset.yaml
+  # Rétention configurée à 2h (dev) : aucune perte de données significative.
+  replicas: 1
   selector:
     matchLabels:
       app: kafka
@@ -68,18 +77,6 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /var/lib/kafka/data
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                  - kafka
-              topologyKey: kubernetes.io/hostname
       containers:
       - name: kafka
         image: confluentinc/cp-kafka:7.7.0
@@ -96,7 +93,9 @@ spec:
           export CLUSTER_DOMAIN=${CLUSTER_DOMAIN:-cluster.local}
           fqdn="${HOSTNAME}.kafka-headless.${POD_NAMESPACE}.svc.${CLUSTER_DOMAIN}"
           export KAFKA_ADVERTISED_LISTENERS="PLAINTEXT://${fqdn}:9092,INTERNAL://${fqdn}:9094"
-          export KAFKA_CONTROLLER_QUORUM_VOTERS="0@kafka-0.kafka-headless.${POD_NAMESPACE}.svc.${CLUSTER_DOMAIN}:9093,1@kafka-1.kafka-headless.${POD_NAMESPACE}.svc.${CLUSTER_DOMAIN}:9093,2@kafka-2.kafka-headless.${POD_NAMESPACE}.svc.${CLUSTER_DOMAIN}:9093"
+          # Quorum mono-nœud — un seul votant (kafka-0). Voir note en tête de fichier si ce
+          # StatefulSet a déjà tourné en 3 nœuds : le volume doit être réinitialisé.
+          export KAFKA_CONTROLLER_QUORUM_VOTERS="0@kafka-0.kafka-headless.${POD_NAMESPACE}.svc.${CLUSTER_DOMAIN}:9093"
           exec /etc/confluent/docker/run
         ports:
         - containerPort: 9092
@@ -142,6 +141,15 @@ spec:
         - name: KAFKA_DEFAULT_REPLICATION_FACTOR
           value: "1"
         - name: KAFKA_MIN_INSYNC_REPLICAS
+          value: "1"
+        # Topics internes Kafka (__consumer_offsets, __transaction_state) ont leur propre
+        # facteur de réplication par défaut (3) indépendant de KAFKA_DEFAULT_REPLICATION_FACTOR —
+        # doit être explicitement ramené à 1 en mono-nœud, sinon création en échec permanent.
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
           value: "1"
         # Log retention
         - name: KAFKA_LOG_RETENTION_HOURS

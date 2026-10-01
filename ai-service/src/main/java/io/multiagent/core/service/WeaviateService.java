@@ -8,6 +8,7 @@ import io.multiagent.core.document.entity.DocumentChunkEntity;
 import io.multiagent.core.document.repository.DocumentChunkJpaRepository;
 import io.multiagent.core.expense.entity.ExpenseEntity;
 import io.multiagent.core.expense.repository.ExpenseJpaRepository;
+import io.multiagent.core.expense.service.DuplicateExpenseMatcher;
 import io.multiagent.core.infrastructure.tenant.TenantContext;
 import io.multiagent.core.model.ConsultantProfile;
 import io.multiagent.core.model.CraDayEntry;
@@ -122,6 +123,11 @@ public class WeaviateService {
 
     @Transactional
     public void indexExpense(String id, ExpenseItem item, String source, boolean duplicate, String hash) {
+        indexExpense(id, item, source, duplicate, hash, null);
+    }
+
+    @Transactional
+    public void indexExpense(String id, ExpenseItem item, String source, boolean duplicate, String hash, String receiptPath) {
         try {
             if (item == null || item.getAmount() == null
                     || isNullOrBlank(item.getCurrency())
@@ -157,6 +163,7 @@ public class WeaviateService {
                     ? item.getConsultantEmail().toLowerCase(Locale.ROOT) : null);
             entity.setDuplicateFlag(duplicate);
             entity.setHash(hash);
+            entity.setReceiptPath(receiptPath);
             entity.setApprovalStatus(item.getApprovalStatus() != null ? item.getApprovalStatus() : "PENDING");
             entity.setApprovalNote(item.getApprovalNote());
             if (item.getAbsencePeriods() != null && !item.getAbsencePeriods().isEmpty()) {
@@ -291,6 +298,30 @@ public class WeaviateService {
         } catch (Exception e) {
             log.error("deleteExpenseById exception: {}", e.getMessage(), e);
             return -1;
+        }
+    }
+
+    /** Recherche une dépense par id, filtrée par tenant courant — utilisé pour servir le justificatif. */
+    public ExpenseEntity findByIdForCurrentTenant(String entityId) {
+        UUID tenantId = TenantContext.getTenantId();
+        UUID id = UUID.fromString(entityId);
+        return expenseRepo.findById(id).filter(e -> tenantId.equals(e.getTenantId())).orElse(null);
+    }
+
+    /**
+     * Vérifie si {@code candidate} (même consultant, même jour {@code date}) correspond déjà à une
+     * dépense persistée — même type, montant proche, description similaire. Voir {@link DuplicateExpenseMatcher}.
+     */
+    public boolean hasDuplicate(ExpenseItem candidate, LocalDate date) {
+        if (candidate == null || date == null || isNullOrBlank(candidate.getConsultantEmail())) return false;
+        try {
+            UUID tenantId = TenantContext.getTenantId();
+            List<ExpenseEntity> sameDay = expenseRepo.findByTenantIdAndConsultantEmailIgnoreCaseAndExpenseDate(
+                    tenantId, candidate.getConsultantEmail(), date);
+            return sameDay.stream().anyMatch(existing -> DuplicateExpenseMatcher.isDuplicate(existing, candidate));
+        } catch (Exception e) {
+            log.warn("hasDuplicate check failed, on laisse passer par prudence : {}", e.getMessage());
+            return false;
         }
     }
 
@@ -848,6 +879,7 @@ public class WeaviateService {
         item.setApprovalNote(e.getApprovalNote());
         item.setWeaviateId(e.getId().toString());
         item.setStatus(e.getApprovalStatus());
+        item.setHasReceipt(e.getReceiptPath() != null && !e.getReceiptPath().isBlank());
         if (e.getDuplicateFlag() != null && e.getDuplicateFlag()) {
             item.setMonthly(false);
         }

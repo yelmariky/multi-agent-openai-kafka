@@ -386,6 +386,7 @@ data:
          - "paiement par cheque"
          - "paiement par carte bleue"
          - "Location pour domiciliation d'entreprise, payé en espèces"
+         Si la méthode de paiement (carte/espèces/chèque/virement) n'est pas explicitement indiquée sur le document, NE L'AJOUTE PAS à la description — ne mets aucune mention du type "paiement non précisé" ou équivalent : garde uniquement l'objet réel de la dépense. L'absence de méthode de paiement n'a aucun rapport avec paymentMode (Personnel/Business, voir ci-dessous), qui reste renseigné indépendamment.
          Interdiction de recopier le ticket complet, pas de TVA, pas de texte parasite. Si le texte source est long, tronque et ne garde que ces éléments clés.
        - originalText : résumé ultra court (nom enseigne/société + ville + date + montant + mode de paiement)
        - paymentMode : qui a payé (Personnel ou Business). Ne mets pas la méthode de paiement ici (carte/espèces/virement). Si la méthode est connue, place-la dans description/originalText, sauf pour location/domiciliation/abonnement où elle doit être ignorée dans description — cette exception sur la description NE s'applique PAS à paymentMode.
@@ -472,8 +473,9 @@ data:
          - "paiement par cheque"
          - "paiement par carte bleue"
          - "Location pour domiciliation d'entreprise, payé en espèces"
+         Si la méthode de paiement (carte/espèces/chèque/virement) n'est pas explicitement indiquée sur le document, NE L'AJOUTE PAS à la description — ne mets aucune mention du type "paiement non précisé" ou équivalent : garde uniquement l'objet réel de la dépense. L'absence de méthode de paiement n'a aucun rapport avec paymentMode (Personnel/Business, voir ci-dessous), qui reste renseigné indépendamment.
          Interdiction de recopier le ticket complet, pas de TVA, pas de texte parasite. Si le texte source est long, tronque et ne garde que ces éléments clés.
-       - originalText : résumé ULTRA COURT (une seule ligne) ne contenant QUE : nom/enseigne/société, ville, date, montant, et la méthode de paiement sous forme de phrase courte (ex: "paiement par carte bleue", "payé en espèces", "virement bancaire"). Interdiction de recopier le ticket complet, pas de TVA, pas de texte parasite. Si le texte source est long, tronque et ne garde que ces éléments clés.
+       - originalText : résumé ULTRA COURT (une seule ligne) ne contenant QUE : nom/enseigne/société, ville, date, montant, et la méthode de paiement sous forme de phrase courte si elle est explicitement indiquée sur le document (ex: "paiement par carte bleue", "payé en espèces", "virement bancaire") — sinon omets simplement cette mention, n'écris rien du type "non précisé". Interdiction de recopier le ticket complet, pas de TVA, pas de texte parasite. Si le texte source est long, tronque et ne garde que ces éléments clés.
          Exemple attendu : "LA NOSTRA, Antony, 2026-02-06, 18.50 EUR, paiement par carte bleue"
        - paymentMode : qui a payé (Personnel ou Business). Ne mets pas ici la méthode de paiement. Place la méthode dans description/originalText si tu la connais, sauf pour location/domiciliation/abonnement où elle doit être ignorée dans description — cette exception sur la description NE s'applique PAS à paymentMode.
        - PRIORITÉ ABSOLUE : si le texte contient l'une des expressions suivantes, quelle que soit la suite de la phrase, paymentMode = "Business" OBLIGATOIREMENT : "compte business", "compte de l'entreprise", "carte société", "carte business", "payé par l'entreprise", "carte pro", "compte pro". Cette règle prime sur toutes les autres, y compris sur le type de dépense.

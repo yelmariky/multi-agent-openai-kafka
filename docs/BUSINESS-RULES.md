@@ -4,6 +4,13 @@
 - "compte business", "carte business", "carte societe" = `Business` (PRIORITE ABSOLUE)
 - Mention societe seule = `Personnel`
 - Sans indication = `Personnel` par defaut
+- **frais_km** : paymentMode ne represente pas un moyen de paiement reel (le bareme km couvre deja
+  carburant/usure/assurance d'un vehicule personnel) mais une **attribution budgetaire** -- facturer
+  ce trajet au client (`Business`) ou le prendre en charge en interne (`Personnel`, defaut). Fourni
+  explicitement par le selecteur du formulaire structure km (pas d'inference LLM sur le texte) --
+  `paymentModeOverride` transite via `/reasoning/analyze` -> `ReasoningService.process()` ->
+  `RAGService.extractSingleExpense()` -> `prepareExpense()`, qui l'applique uniquement si
+  `type == frais_km`, en ecrasant l'inference LLM.
 
 ## Frais km mensuels
 - Declenches quand le LLM met `"monthly": true` dans le JSON extrait

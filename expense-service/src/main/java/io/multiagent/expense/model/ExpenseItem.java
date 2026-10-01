@@ -65,6 +65,9 @@ public class ExpenseItem {
     /** UUID Weaviate de l'objet (champ _additional.id) — utilisé pour approve/refuse */
     private String weaviateId;
 
+    /** Vrai si un justificatif (photo/PDF) est associé — l'admin peut le consulter via GET /expenses/{id}/receipt */
+    private Boolean hasReceipt;
+
     /** Vrai si le LLM a détecté un frais km portant sur un mois entier (expansion journalière déclenchée côté Java) */
     private Boolean monthly;
 

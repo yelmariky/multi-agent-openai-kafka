@@ -31,48 +31,8 @@ spec:
     path: /Users/younes/data/kafka/kafka-0
     type: DirectoryOrCreate
 
----
-# PV pour kafka-1 → /Users/younes/data/kafka/kafka-1
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: kafka-pv-1
-  labels:
-    app: kafka
-    node: "1"
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: kafka-hostpath
-  claimRef:
-    namespace: agent-system
-    name: data-kafka-1
-  hostPath:
-    path: /Users/younes/data/kafka/kafka-1
-    type: DirectoryOrCreate
 
----
-# PV pour kafka-2 → /Users/younes/data/kafka/kafka-2
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: kafka-pv-2
-  labels:
-    app: kafka
-    node: "2"
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: kafka-hostpath
-  claimRef:
-    namespace: agent-system
-    name: data-kafka-2
-  hostPath:
-    path: /Users/younes/data/kafka/kafka-2
-    type: DirectoryOrCreate
+# kafka-1 et kafka-2 : plus de PV déclarés — cluster Kafka passé en mono-nœud (kafka-0 uniquement,
+# voir deploy/kafka/statefulset.yaml). Si les objets PV kafka-pv-1/kafka-pv-2 existent encore dans
+# le cluster (créés avant ce changement), ils sont orphelins et peuvent être supprimés :
+#   kubectl delete pv kafka-pv-1 kafka-pv-2

@@ -1,0 +1,44 @@
+# NetworkPolicy — Isolation réseau pour notification-service
+# Seul Kong (namespace 'gateway') peut appeler notification-service en HTTP (SSE).
+# Tout autre pod (même dans le cluster) est bloqué au niveau réseau K8s.
+# Prérequis : le CNI doit supporter NetworkPolicy (Calico, Cilium, Weave).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notification-service-ingress
+  namespace: multi-agent
+spec:
+  podSelector:
+    matchLabels:
+      app: notification-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Autoriser uniquement Kong (namespace gateway)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gateway
+      ports:
+        - protocol: TCP
+          port: 8084
+  egress:
+    # Kafka (consommation platform.notifications)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agent-system
+      ports:
+        - protocol: TCP
+          port: 9092
+    # DNS K8s (obligatoire pour toute résolution de nom de service)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

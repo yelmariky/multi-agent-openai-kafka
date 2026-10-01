@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Conception Août 2026 — IA-INSIGHT Platform</title>
+<title>Conception Septembre 2026 — IA-INSIGHT Platform</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -90,8 +90,8 @@ tr:nth-child(even) td{background:var(--l)}
 <body>
 
 <div class="cover">
-  <div class="cover-eyebrow">📅 Dossier de Conception Mensuel</div>
-  <div class="cover-month">Août 2026 — Mois 2 / 4</div>
+  <div class="cover-eyebrow">📅 Dossier de Conception Mensuel — IA-INSIGHT</div>
+  <div class="cover-month">Septembre 2026 — Mois 3 / 4</div>
   <h1>Gouvernance IA<br><em>& Sécurité RGPD</em></h1>
   <p class="cover-sub">Implémenter la couche de gouvernance IA (audit trail, PII masking, modèles versionnés) et atteindre la conformité RGPD complète avec le droit à l'oubli et la portabilité des données.</p>
   <div class="cover-tags">
@@ -102,7 +102,8 @@ tr:nth-child(even) td{background:var(--l)}
     <span class="tag">🕵️ PII Masking</span>
     <span class="tag">📊 Token Budget</span>
   </div>
-  <div class="cover-meta">
+  <div class="cover-meta" style="grid-template-columns:repeat(5,1fr)">
+    <div class="meta-item"><div class="meta-label">Société</div><div class="meta-val">IA-INSIGHT</div></div>
     <div class="meta-item"><div class="meta-label">Sprints</div><div class="meta-val">S3 + S4</div></div>
     <div class="meta-item"><div class="meta-label">Durée</div><div class="meta-val">4 semaines</div></div>
     <div class="meta-item"><div class="meta-label">Statut</div><div class="meta-val">📋 Planifié</div></div>
@@ -126,8 +127,9 @@ tr:nth-child(even) td{background:var(--l)}
       <tr><td>2</td><td>Solution proposée &amp; Périmètre</td></tr>
       <tr><td>3</td><td>Architecture technique</td></tr>
       <tr><td>4</td><td>Roadmap globale — 8 sprints / 4 mois</td></tr>
-      <tr><td>5</td><td>Sprints du mois — Août 2026</td></tr>
-      <tr><td>6</td><td>Sprint Review &amp; Rétrospective</td></tr>
+      <tr><td>5</td><td>Sprints du mois — Septembre 2026</td></tr>
+      <tr><td>6</td><td>Liste des bugs &amp; dette technique</td></tr>
+      <tr><td>7</td><td>Sprint Review &amp; Rétrospective</td></tr>
     </tbody>
   </table>
 </div>
@@ -282,7 +284,7 @@ S8                                                            ██████
   <div class="eyebrow">Contexte du mois</div>
   <h2 class="stitle">Pourquoi Gouvernance IA & Sécurité maintenant ?</h2>
 
-  <p>Après la consolidation technique de Juillet, Août est consacré aux deux axes non-fonctionnels les plus critiques avant d'aller en production réelle : la <strong>gouvernance des modèles IA</strong> et la <strong>conformité réglementaire RGPD</strong>. Ces sujets ne peuvent pas être traités en fin de projet — ils structurent la confiance des clients ESN.</p>
+  <p>Après la consolidation technique de Juillet-Août, Septembre est consacré, pour IA-INSIGHT, aux deux axes non-fonctionnels les plus critiques avant d'aller en production réelle : la <strong>gouvernance des modèles IA</strong> et la <strong>conformité réglementaire RGPD</strong>. Ces sujets ne peuvent pas être traités en fin de projet — ils structurent la confiance des clients ESN.</p>
 
   <div class="note r">
     <strong>Risque réglementaire :</strong> Sans audit trail LLM et sans mécanisme de droit à l'oubli, la plateforme ne peut pas être vendue à des ESN opérant sous contrat avec des grandes entreprises (banques, assurances, secteur public) qui exigent ces garanties contractuellement.
@@ -302,7 +304,7 @@ S8                                                            ██████
       <div class="sprint-num">S3</div>
       <div class="sprint-head-info">
         <h3>Gouvernance IA — Audit, PII Masking & Token Budget</h3>
-        <p>Semaines 5-6 · Août 2026 · Responsable : Tech Lead IA + DPO</p>
+        <p>Semaines 5-6 · Septembre 2026 · Responsable : Tech Lead IA + DPO</p>
       </div>
     </div>
     <div class="sprint-body">
@@ -396,7 +398,7 @@ S8                                                            ██████
       <div class="sprint-num">S4</div>
       <div class="sprint-head-info">
         <h3>Sécurité avancée, RGPD & Versioning des modèles</h3>
-        <p>Semaines 7-8 · Août 2026 · Responsable : Tech Lead Sécurité + DPO</p>
+        <p>Semaines 7-8 · Septembre 2026 · Responsable : Tech Lead Sécurité + DPO</p>
       </div>
     </div>
     <div class="sprint-body">
@@ -466,9 +468,82 @@ S8                                                            ██████
   </div>
 </div>
 
+<!-- BUGS & DETTE TECHNIQUE -->
+<div class="section">
+  <div class="eyebrow">Suivi qualité</div>
+  <h2 class="stitle">Liste des bugs & dette technique à traiter</h2>
+  <p>Audit de maturité prod mené en parallèle des Sprints 3 &amp; 4 (sécurité réseau, résilience Kafka, exposition de logs). Chaque ligne est rattachée au sprint responsable de sa correction.</p>
+
+  <table>
+    <thead><tr><th>#</th><th>Bug / Dette technique</th><th>Sévérité</th><th>Sprint</th><th>Statut</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>Secrets K8s en clair — placeholders <code>$OPENAI_API_KEY</code>, <code>$AI_CORE_ADMIN_KEY</code>, <code>$KEYCLOAK_ADMIN_PASSWORD</code> non résolus dans <code>ai-service/deploy/k8s/secret.yaml</code></td>
+        <td><span class="badge br">Critique</span></td>
+        <td>S4</td>
+        <td><span class="badge br">🔴 Ouvert</span> — injection des vraies valeurs en cluster requise</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Absence de NetworkPolicy sur 4 des 5 microservices (seul ai-service isolé réseau)</td>
+        <td><span class="badge bo">Élevée</span></td>
+        <td>S3</td>
+        <td><span class="badge bg">🟢 Corrigé</span> — branche <code>sprint3</code></td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Aucun HorizontalPodAutoscaler ni PodDisruptionBudget sur les 5 services — pas de scaling auto, downtime possible en rolling update</td>
+        <td><span class="badge bo">Élevée</span></td>
+        <td>S3</td>
+        <td><span class="badge bg">🟢 Corrigé</span> — branche <code>sprint3</code></td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><code>ReasoningController</code> loggue le <code>ReasoningResult</code> complet en clair (OWASP LLM01 — divulgation d'information sensible)</td>
+        <td><span class="badge bv">Moyenne</span></td>
+        <td>S3</td>
+        <td><span class="badge bg">🟢 Corrigé</span> — branche <code>sprint3</code></td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td><code>LLMAIClient</code> loggue le baseUrl du LLM fallback en clair au démarrage</td>
+        <td><span class="badge bb">Faible</span></td>
+        <td>S3</td>
+        <td><span class="badge bg">🟢 Corrigé</span> — branche <code>sprint3</code></td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>Kafka <code>platform.notifications</code> : aucun retry ni Dead-Letter Topic — message perdu définitivement en cas d'erreur non-transiente ; auto-commit actif même en cas d'échec de traitement</td>
+        <td><span class="badge bo">Élevée</span></td>
+        <td>S3</td>
+        <td><span class="badge bo">🟡 Partiel</span> — retry + DLT ajoutés (branche <code>sprint3</code>), passage en ack manuel restant</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>invoice-service : appel HTTP synchrone sans file d'attente — une demande de facture est perdue si le service est indisponible au moment de l'appel</td>
+        <td><span class="badge bv">Moyenne</span></td>
+        <td>S4</td>
+        <td><span class="badge br">🔴 Ouvert</span> — trade-off documenté (docs/KAFKA.md), à réévaluer si le volume augmente</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td>Route Kong <code>/invoices</code> sans plugin jwt/rate-limiting/cors, contrairement à la route <code>ai-core</code></td>
+        <td><span class="badge bo">Élevée</span></td>
+        <td>S3</td>
+        <td><span class="badge br">🔴 Ouvert</span> — à vérifier et corriger</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note o">
+    <strong>Priorité de correction avant Go/No-Go Octobre :</strong> les items #1 et #8 sont bloquants pour une mise en production réelle (secrets non résolus + gateway sans protection) et doivent être traités avant la fin du Sprint 4.
+  </div>
+</div>
+
 <div class="section">
   <div class="eyebrow">Fin de mois</div>
-  <h2 class="stitle">Sprint Review & Rétrospective Août</h2>
+  <h2 class="stitle">Sprint Review & Rétrospective Septembre</h2>
   <div class="g2">
     <div>
       <h3>Démos à préparer</h3>
@@ -491,7 +566,7 @@ S8                                                            ██████
   </div>
 </div>
 
-<div class="footer">IA-INSIGHT Platform · Dossier de conception Août 2026 · Confidentiel</div>
+<div class="footer">IA-INSIGHT Platform · Dossier de conception Septembre 2026 · Confidentiel</div>
 </div>
 </body>
 </html>

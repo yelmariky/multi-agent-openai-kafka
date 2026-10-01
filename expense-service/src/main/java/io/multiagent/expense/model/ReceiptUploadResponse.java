@@ -16,4 +16,9 @@ public class ReceiptUploadResponse {
     private String duplicateOfText;
     private String ocrText;
     private String extractedExpenseJson;
+    /** false si aucune dépense plausible n'a pu être extraite du document (voir {@link #reason}). */
+    @Builder.Default
+    private boolean success = true;
+    /** Message explicatif quand success=false — affiché à l'utilisateur. */
+    private String reason;
 }

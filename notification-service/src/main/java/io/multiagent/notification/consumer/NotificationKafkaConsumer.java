@@ -7,7 +7,10 @@ import io.multiagent.notification.service.AdminSseRegistry;
 import io.multiagent.notification.service.ConsultantSseRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -28,27 +31,34 @@ public class NotificationKafkaConsumer {
     private final ConsultantSseRegistry consultantSse;
     private final ObjectMapper          objectMapper;
 
+    @RetryableTopic(
+            attempts = "4",
+            backoff = @Backoff(delay = 1000, multiplier = 2.0, maxDelay = 10000),
+            dltTopicSuffix = ".DLT",
+            autoCreateTopics = "true"
+    )
     @KafkaListener(
             topics = "platform.notifications",
             containerFactory = "kafkaListenerContainerFactory"
     )
-    public void onNotification(String message) {
-        try {
-            DomainEvent event    = objectMapper.readValue(message, DomainEvent.class);
-            NotificationPayload np = objectMapper.readValue(event.payload(), NotificationPayload.class);
-            String payload = buildSsePayload(np);
+    public void onNotification(String message) throws Exception {
+        DomainEvent event    = objectMapper.readValue(message, DomainEvent.class);
+        NotificationPayload np = objectMapper.readValue(event.payload(), NotificationPayload.class);
+        String payload = buildSsePayload(np);
 
-            if (NotificationPayload.TARGET_ADMIN.equals(np.target())) {
-                adminSse.push("notification", payload);
-                log.info("[→SSE-ADMIN] type={}", np.type());
-            } else if (NotificationPayload.TARGET_CONSULTANT.equals(np.target())
-                    && np.consultantEmail() != null && !np.consultantEmail().isBlank()) {
-                consultantSse.push(np.consultantEmail(), "notification", payload);
-                log.info("[→SSE-CONSULTANT] email={} type={}", np.consultantEmail(), np.type());
-            }
-        } catch (Exception e) {
-            log.warn("[NotificationConsumer] Erreur traitement : {}", e.getMessage());
+        if (NotificationPayload.TARGET_ADMIN.equals(np.target())) {
+            adminSse.push("notification", payload);
+            log.info("[→SSE-ADMIN] type={}", np.type());
+        } else if (NotificationPayload.TARGET_CONSULTANT.equals(np.target())
+                && np.consultantEmail() != null && !np.consultantEmail().isBlank()) {
+            consultantSse.push(np.consultantEmail(), "notification", payload);
+            log.info("[→SSE-CONSULTANT] email={} type={}", np.consultantEmail(), np.type());
         }
+    }
+
+    @DltHandler
+    public void onNotificationDlt(String message) {
+        log.error("[NotificationConsumer] Message envoyé en DLT après échec des retries : {}", message);
     }
 
     private String buildSsePayload(NotificationPayload np) {

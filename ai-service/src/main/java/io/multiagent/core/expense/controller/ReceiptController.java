@@ -1,6 +1,7 @@
 package io.multiagent.core.expense.controller;
 
 import io.multiagent.core.infrastructure.tenant.TenantContext;
+import io.multiagent.core.model.ExpenseItem;
 import io.multiagent.core.model.ReceiptUploadResponse;
 import io.multiagent.core.expense.service.ReceiptUploadService;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,5 +37,34 @@ public class ReceiptController {
         UUID tenantId = TenantContext.getTenantIdOrNull();
         String realm  = TenantContext.getRealm();
         return uploadService.handleUpload(file, paymentMode, consultantEmail, tenantId, realm);
+    }
+
+    public record ConfirmRequest(
+            String id, String type, Double amount, String currency, String date,
+            String company, String address, String description, String motif,
+            String paymentMode, String consultantEmail) {}
+
+    @PostMapping(value = "/confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public CompletableFuture<ReceiptUploadResponse> confirm(@RequestBody ConfirmRequest req) {
+        log.info("✅ Confirmation reçue: id={}, consultant={}", req.id(), req.consultantEmail());
+        UUID tenantId = TenantContext.getTenantIdOrNull();
+        String realm  = TenantContext.getRealm();
+
+        ExpenseItem edited = new ExpenseItem();
+        edited.setType(req.type());
+        edited.setAmount(req.amount());
+        edited.setCurrency(req.currency());
+        edited.setDate(req.date());
+        edited.setCompany(req.company());
+        edited.setAddress(req.address());
+        String description = req.description();
+        if (req.motif() != null && !req.motif().isBlank()) {
+            description = (description == null || description.isBlank())
+                    ? req.motif().trim()
+                    : description + " — " + req.motif().trim();
+        }
+        edited.setDescription(description);
+
+        return uploadService.confirmExpense(req.id(), edited, req.paymentMode(), req.consultantEmail(), tenantId, realm);
     }
 }

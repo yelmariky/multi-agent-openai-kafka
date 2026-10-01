@@ -214,6 +214,10 @@
             </div>
 
             <div class="actions-row" style="margin-top:16px">
+              <button id="cra-prefill" class="btn-secondary" title="Remplir automatiquement les jours ouvrés vides avec des journées complètes (1j)">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                Pré-remplir (1j)
+              </button>
               <button id="cra-save" class="btn-secondary">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                 Sauvegarder
@@ -272,30 +276,141 @@
 
           <!-- Saisie libre -->
           <div class="card">
-            <p class="eyebrow">Saisie libre</p>
+            <p class="eyebrow">Justificatif</p>
             <h2>Nouvelle note de frais</h2>
-            <p class="card-desc">Décrivez votre dépense en langage naturel. Pour les frais km mensuels, chargez vos absences pour qu'elles soient exclues automatiquement du calcul.</p>
+            <p class="card-desc">Joignez la facture ou le ticket — les informations (type, montant, date, enseigne, ville) sont extraites automatiquement puis proposées en aperçu avant validation.</p>
             <div class="form-stack">
               <div class="form-row">
                 <label class="inline" style="flex:2">
-                  Description
-                  <textarea id="notes-text" rows="3" placeholder="Ex : frais km janvier sur 44 km…"></textarea>
+                  Justificatif (PDF, JPG ou PNG — 8 Mo max)
+                  <input type="file" id="notes-file" accept="image/jpeg,image/png,application/pdf">
                 </label>
                 <label class="inline">
-                  Mois (absences km)
-                  <input type="month" id="notes-km-month">
+                  Mode de paiement
+                  <select id="notes-payment-mode">
+                    <option value="Personnel">Personnel</option>
+                    <option value="Business">Business</option>
+                  </select>
                 </label>
               </div>
+              <div class="form-row">
+                <label class="inline" style="flex:2">
+                  Motif / contexte (optionnel)
+                  <textarea id="notes-text" rows="2" placeholder="Ex : achat pour le télétravail"></textarea>
+                </label>
+              </div>
+              <p class="card-desc" style="margin:2px 0 0;font-size:12px">
+                Pour les <strong>frais kilométriques</strong>, utilisez le formulaire dédié ci-dessous — aucune facture n'est nécessaire.
+              </p>
             </div>
-            <!-- Exemples express -->
-            <div class="examples-row" style="margin-top:10px">
-              <span class="examples-label">Exemples :</span>
-              <button class="btn-example" data-example-tpl="Le 5 {month} j'ai mangé au restaurant DE LA PORTE et j'ai payé 28 € sur ma carte personnelle">🍽 Restaurant</button>
-              <button class="btn-example" data-example-tpl="Nuit à l'hôtel Mercure Paris le 12 {month}, 145 € réglés par carte business">🏨 Hôtel</button>
-              <button class="btn-example" data-example-tpl="Taxi Uber le 8 {month} de Paris Gare de Lyon à La Défense, 32 €, payé en personnel">🚕 Taxi</button>
-              <button class="btn-example" data-example-tpl="Achat d'un écran Dell 27 pouces le 15 {month} pour le télétravail, 389 € carte business">🖥 Matériel</button>
-              <button class="btn-example" data-example-tpl="Train Paris-Lyon le 20 {month} aller-retour, 112 €, carte business">🚆 Transport</button>
-              <button class="btn-example" id="example-km" data-example-tpl="Frais kilométriques {month}, 44 km aller-retour domicile-bureau par jour">🚗 Km mensuel</button>
+
+            <div class="actions-row" style="margin-top:12px">
+              <button id="notes-submit" class="btn-primary" disabled>
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                Analyser le justificatif
+              </button>
+            </div>
+            <div id="notes-status" class="status"></div>
+
+            <!-- Aperçu éditable — rempli après analyse, avant confirmation -->
+            <div id="notes-result" style="display:none; margin-top:16px">
+              <div class="form-stack">
+                <div class="form-row">
+                  <label class="inline">
+                    Type
+                    <input type="text" id="preview-type">
+                  </label>
+                  <label class="inline">
+                    Montant
+                    <input type="number" step="0.01" id="preview-amount">
+                  </label>
+                  <label class="inline">
+                    Devise
+                    <input type="text" id="preview-currency" style="width:70px">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label class="inline">
+                    Date
+                    <input type="date" id="preview-date">
+                  </label>
+                  <label class="inline">
+                    Enseigne
+                    <input type="text" id="preview-company">
+                  </label>
+                  <label class="inline">
+                    Ville
+                    <input type="text" id="preview-address">
+                  </label>
+                </div>
+                <div class="form-row">
+                  <label class="inline" style="flex:2">
+                    Description
+                    <input type="text" id="preview-description">
+                  </label>
+                  <label class="inline">
+                    Mode de paiement
+                    <select id="preview-payment-mode">
+                      <option value="Personnel">Personnel</option>
+                      <option value="Business">Business</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div class="actions-row" style="margin-top:12px">
+                <button id="notes-confirm" class="btn-primary">Confirmer</button>
+                <button id="notes-cancel" class="btn-secondary">Annuler</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Frais kilométriques — pas de justificatif, saisie structurée -->
+          <div class="card" style="border-color:rgba(122,215,255,.25)">
+            <p class="eyebrow" style="color:var(--accent-2,#7ad7ff)">🚗 Trajet régulier</p>
+            <h2>Frais kilométriques</h2>
+            <p class="card-desc">Indemnité calculée automatiquement (barème 7CV) — aucun justificatif requis.</p>
+            <div class="form-stack">
+              <div class="form-row">
+                <label class="inline" style="flex:2">
+                  Trajet (optionnel)
+                  <input type="text" id="km-trajet" placeholder="Ex : Domicile — Bureau">
+                </label>
+                <label class="inline">
+                  Distance (km)
+                  <input type="number" id="km-distance" min="0" step="0.1" placeholder="44">
+                </label>
+                <label class="inline" style="flex:0 0 auto;align-self:flex-end;flex-direction:row;align-items:center;gap:6px;display:flex">
+                  <input type="checkbox" id="km-aller-retour" checked style="width:auto">
+                  Aller-retour
+                </label>
+              </div>
+              <div class="form-row">
+                <label class="inline">
+                  Fréquence
+                  <select id="km-frequence">
+                    <option value="mensuel">Mensuel (jours ouvrés)</option>
+                    <option value="ponctuel">Ponctuel (un jour)</option>
+                  </select>
+                </label>
+                <label class="inline" id="km-mois-wrap">
+                  Mois
+                  <input type="month" id="notes-km-month">
+                </label>
+                <label class="inline" id="km-date-wrap" style="display:none">
+                  Date
+                  <input type="date" id="km-date">
+                </label>
+                <label class="inline">
+                  Attribution
+                  <select id="km-payment-mode">
+                    <option value="Personnel">Personnel</option>
+                    <option value="Business">Business (à facturer au client)</option>
+                  </select>
+                </label>
+              </div>
+              <p class="card-desc" style="margin:2px 0 0;font-size:12px">
+                L'indemnité km reste calculée sur votre véhicule personnel — "Business" indique seulement que ce trajet doit être refacturé au client plutôt que pris en charge en interne.
+              </p>
             </div>
 
             <div class="actions-row" style="margin-top:8px">
@@ -309,40 +424,12 @@
               <div id="notes-absences-list" style="display:none; margin-top:8px"></div>
             </div>
             <div class="actions-row" style="margin-top:12px">
-              <button id="notes-submit" class="btn-primary">
+              <button id="km-submit" class="btn-primary" disabled>
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                Créer une note de frais
+                Créer la note kilométrique
               </button>
             </div>
-            <div id="notes-status" class="status"></div>
-            <div id="notes-result" style="display:none; margin-top:16px"></div>
-          </div>
-
-          <!-- Upload justificatif -->
-          <div class="card">
-            <p class="eyebrow">Justificatif</p>
-            <h2>Upload photo / PDF</h2>
-            <p class="card-desc">OCR automatique + extraction de la dépense.</p>
-            <div class="form-stack">
-              <label class="inline">
-                Fichier
-                <input type="file" id="notes-file" accept="image/*,application/pdf">
-              </label>
-              <label class="inline">
-                Mode de paiement
-                <select id="notes-payment-mode">
-                  <option value="Personnel">Personnel</option>
-                  <option value="Business">Business</option>
-                </select>
-              </label>
-            </div>
-            <div class="actions-row" style="margin-top:12px">
-              <button id="notes-upload-btn" class="btn-secondary">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                Analyser le justificatif
-              </button>
-            </div>
-            <div id="notes-upload-status" class="status"></div>
+            <div id="km-status" class="status"></div>
           </div>
 
           </div><!-- /.notes-saisie-row -->
