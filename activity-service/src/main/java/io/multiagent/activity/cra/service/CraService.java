@@ -117,6 +117,7 @@ public class CraService {
                 "CRA_SUBMITTED",
                 "CRA soumis par " + submitted.consultant() + " pour " + submitted.billingMonth(),
                 submitted.id());
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "cra", "event", "submitted").increment();
         eventPublisher.publish(KafkaTopics.CRA_SUBMITTED,
                 new DomainEvent("CRA_SUBMITTED", submitted.id(), null,
                         submitted.company(), craPayload(submitted), Instant.now()));
@@ -153,6 +154,7 @@ public class CraService {
                 "CRA_VALIDATED",
                 "Votre CRA de " + validated.billingMonth() + " a été validé par " + validatedBy + ".",
                 validated.id());
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "cra", "event", "validated").increment();
         eventPublisher.publish(KafkaTopics.CRA_VALIDATED,
                 new DomainEvent("CRA_VALIDATED", validated.id(), null,
                         validated.company(), craPayloadWithExtra(validated, "validatedBy", validatedBy), Instant.now()));
@@ -188,6 +190,7 @@ public class CraService {
                 "Votre CRA de " + refused.billingMonth() + " a été refusé"
                         + (reason != null && !reason.isBlank() ? " : " + reason : "."),
                 refused.id());
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "cra", "event", "refused").increment();
         eventPublisher.publish(KafkaTopics.CRA_REFUSED,
                 new DomainEvent("CRA_REFUSED", refused.id(), null,
                         refused.company(), craPayloadWithExtra(refused, "reason", reason), Instant.now()));

@@ -74,6 +74,14 @@ public class ExpenseItem {
     /** Périodes d'absence pour frais_km mensuel — renseigné par le LLM, utilisé par expandKmMonthly */
     private List<AbsencePeriod> absencePeriods;
 
+    /**
+     * Verdict de conformité à la politique de remboursement du tenant (JSON :
+     * {compliant, citedClause, explanation}), renseigné par RAGService si une politique ACTIVE
+     * existe. Purement consultatif — n'affecte jamais approvalStatus, affiché à l'admin lors de
+     * l'approbation.
+     */
+    private String policyVerdictJson;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

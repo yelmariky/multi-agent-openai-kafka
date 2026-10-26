@@ -32,6 +32,8 @@ public class QueryRewriteService implements InitializingBean {
     private String rewriteModel;
     @Value("${AI_CORE_PROMPT_REWRITE_SYSTEM:}")
     private String rewriteSystemPromptEnv;
+    @Value("${AI_CORE_PROMPT_REWRITE_USER:}")
+    private String rewriteUserPromptTemplate;
     private String systemPromptTemplate;
 
     @Override
@@ -39,7 +41,10 @@ public class QueryRewriteService implements InitializingBean {
         if (rewriteSystemPromptEnv != null && !rewriteSystemPromptEnv.isBlank()) {
             systemPromptTemplate = rewriteSystemPromptEnv;
         } else {
-            throw new IllegalStateException("AI_CORE_PROMPT_REWRITE_SYSTEM doit être fourni via ConfigMap/ENV");
+            throw new IllegalStateException("AI_CORE_PROMPT_REWRITE_SYSTEM must be provided via ConfigMap/ENV");
+        }
+        if (rewriteUserPromptTemplate == null || rewriteUserPromptTemplate.isBlank()) {
+            throw new IllegalStateException("AI_CORE_PROMPT_REWRITE_USER must be provided via ConfigMap/ENV");
         }
     }
 
@@ -57,12 +62,7 @@ public class QueryRewriteService implements InitializingBean {
         // Échapper les % littéraux du template configmap avant substitution
         String system = systemPromptTemplate.replace("%", "%%").replace("%%s", "%s").formatted(todayStr);
 
-        String user = """
-                Voici la requête utilisateur :
-                "%s"
-
-                Donne uniquement le JSON demandé.
-                """.formatted(query.replace("%", "%%"));
+        String user = rewriteUserPromptTemplate.replace("{query}", query);
 
         try {
             var completion = llm.chatJson(rewriteModel, system, user);

@@ -6,6 +6,11 @@ spring:
     name: notification-service
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:kafka.agent-system.svc.cluster.local:9092}
+    # Propagation du trace_id dans les en-têtes Kafka (producteur + consommateur)
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
     consumer:
       # Chaque pod reçoit TOUS les messages (SSE emitters en mémoire, non partagés entre pods)
       group-id: ${KAFKA_CONSUMER_GROUP_ID:notification-service-${HOSTNAME:local}}
@@ -16,6 +21,23 @@ spring:
   mvc:
     async:
       request-timeout: -1   # SSE : pas de timeout côté Spring
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ["prometheus", "health"]
+  # Sprint 6 — trace_id/span_id dans chaque log (Micrometer Tracing, aucun export de traces)
+  tracing:
+    sampling:
+      probability: 1.0
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    # Histogramme HTTP → latence p95 (alerte Prometheus > 1 s)
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
 
 logging:
   level:

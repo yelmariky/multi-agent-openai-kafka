@@ -166,6 +166,7 @@ public class WeaviateService {
             entity.setReceiptPath(receiptPath);
             entity.setApprovalStatus(item.getApprovalStatus() != null ? item.getApprovalStatus() : "PENDING");
             entity.setApprovalNote(item.getApprovalNote());
+            entity.setPolicyVerdictJson(item.getPolicyVerdictJson());
             if (item.getAbsencePeriods() != null && !item.getAbsencePeriods().isEmpty()) {
                 try {
                     entity.setAbsencePeriodsJson(objectMapper.writeValueAsString(item.getAbsencePeriods()));
@@ -175,6 +176,7 @@ public class WeaviateService {
             }
 
             expenseRepo.save(entity);
+            io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "expense", "event", "created").increment();
             log.info("Expense indexed (expenseId={})", item.getId());
         } catch (Exception e) {
             log.error("Exception indexExpense: {}", e.getMessage(), e);
@@ -334,6 +336,7 @@ public class WeaviateService {
             entity.setApprovalStatus(status);
             if (note != null) entity.setApprovalNote(note);
             expenseRepo.save(entity);
+            io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "expense", "event", status.toLowerCase(java.util.Locale.ROOT)).increment();
             log.info("Expense approval updated: id={}, status={}", entityId, status);
             return entity;
         } catch (Exception e) {
@@ -746,6 +749,7 @@ public class WeaviateService {
             entity.setEmail(profile.email());
             entity.setCapital(profile.capital());
             entity.setLatePaymentClause(profile.latePaymentClause());
+            entity.setVatNumber(profile.vatNumber());
             sellerProfileRepo.save(entity);
             log.info("SellerProfile upserted (companyName={})", profile.companyName());
         } catch (Exception e) {
@@ -880,6 +884,7 @@ public class WeaviateService {
         item.setWeaviateId(e.getId().toString());
         item.setStatus(e.getApprovalStatus());
         item.setHasReceipt(e.getReceiptPath() != null && !e.getReceiptPath().isBlank());
+        item.setPolicyVerdictJson(e.getPolicyVerdictJson());
         if (e.getDuplicateFlag() != null && e.getDuplicateFlag()) {
             item.setMonthly(false);
         }
@@ -979,7 +984,7 @@ public class WeaviateService {
         return new SellerProfile(
                 e.getCompanyName(), e.getAddress(), e.getRcs(),
                 e.getIban(), e.getBic(), e.getEmail(),
-                e.getCapital(), e.getLatePaymentClause()
+                e.getCapital(), e.getLatePaymentClause(), e.getVatNumber()
         );
     }
 

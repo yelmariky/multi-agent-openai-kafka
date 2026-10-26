@@ -17,15 +17,24 @@ import java.util.*;
 public class InvoicePaymentService {
 
     private final InvoiceJpaRepository invoiceRepo;
+    private final InvoiceService invoiceService;
 
     /** Marque la facture comme ENVOYÉE au client. */
     @Transactional
     public Map<String, Object> markSent(UUID id) {
         UUID tenantId = TenantContext.getTenantId();
         InvoiceEntity inv = findSecure(id, tenantId);
+        requireOpenInvoice(inv);
         inv.setSentDate(LocalDate.now());
         inv.setPaymentStatus("ENVOYEE");
         invoiceRepo.save(inv);
+        // Original figé à l'envoi : c'est ce PDF qui sera toujours servi ensuite (archivage légal).
+        try {
+            invoiceService.archivedPdf(inv);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Archivage du PDF impossible : " + e.getMessage(), e);
+        }
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "invoice", "event", "sent").increment();
         log.info("Invoice [{}] marked as ENVOYEE", id);
         return toMap(inv);
     }
@@ -35,10 +44,12 @@ public class InvoicePaymentService {
     public Map<String, Object> markPaid(UUID id, String paymentDateStr) {
         UUID tenantId = TenantContext.getTenantId();
         InvoiceEntity inv = findSecure(id, tenantId);
+        requireOpenInvoice(inv);
         LocalDate payDate = parseDate(paymentDateStr);
         inv.setPaymentReceivedDate(payDate != null ? payDate : LocalDate.now());
         inv.setPaymentStatus("PAYEE");
         invoiceRepo.save(inv);
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "invoice", "event", "paid").increment();
         log.info("Invoice {} marked as PAYEE on {}", id, inv.getPaymentReceivedDate());
         return toMap(inv);
     }
@@ -52,7 +63,7 @@ public class InvoicePaymentService {
         // Calculer EN_RETARD dynamiquement
         LocalDate today = LocalDate.now();
         all.forEach(inv -> {
-            if (!"PAYEE".equals(inv.getPaymentStatus())
+            if (isOpen(inv) && !"PAYEE".equals(inv.getPaymentStatus())
                     && inv.getPaymentDueDate() != null
                     && inv.getPaymentDueDate().isBefore(today)) {
                 inv.setPaymentStatus("EN_RETARD");
@@ -66,6 +77,19 @@ public class InvoicePaymentService {
     }
 
     // -------------------------------------------------------------------------
+
+    /** Facture annulée ou avoir : ni envoi, ni encaissement, ni retard. */
+    static boolean isOpen(InvoiceEntity inv) {
+        return !InvoiceService.TYPE_CREDIT_NOTE.equalsIgnoreCase(inv.getInvoiceType())
+                && !InvoiceService.STATUS_CANCELLED.equalsIgnoreCase(inv.getPaymentStatus());
+    }
+
+    private void requireOpenInvoice(InvoiceEntity inv) {
+        if (!isOpen(inv)) {
+            throw new InvoiceService.InvoiceLockedException(
+                    "Facture " + inv.getInvoiceName() + " annulée ou avoir : action impossible.");
+        }
+    }
 
     private InvoiceEntity findSecure(UUID id, UUID tenantId) {
         return invoiceRepo.findById(id)

@@ -17,7 +17,10 @@ import java.util.Set;
  */
 @Service
 @Slf4j
+@lombok.RequiredArgsConstructor
 public class ReceiptFileValidator {
+
+    private final io.multiagent.expense.i18n.Messages messages;
 
     // Aligné avec spring.servlet.multipart.max-file-size (application.yml) — les deux doivent rester synchronisés.
     private static final long MAX_SIZE_BYTES = 8L * 1024 * 1024;
@@ -26,15 +29,15 @@ public class ReceiptFileValidator {
 
     public void validate(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new InvalidReceiptFileException("Fichier manquant ou vide.");
+            throw new InvalidReceiptFileException(messages.get("upload.error.empty"));
         }
         if (file.getSize() > MAX_SIZE_BYTES) {
-            throw new InvalidReceiptFileException("Fichier trop volumineux (8 Mo maximum).");
+            throw new InvalidReceiptFileException(messages.get("upload.error.tooLarge"));
         }
 
         String extension = extensionOf(file.getOriginalFilename());
         if (!ALLOWED_EXTENSIONS.contains(extension)) {
-            throw new InvalidReceiptFileException("Format non autorisé — seuls les fichiers PDF, JPG et PNG sont acceptés.");
+            throw new InvalidReceiptFileException(messages.get("upload.error.format"));
         }
 
         String sniffed = sniffContentType(file);
@@ -47,8 +50,7 @@ public class ReceiptFileValidator {
         if (!matches) {
             log.warn("🛡️ [RECEIPT] Fichier rejeté — contenu réel ({}) ne correspond pas à l'extension déclarée ({})",
                     sniffed, extension);
-            throw new InvalidReceiptFileException(
-                    "Le contenu du fichier ne correspond pas à son extension — fichier corrompu ou renommé.");
+            throw new InvalidReceiptFileException(messages.get("upload.error.mismatch"));
         }
     }
 
@@ -65,7 +67,7 @@ public class ReceiptFileValidator {
         try (InputStream in = file.getInputStream()) {
             read = in.readNBytes(header, 0, header.length);
         } catch (IOException e) {
-            throw new InvalidReceiptFileException("Impossible de lire le fichier uploadé.");
+            throw new InvalidReceiptFileException(messages.get("upload.error.unreadable"));
         }
         if (read >= 4 && header[0] == 0x25 && header[1] == 0x50 && header[2] == 0x44 && header[3] == 0x46) {
             return "application/pdf"; // %PDF

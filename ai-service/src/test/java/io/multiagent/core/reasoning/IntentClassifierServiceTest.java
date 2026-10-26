@@ -1,6 +1,8 @@
 package io.multiagent.core.reasoning;
 
 import io.multiagent.core.client.LLMAIClient;
+import io.multiagent.core.config.TextKeywords;
+import io.multiagent.core.config.TextKeywordsFixture;
 import io.multiagent.core.exception.LLMClientException;
 import io.multiagent.core.model.IntentResult;
 import io.multiagent.core.reasoning.service.IntentClassifierService;
@@ -11,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -23,6 +26,7 @@ import static org.mockito.Mockito.when;
 class IntentClassifierServiceTest {
 
     @Mock LLMAIClient llm;
+    @Spy TextKeywords keywords = TextKeywordsFixture.fromConfigMap();
     @InjectMocks IntentClassifierService service;
 
     @BeforeEach

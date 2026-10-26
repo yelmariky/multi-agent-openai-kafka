@@ -33,8 +33,10 @@ public class TenantFilter extends OncePerRequestFilter {
     );
 
     private final OrganizationRepository organizationRepository;
+    private final io.multiagent.expense.i18n.Messages messages;
 
-    public TenantFilter(OrganizationRepository organizationRepository) {
+    public TenantFilter(OrganizationRepository organizationRepository, io.multiagent.expense.i18n.Messages messages) {
+        this.messages = messages;
         this.organizationRepository = organizationRepository;
     }
 
@@ -55,8 +57,8 @@ public class TenantFilter extends OncePerRequestFilter {
                             log.warn("[TenantFilter] Accès refusé — organisation désactivée realm={}", realm);
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                             response.setContentType("application/json;charset=UTF-8");
-                            response.getWriter().write(
-                                "{\"error\":\"Organisation désactivée. Contactez votre administrateur.\"}");
+                            response.getWriter().write("{\"error\":\""
+                                    + messages.get("tenant.error.disabled").replace("\\", "\\\\").replace("\"", "\\\"") + "\"}");
                             return;
                         }
                         TenantContext.set(org.getId(), realm);

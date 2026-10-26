@@ -42,4 +42,8 @@ public class SellerProfileEntity {
 
     @Column(name = "late_payment_clause", columnDefinition = "TEXT")
     private String latePaymentClause;
+
+    // N° de TVA intracommunautaire (mention obligatoire sur facture B2B)
+    @Column(name = "vat_number", length = 30)
+    private String vatNumber;
 }

@@ -16,6 +16,7 @@ import java.util.UUID;
 public class MissionController {
 
     private final MissionService missionService;
+    private final io.multiagent.core.i18n.Messages messages;
 
     @GetMapping
     public List<Mission> list(
@@ -50,6 +51,6 @@ public class MissionController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, String>> delete(@PathVariable UUID id) {
         missionService.delete(id);
-        return ResponseEntity.ok(Map.of("message", "Mission supprimee"));
+        return ResponseEntity.ok(Map.of("message", messages.get("mission.deleted")));
     }
 }

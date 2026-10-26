@@ -23,7 +23,7 @@ public class MonthlyLocationScheduler {
     @Value("${ai-core.monthly-location.enabled:true}")
     private boolean enabled;
 
-    @Value("${ai-core.monthly-location.text:je loue pour la domiciliation à 450 EUR ce mois-ci}")
+    @Value("${ai-core.monthly-location.text:}")
     private String messageText;
 
     /**
@@ -32,6 +32,10 @@ public class MonthlyLocationScheduler {
     @Scheduled(cron = "0 0 8 1 * ?")
     public void sendMonthlyLocation() {
         if (!enabled) {
+            return;
+        }
+        if (messageText == null || messageText.isBlank()) {
+            log.warn("⚠️ MonthlyLocationScheduler : MONTHLY_LOCATION_TEXT vide — aucune location générée");
             return;
         }
         try {

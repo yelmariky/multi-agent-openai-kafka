@@ -23,6 +23,8 @@ class PlatformBillingControllerTest {
 
     @Mock JdbcTemplate jdbc;
 
+    @org.mockito.Spy io.multiagent.core.i18n.Messages messages = io.multiagent.core.i18n.MessagesFixture.standard();
+
     @InjectMocks PlatformBillingController controller;
 
     private Map<String, Object> orgRow(String name, String offer, String period,

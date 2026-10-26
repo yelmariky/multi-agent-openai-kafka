@@ -1,5 +1,6 @@
 package io.multiagent.core.expense.service;
 
+import io.multiagent.core.config.TextKeywords;
 import io.multiagent.core.model.ExpenseItem;
 import io.multiagent.core.model.ExpenseReportResponse;
 import io.multiagent.core.settings.repository.ConsultantProfileJpaRepository;
@@ -24,6 +25,7 @@ import java.util.stream.Collectors;
 public class ExpenseReportService {
 
     private final WeaviateService weaviate;
+    private final TextKeywords keywords;
     private final DateProvider dateProvider;
     private final ExpenseExcelService excelService;
     private final ConsultantProfileJpaRepository consultantProfileRepo;
@@ -167,7 +169,6 @@ public class ExpenseReportService {
     private String resolvePaymentMode(String raw) {
         if (isBlank(raw)) return "Personnel";
         String lower = raw.toLowerCase(Locale.ROOT);
-        return (lower.contains("business") || lower.contains("entreprise") || lower.contains("company"))
-                ? "Business" : "Personnel";
+        return keywords.any(lower, TextKeywords.Group.BUSINESS_PAYMENT) ? "Business" : "Personnel";
     }
 }

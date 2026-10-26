@@ -34,6 +34,8 @@ class LeaveServiceTest {
     @Mock WeaviateService        weaviateService;
     @Mock EventPublisher         eventPublisher;
 
+    @org.mockito.Spy io.multiagent.core.i18n.Messages messages = io.multiagent.core.i18n.MessagesFixture.standard();
+
     @InjectMocks LeaveService leaveService;
 
     private static final UUID   TENANT  = UUID.randomUUID();

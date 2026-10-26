@@ -2,6 +2,8 @@ package io.multiagent.core.security;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.multiagent.core.config.TextKeywords;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -22,7 +24,11 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class PromptGuard {
+
+    private final TextKeywords keywords;
+    private final io.multiagent.core.i18n.Messages messages;
 
     // ── Limites configurables ──────────────────────────────────────────────────
     @Value("${ai-core.guard.max-chars:4000}")
@@ -79,13 +85,21 @@ public class PromptGuard {
      * @return GuardResult.allow(sanitizedText) ou GuardResult.reject(reason)
      */
     public GuardResult check(String text, String consultantEmail) {
+        return check(text, consultantEmail, maxChars);
+    }
+
+    /**
+     * Variante avec plafond de taille personnalisé — pour les endpoints qui acceptent
+     * légitimement des textes plus longs qu'un message de chat (ex: document de politique
+     * tenant). Les autres protections (rate limit, injection, assainissement) restent identiques.
+     */
+    public GuardResult check(String text, String consultantEmail, int maxCharsOverride) {
 
         // 1. Taille maximale — protège contre le token flooding
-        if (text != null && text.length() > maxChars) {
+        if (text != null && text.length() > maxCharsOverride) {
             log.warn("🛡️ [GUARD] Texte trop volumineux : {} chars (max {}) — consultant={}",
-                    text.length(), maxChars, maskEmail(consultantEmail));
-            return GuardResult.reject(
-                    "Votre message est trop long (" + text.length() + " caractères, maximum " + maxChars + ").");
+                    text.length(), maxCharsOverride, maskEmail(consultantEmail));
+            return GuardResult.reject(messages.get("guard.error.tooLong", String.valueOf(text.length()), String.valueOf(maxCharsOverride)));
         }
 
         // 2. Rate limiting par consultant
@@ -94,8 +108,7 @@ public class PromptGuard {
             int current = counter.incrementAndGet();
             if (current > maxRequestsPerMinute) {
                 log.warn("🛡️ [GUARD] Rate limit dépassé : {}/min pour {}", current, maskEmail(consultantEmail));
-                return GuardResult.reject(
-                        "Trop de requêtes envoyées. Merci de patienter quelques secondes avant de réessayer.");
+                return GuardResult.reject(messages.get("guard.error.rateLimit"));
             }
         }
 
@@ -105,8 +118,7 @@ public class PromptGuard {
                 if (pattern.matcher(text).find()) {
                     log.warn("🛡️ [GUARD] Prompt injection détectée (pattern='{}') — consultant={} — texte=[{}]",
                             pattern.pattern(), maskEmail(consultantEmail), truncate(text, 120));
-                    return GuardResult.reject(
-                            "Contenu non autorisé détecté. Merci de saisir uniquement vos notes de frais.");
+                    return GuardResult.reject(messages.get("guard.error.injection"));
                 }
             }
         }
@@ -144,8 +156,7 @@ public class PromptGuard {
 
         // Détecter si le LLM a leaké le prompt système dans sa réponse (prompt extraction)
         String lower = sanitized.toLowerCase();
-        if (lower.contains("system prompt") || lower.contains("instructions:") ||
-            lower.contains("you are a") || lower.contains("tu es un")) {
+        if (keywords.any(lower, TextKeywords.Group.PROMPT_LEAK)) {
             log.warn("🛡️ [GUARD OUTPUT] Réponse LLM suspecte (possible prompt leaking détecté)");
         }
 
@@ -191,6 +202,6 @@ public class PromptGuard {
         if (text.isBlank())     return "[empty]";
         int len = text.length();
         if (len <= 8) return "[" + len + " chars]";
-        return text.substring(0, 4) + "…[" + (len - 8) + " chars masqués]…" + text.substring(len - 4);
+        return text.substring(0, 4) + "…[" + (len - 8) + " chars masked]…" + text.substring(len - 4);
     }
 }

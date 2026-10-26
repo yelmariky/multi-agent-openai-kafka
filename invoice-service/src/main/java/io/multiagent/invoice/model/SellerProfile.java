@@ -8,6 +8,7 @@ public record SellerProfile(
         String bic,
         String email,
         String capital,
-        String latePaymentClause
+        String latePaymentClause,
+        String vatNumber
 ) {
 }

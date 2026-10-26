@@ -40,9 +40,11 @@ public class ExpenseInvoiceMcpTools {
     private final WeaviateService weaviateService;
     private final InvoiceJpaRepository invoiceRepository;
     private final McpSessionTenantRegistry sessionTenantRegistry;
+    private final io.multiagent.core.i18n.Messages messages;
 
     public ExpenseInvoiceMcpTools(WeaviateService weaviateService, InvoiceJpaRepository invoiceRepository,
-            McpSessionTenantRegistry sessionTenantRegistry) {
+            McpSessionTenantRegistry sessionTenantRegistry, io.multiagent.core.i18n.Messages messages) {
+        this.messages = messages;
         this.weaviateService = weaviateService;
         this.invoiceRepository = invoiceRepository;
         this.sessionTenantRegistry = sessionTenantRegistry;
@@ -130,7 +132,7 @@ public class ExpenseInvoiceMcpTools {
                 invoiceRepository.findByTenantIdAndInvoiceNameIgnoreCase(tenantId, invoiceName).stream()
                         .findFirst()
                         .map(this::toMap)
-                        .orElse(Map.of("error", "Facture introuvable : " + invoiceName)));
+                        .orElse(Map.of("error", messages.get("mcp.error.invoiceNotFound", invoiceName))));
     }
 
     /**
@@ -145,7 +147,7 @@ public class ExpenseInvoiceMcpTools {
             String sessionId = extractSessionId(toolContext);
             tenantId = sessionTenantRegistry.get(sessionId);
             if (tenantId == null) {
-                throw new IllegalStateException("Tenant introuvable pour cette session MCP — reconnectez-vous.");
+                throw new IllegalStateException(messages.get("mcp.error.tenantMissing"));
             }
             TenantContext.set(tenantId, null);
         }

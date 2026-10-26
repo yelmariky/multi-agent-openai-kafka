@@ -59,6 +59,11 @@ public class InvoiceService {
     private static final BigDecimal DEFAULT_VAT_RATE = new BigDecimal("0.20");
     private static final String DEFAULT_CURRENCY = "EUR";
     private static final String DEFAULT_TITLE = "Consulting IT";
+    static final String STATUS_DRAFT = "EN_ATTENTE";
+    static final String STATUS_CANCELLED = "ANNULEE";
+    static final String STATUS_CREDIT_NOTE = "EMIS";
+    static final String TYPE_CREDIT_NOTE = "AVOIR";
+    private static final DateTimeFormatter FR_DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final String DEFAULT_LATE_PAYMENT_CLAUSE =
             "En cas de retard de paiement, des penalites de retard sont exigibles des le jour suivant la date de reglement figurant sur la facture, sans qu'un rappel soit necessaire, a un taux au moins egal a trois fois le taux d'interet legal. Une indemnite forfaitaire pour frais de recouvrement de 40 euros est egalement due, conformement aux articles L441-9, L441-10 et D441-5 du Code de commerce.";
     private static final Locale FRENCH = Locale.FRANCE;
@@ -85,35 +90,126 @@ public class InvoiceService {
         return generate(request, null);
     }
 
+    /** Facture émise (envoyée / payée / annulée) : non modifiable, se corrige par un avoir. */
+    public static class InvoiceLockedException extends RuntimeException {
+        public InvoiceLockedException(String message) { super(message); }
+    }
+
+    /**
+     * Génère une facture. Aucune suppression : une facture du même numéro encore EN_ATTENTE (jamais
+     * envoyée) est mise à jour sur place en gardant son numéro ; une facture déjà émise est refusée
+     * ({@link InvoiceLockedException}) — elle se corrige par un avoir.
+     */
     @Transactional
     public GeneratedInvoiceFiles generate(SimpleInvoiceRequest request, String sourceText) throws IOException {
         SimpleInvoiceRequest normalized = normalize(request);
-        String baseFilename = fileSafeName(normalized);
+        UUID tenantId = TenantContext.getTenantId();
+
+        InvoiceEntity existing = null;
+        if (!isBlank(normalized.invoiceName()) && !isBlank(normalized.sellerCompanyName())) {
+            List<InvoiceEntity> found = invoiceRepo.findByTenantIdAndInvoiceNameIgnoreCaseAndSellerCompanyNameIgnoreCase(
+                    tenantId, normalized.invoiceName(), normalized.sellerCompanyName());
+            if (!found.isEmpty()) {
+                existing = found.get(0);
+                if (!STATUS_DRAFT.equals(existing.getPaymentStatus())) {
+                    throw new InvoiceLockedException("La facture " + existing.getInvoiceName()
+                            + " a déjà été émise (statut " + existing.getPaymentStatus()
+                            + ") — annulez-la par un avoir avant d'en émettre une nouvelle.");
+                }
+            }
+        }
+
+        InvoiceEntity entity = toEntity(normalized, tenantId, sourceText, null, null);
+        if (existing != null) {
+            entity.setId(existing.getId());
+            entity.setCreatedAt(existing.getCreatedAt());
+        }
+        entity = invoiceRepo.save(entity);
+        if (existing == null) {
+            io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "invoice", "event", "created").increment();
+        }
 
         byte[] pdfBytes = buildPdf(normalized);
         byte[] excelBytes = buildExcel(normalized);
-
-        Path pdfPath = storagePath.resolve(baseFilename + ".pdf");
-        Path excelPath = storagePath.resolve(baseFilename + ".xlsx");
+        Path pdfPath = storagePath.resolve(entity.getId() + ".pdf");
+        Path excelPath = storagePath.resolve(entity.getId() + ".xlsx");
         Files.write(pdfPath, pdfBytes);
         Files.write(excelPath, excelBytes);
-
-        UUID tenantId = TenantContext.getTenantId();
-
-        // Upsert: delete any existing invoice with the same name before re-indexing
-        if (!isBlank(normalized.invoiceName()) && !isBlank(normalized.sellerCompanyName())) {
-            List<InvoiceEntity> existing = invoiceRepo
-                    .findByTenantIdAndInvoiceNameIgnoreCaseAndSellerCompanyNameIgnoreCase(
-                            tenantId, normalized.invoiceName(), normalized.sellerCompanyName());
-            invoiceRepo.deleteAll(existing);
-        }
-
-        InvoiceEntity entity = toEntity(normalized, tenantId, sourceText, pdfPath.toString(), excelPath.toString());
+        entity.setPdfPath(pdfPath.toString());
+        entity.setExcelPath(excelPath.toString());
         invoiceRepo.save(entity);
 
         return new GeneratedInvoiceFiles(normalized, pdfPath, excelPath, pdfBytes, excelBytes);
     }
 
+    /**
+     * Fige le PDF d'une facture émise : rendu une seule fois puis servi tel quel (original archivé).
+     * Idempotent : un fichier déjà archivé n'est jamais ré-écrit.
+     */
+    @Transactional
+    public byte[] archivedPdf(InvoiceEntity invoice) throws IOException {
+        Path archived = storagePath.resolve(invoice.getId() + ".pdf");
+        if (!STATUS_DRAFT.equals(invoice.getPaymentStatus()) && Files.exists(archived)) {
+            return Files.readAllBytes(archived);
+        }
+        byte[] pdf = buildPdf(toSimpleInvoiceRequest(invoice));
+        Files.write(archived, pdf);
+        invoice.setPdfPath(archived.toString());
+        invoiceRepo.save(invoice);
+        return pdf;
+    }
+
+    /**
+     * Émet l'avoir annulant intégralement une facture envoyée : montants négatifs, lien vers l'original,
+     * numérotation dédiée A-AAAAMM-NN, PDF archivé immédiatement.
+     */
+    @Transactional
+    public InvoiceEntity issueCreditNote(InvoiceEntity original) throws IOException {
+        LocalDate today = LocalDate.now();
+        String prefix = "A-" + YearMonth.from(today).toString().replace("-", "") + "-";
+        int next = invoiceRepo.findByTenantIdAndInvoiceNameStartingWithIgnoreCase(original.getTenantId(), prefix).stream()
+                .map(InvoiceEntity::getInvoiceName)
+                .mapToInt(this::extractSequenceNumber)
+                .max().orElse(0) + 1;
+
+        InvoiceEntity credit = new InvoiceEntity();
+        credit.setTenantId(original.getTenantId());
+        credit.setInvoiceType(TYPE_CREDIT_NOTE);
+        credit.setCreditedInvoiceId(original.getId());
+        credit.setInvoiceName("%s%02d".formatted(prefix, next));
+        credit.setInvoiceDate(today);
+        credit.setBillingMonth(original.getBillingMonth());
+        credit.setSellerCompanyName(original.getSellerCompanyName());
+        credit.setSellerAddress(original.getSellerAddress());
+        credit.setSellerRcs(original.getSellerRcs());
+        credit.setSellerVatNumber(original.getSellerVatNumber());
+        credit.setClientCompanyName(original.getClientCompanyName());
+        credit.setClientAddress(original.getClientAddress());
+        credit.setClientRcs(original.getClientRcs());
+        credit.setClientVatNumber(original.getClientVatNumber());
+        credit.setInvoiceTitle("Avoir - annule la facture " + original.getInvoiceName()
+                + (original.getInvoiceDate() != null ? " du " + original.getInvoiceDate().format(FR_DATE) : ""));
+        credit.setDaysCount(original.getDaysCount() != null ? -original.getDaysCount() : null);
+        credit.setDaysExact(original.getDaysExact() != null ? original.getDaysExact().negate() : null);
+        credit.setUnitPriceHt(original.getUnitPriceHt());
+        credit.setTotalHt(original.getTotalHt() != null ? original.getTotalHt().negate() : null);
+        credit.setVatRate(original.getVatRate());
+        credit.setTotalTtc(original.getTotalTtc() != null ? original.getTotalTtc().negate() : null);
+        credit.setCurrency(original.getCurrency());
+        credit.setLatePaymentClause("Avoir non soumis a echeance.");
+        credit.setNotes("Avoir annulant integralement la facture " + original.getInvoiceName() + ".");
+        credit.setConsultantEmail(original.getConsultantEmail());
+        credit.setMissionId(original.getMissionId());
+        credit.setPaymentStatus(STATUS_CREDIT_NOTE);
+        credit = invoiceRepo.save(credit);
+
+        Path pdfPath = storagePath.resolve(credit.getId() + ".pdf");
+        Files.write(pdfPath, buildPdf(toSimpleInvoiceRequest(credit)));
+        credit.setPdfPath(pdfPath.toString());
+        return invoiceRepo.save(credit);
+    }
+
+    @Transactional
     public GeneratedInvoiceFiles generateFromDb(InvoiceLookupRequest request) throws IOException {
         UUID tenantId = TenantContext.getTenantId();
         List<InvoiceEntity> entities = findInvoiceEntities(tenantId, request);
@@ -124,7 +220,20 @@ public class InvoiceService {
 
         List<SimpleInvoiceRequest> invoices = entities.stream().map(this::toSimpleInvoiceRequest).toList();
         String baseFilename = lookupFileSafeName(request, invoices);
-        byte[] pdfBytes = buildCombinedPdf(invoices);
+        // Factures émises : original archivé (jamais re-rendu) ; brouillons EN_ATTENTE : rendu à jour.
+        byte[] pdfBytes;
+        if (entities.size() == 1) {
+            pdfBytes = archivedPdf(entities.get(0));
+        } else {
+            org.apache.pdfbox.multipdf.PDFMergerUtility merger = new org.apache.pdfbox.multipdf.PDFMergerUtility();
+            ByteArrayOutputStream merged = new ByteArrayOutputStream();
+            merger.setDestinationStream(merged);
+            for (InvoiceEntity e : entities) {
+                merger.addSource(new java.io.ByteArrayInputStream(archivedPdf(e)));
+            }
+            merger.mergeDocuments(org.apache.pdfbox.io.MemoryUsageSetting.setupMainMemoryOnly());
+            pdfBytes = merged.toByteArray();
+        }
         byte[] excelBytes = buildSummaryExcel(invoices);
 
         Path pdfPath = storagePath.resolve(baseFilename + ".pdf");
@@ -133,22 +242,6 @@ public class InvoiceService {
         Files.write(excelPath, excelBytes);
 
         return new GeneratedInvoiceFiles(invoices.get(0), pdfPath, excelPath, pdfBytes, excelBytes);
-    }
-
-    @Transactional
-    public int deleteFromDb(InvoiceLookupRequest request) throws IOException {
-        UUID tenantId = TenantContext.getTenantId();
-        List<InvoiceEntity> toDelete = findInvoiceEntities(tenantId, request);
-        if (toDelete.isEmpty()) {
-            return 0;
-        }
-        invoiceRepo.deleteAll(toDelete);
-        if (request.invoiceName() != null && !request.invoiceName().isBlank()) {
-            String baseFilename = request.invoiceName().replaceAll("[^A-Za-z0-9_-]", "_");
-            Files.deleteIfExists(storagePath.resolve(baseFilename + ".pdf"));
-            Files.deleteIfExists(storagePath.resolve(baseFilename + ".xlsx"));
-        }
-        return toDelete.size();
     }
 
     public List<SimpleInvoiceRequest> findInvoicesByPeriod(String start, String end, String company, String consultantEmail) {
@@ -194,6 +287,10 @@ public class InvoiceService {
                     m.put("sentDate",            e.getSentDate());
                     m.put("daysCount",           e.getDaysExact());
                     m.put("unitPriceHt",         e.getUnitPriceHt());
+                    m.put("invoiceType",         e.getInvoiceType());
+                    m.put("creditedInvoiceId",   e.getCreditedInvoiceId());
+                    m.put("sellerVatNumber",     e.getSellerVatNumber());
+                    m.put("clientVatNumber",     e.getClientVatNumber());
                     Map<String, Object> d = lastDunning.get(e.getId());
                     m.put("lastDunningStage",    d != null ? d.get("stage")  : null);
                     m.put("lastDunningDate",     d != null ? d.get("sentAt") : null);
@@ -251,12 +348,17 @@ public class InvoiceService {
         e.setSourceText(sourceText);
         e.setPdfPath(pdfPath);
         e.setExcelPath(excelPath);
+        e.setInvoiceType(isBlank(inv.invoiceType()) ? "FACTURE" : inv.invoiceType().toUpperCase(Locale.ROOT));
+        e.setSellerVatNumber(inv.sellerVatNumber());
+        e.setClientVatNumber(inv.clientVatNumber());
         return e;
     }
 
     private SimpleInvoiceRequest toSimpleInvoiceRequest(InvoiceEntity e) {
-        Double days = e.getDaysExact() != null ? e.getDaysExact().doubleValue()
-                : (e.getDaysCount() != null ? (double) e.getDaysCount() : null);
+        // Double explicite : un ternaire double/null ferait un auto-unboxing de null (NPE)
+        Double days = null;
+        if (e.getDaysExact() != null) days = e.getDaysExact().doubleValue();
+        else if (e.getDaysCount() != null) days = e.getDaysCount().doubleValue();
         return new SimpleInvoiceRequest(
                 e.getInvoiceName(),
                 e.getInvoiceDate(),
@@ -279,7 +381,10 @@ public class InvoiceService {
                 e.getNotes(),
                 null,
                 e.getConsultantEmail(),
-                null  // projectName — résolu dans normalize()
+                null,  // projectName — résolu dans normalize()
+                e.getInvoiceType(),
+                e.getSellerVatNumber(),
+                e.getClientVatNumber()
         );
     }
 
@@ -342,6 +447,12 @@ public class InvoiceService {
         String projectName = !isBlank(request.projectName()) ? request.projectName()
                 : findProjectName(request.consultantEmail(), TenantContext.getTenantId());
 
+        String sellerVat = request.sellerVatNumber();
+        if (isBlank(sellerVat)) {
+            SellerProfile profile = findSellerProfile(request.sellerCompanyName());
+            sellerVat = profile != null ? profile.vatNumber() : null;
+        }
+
         return new SimpleInvoiceRequest(
                 invoiceName,
                 invoiceDate,
@@ -364,7 +475,10 @@ public class InvoiceService {
                 request.notes(),
                 null,
                 request.consultantEmail(),
-                projectName
+                projectName,
+                isBlank(request.invoiceType()) ? "FACTURE" : request.invoiceType(),
+                sellerVat,
+                request.clientVatNumber()
         );
     }
 
@@ -393,7 +507,8 @@ public class InvoiceService {
         UUID tenantId = TenantContext.getTenantId();
         return sellerProfileRepo.findByTenantIdAndCompanyNameIgnoreCase(tenantId, companyName)
                 .map(e -> new SellerProfile(e.getCompanyName(), e.getAddress(), e.getRcs(),
-                        e.getIban(), e.getBic(), e.getEmail(), e.getCapital(), e.getLatePaymentClause()))
+                        e.getIban(), e.getBic(), e.getEmail(), e.getCapital(), e.getLatePaymentClause(),
+                        e.getVatNumber()))
                 .orElse(null);
     }
 
@@ -537,20 +652,6 @@ public class InvoiceService {
         }
     }
 
-    private byte[] buildCombinedPdf(List<SimpleInvoiceRequest> invoices) throws IOException {
-        try (PDDocument document = new PDDocument(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            for (SimpleInvoiceRequest invoice : invoices) {
-                PDPage page = new PDPage(PDRectangle.A4);
-                document.addPage(page);
-                try (PDPageContentStream content = new PDPageContentStream(document, page)) {
-                    renderInvoice(content, invoice);
-                }
-            }
-            document.save(out);
-            return out.toByteArray();
-        }
-    }
-
     private byte[] buildExcel(SimpleInvoiceRequest invoice) throws IOException {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Facture");
@@ -566,11 +667,16 @@ public class InvoiceService {
                     ? safe(sellerProfile.rcs()) : safe(invoice.sellerRcs());
 
             int rowIdx = 0;
-            rowIdx = mergedValueRow(sheet, rowIdx, 0, 3, "FACTURE", title);
+            rowIdx = mergedValueRow(sheet, rowIdx, 0, 3, invoice.isCreditNote() ? "AVOIR" : "FACTURE", title);
             rowIdx = writeGridRow(sheet, rowIdx, "Emetteur", "Client", header);
             rowIdx = writeGridRow(sheet, rowIdx, safe(invoice.sellerCompanyName()), safe(invoice.clientCompanyName()), text);
             rowIdx = writeGridRow(sheet, rowIdx, sellerAddr, safe(invoice.clientAddress()), text);
             rowIdx = writeGridRow(sheet, rowIdx, sellerRcs,  safe(invoice.clientRcs()), text);
+            if (!isBlank(invoice.sellerVatNumber()) || !isBlank(invoice.clientVatNumber())) {
+                rowIdx = writeGridRow(sheet, rowIdx,
+                        isBlank(invoice.sellerVatNumber()) ? "" : "TVA intracom. : " + invoice.sellerVatNumber(),
+                        isBlank(invoice.clientVatNumber()) ? "" : "TVA intracom. : " + invoice.clientVatNumber(), text);
+            }
             rowIdx++;
             rowIdx = writeKeyValueRow(sheet, rowIdx, "Facture N\u00b0", safe(invoice.invoiceName()), text);
             rowIdx = writeKeyValueRow(sheet, rowIdx, "Date", safeDate(invoice.invoiceDate()), text);
@@ -670,18 +776,19 @@ public class InvoiceService {
         String sellerRcs  = isBlank(invoice.sellerRcs()) && sellerProfile != null
                 ? safe(sellerProfile.rcs()) : safe(invoice.sellerRcs());
 
-        writeText(content, left, 800, PDType1Font.HELVETICA_BOLD, 18, "FACTURE");
+        writeText(content, left, 800, PDType1Font.HELVETICA_BOLD, 18, invoice.isCreditNote() ? "AVOIR" : "FACTURE");
         drawRightAlignedText(content, PDType1Font.HELVETICA, 10, right, 802, formatDisplayDate(invoice.invoiceDate()));
 
         drawRect(content, left, 700, 220, 80);
         drawRect(content, middle + 10, 700, 220, 80);
         writeText(content, left + 10, 762, PDType1Font.HELVETICA_BOLD, 11, "EMETTEUR");
         writeText(content, middle + 20, 762, PDType1Font.HELVETICA_BOLD, 11, "CLIENT");
-        writeMultiline(content, left + 10, 744, PDType1Font.HELVETICA, 10, buildPartyBlock(invoice.sellerCompanyName(), sellerAddr, sellerRcs), 34);
-        writeMultiline(content, middle + 20, 744, PDType1Font.HELVETICA, 10, buildPartyBlock(invoice.clientCompanyName(), invoice.clientAddress(), invoice.clientRcs()), 34);
+        writeMultiline(content, left + 10, 744, PDType1Font.HELVETICA, 10, buildPartyBlock(invoice.sellerCompanyName(), sellerAddr, sellerRcs, invoice.sellerVatNumber()), 34);
+        writeMultiline(content, middle + 20, 744, PDType1Font.HELVETICA, 10, buildPartyBlock(invoice.clientCompanyName(), invoice.clientAddress(), invoice.clientRcs(), invoice.clientVatNumber()), 34);
 
         drawRect(content, left, 610, right - left, 78);
-        writeMeta(content, left + 12, 664, "Numero de facture", safe(invoice.invoiceName()), right - 12);
+        writeMeta(content, left + 12, 664, invoice.isCreditNote() ? "Numero d'avoir" : "Numero de facture",
+                safe(invoice.invoiceName()), right - 12);
         writeMeta(content, left + 12, 646, "Date de facture", safeDate(invoice.invoiceDate()), right - 12);
         writeMeta(content, left + 12, 628, "Date d'echeance", safeDate(invoice.paymentDueDate()), right - 12);
 
@@ -970,7 +1077,7 @@ public class InvoiceService {
         return invoice.totalHt().multiply(invoice.vatRate()).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private String buildPartyBlock(String company, String address, String rcs) {
+    private String buildPartyBlock(String company, String address, String rcs, String vatNumber) {
         StringBuilder builder = new StringBuilder();
         if (!isBlank(company)) builder.append(company);
         if (!isBlank(address)) {
@@ -980,6 +1087,10 @@ public class InvoiceService {
         if (!isBlank(rcs)) {
             if (builder.length() > 0) builder.append('\n');
             builder.append(rcs);
+        }
+        if (!isBlank(vatNumber)) {
+            if (builder.length() > 0) builder.append('\n');
+            builder.append("TVA intracom. : ").append(vatNumber);
         }
         return builder.toString();
     }

@@ -31,6 +31,7 @@ public class CraService {
     private final WeaviateService weaviateService;
     private final LeaveRequestRepository leaveRepo;
     private final EventPublisher eventPublisher;
+    private final io.multiagent.core.i18n.Messages messages;
 
     /**
      * Upsert a CRA in Weaviate. Sets status = BROUILLON if null/blank.
@@ -115,8 +116,9 @@ public class CraService {
         CraRequest submitted = save(toSubmit);
         eventPublisher.notify(NotificationPayload.TARGET_ADMIN, submitted.consultant(),
                 "CRA_SUBMITTED",
-                "CRA soumis par " + submitted.consultant() + " pour " + submitted.billingMonth(),
+                messages.getDefault("notification.cra.submitted", submitted.consultant(), submitted.billingMonth()),
                 submitted.id());
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "cra", "event", "submitted").increment();
         eventPublisher.publish(KafkaTopics.CRA_SUBMITTED,
                 new DomainEvent("CRA_SUBMITTED", submitted.id(), null,
                         submitted.company(), craPayload(submitted), Instant.now()));
@@ -151,8 +153,9 @@ public class CraService {
         CraRequest validated = save(toValidate);
         eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT, validated.consultant(),
                 "CRA_VALIDATED",
-                "Votre CRA de " + validated.billingMonth() + " a été validé par " + validatedBy + ".",
+                messages.getDefault("notification.cra.validated", validated.billingMonth(), String.valueOf(validatedBy)),
                 validated.id());
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "cra", "event", "validated").increment();
         eventPublisher.publish(KafkaTopics.CRA_VALIDATED,
                 new DomainEvent("CRA_VALIDATED", validated.id(), null,
                         validated.company(), craPayloadWithExtra(validated, "validatedBy", validatedBy), Instant.now()));
@@ -185,9 +188,11 @@ public class CraService {
         CraRequest refused = save(toRefuse);
         eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT, refused.consultant(),
                 "CRA_REFUSED",
-                "Votre CRA de " + refused.billingMonth() + " a été refusé"
-                        + (reason != null && !reason.isBlank() ? " : " + reason : "."),
+                reason != null && !reason.isBlank()
+                        ? messages.getDefault("notification.cra.refusedWithReason", refused.billingMonth(), reason)
+                        : messages.getDefault("notification.cra.refused", refused.billingMonth()),
                 refused.id());
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "cra", "event", "refused").increment();
         eventPublisher.publish(KafkaTopics.CRA_REFUSED,
                 new DomainEvent("CRA_REFUSED", refused.id(), null,
                         refused.company(), craPayloadWithExtra(refused, "reason", reason), Instant.now()));

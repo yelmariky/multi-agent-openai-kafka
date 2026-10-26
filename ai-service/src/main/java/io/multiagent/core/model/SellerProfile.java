@@ -8,6 +8,8 @@ public record SellerProfile(
         String bic,
         String email,
         String capital,
-        String latePaymentClause
+        String latePaymentClause,
+        /** N° de TVA intracommunautaire (mention obligatoire sur facture B2B). */
+        String vatNumber
 ) {
 }

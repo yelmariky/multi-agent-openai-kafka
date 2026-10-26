@@ -18,8 +18,10 @@ public class SettingsController {
 
     private final WeaviateService weaviateService;
     private final OrganizationService organizationService;
+    private final io.multiagent.core.i18n.Messages messages;
 
-    public SettingsController(WeaviateService weaviateService, OrganizationService organizationService) {
+    public SettingsController(WeaviateService weaviateService, OrganizationService organizationService, io.multiagent.core.i18n.Messages messages) {
+        this.messages = messages;
         this.weaviateService = weaviateService;
         this.organizationService = organizationService;
     }
@@ -34,7 +36,7 @@ public class SettingsController {
         String tenantCompanyName = organizationService.getCurrentTenantName();
         SellerProfile profile = weaviateService.findSellerProfile(tenantCompanyName);
         if (profile == null) {
-            profile = new SellerProfile(tenantCompanyName, "", "", "", "", "", "", "");
+            profile = new SellerProfile(tenantCompanyName, "", "", "", "", "", "", "", "");
         }
         return ResponseEntity.ok(profile);
     }
@@ -47,12 +49,12 @@ public class SettingsController {
         try {
             weaviateService.upsertSellerProfile(profile);
             return ResponseEntity.ok(Map.of(
-                    "message", "Profil vendeur sauvegardé",
+                    "message", messages.get("settings.sellerProfileSaved"),
                     "company", profile.companyName() == null ? "" : profile.companyName()
             ));
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
-                    .body("Erreur lors de la sauvegarde : " + e.getMessage());
+                    .body(messages.get("settings.error.save", e.getMessage()));
         }
     }
 
@@ -68,7 +70,7 @@ public class SettingsController {
             return ResponseEntity.ok(Map.of("reindexed", count));
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
-                    .body("Erreur reindex : " + e.getMessage());
+                    .body(messages.get("settings.error.reindex", e.getMessage()));
         }
     }
 }

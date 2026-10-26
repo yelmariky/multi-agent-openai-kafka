@@ -36,14 +36,14 @@ class LlmJsonValidatorTest {
         void malformedJson_returnsFail() {
             var r = LlmJsonValidator.validateExpense("{not-valid-json}");
             assertThat(r.valid()).isFalse();
-            assertThat(r.reason()).contains("malformé");
+            assertThat(r.reason()).contains("Malformed");
         }
 
         @Test @DisplayName("tableau JSON → fail (objet attendu)")
         void jsonArray_returnsFail() {
             var r = LlmJsonValidator.validateExpense("[{\"type\":\"restaurant\"}]");
             assertThat(r.valid()).isFalse();
-            assertThat(r.reason()).contains("objet JSON");
+            assertThat(r.reason()).contains("JSON object");
         }
 
         @Test @DisplayName("amount non-numérique → fail")
@@ -57,7 +57,7 @@ class LlmJsonValidatorTest {
         void negativeAmount_returnsFail() {
             var r = LlmJsonValidator.validateExpense("{\"amount\":-10.0}");
             assertThat(r.valid()).isFalse();
-            assertThat(r.reason()).contains("négatif");
+            assertThat(r.reason()).contains("negative");
         }
 
         @Test @DisplayName("amount null → ok (champ optionnel)")

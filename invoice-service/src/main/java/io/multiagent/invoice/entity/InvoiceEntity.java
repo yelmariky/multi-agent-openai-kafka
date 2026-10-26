@@ -101,7 +101,21 @@ public class InvoiceEntity {
 
     // Suivi paiement
     @Column(name = "payment_status", length = 20)
-    private String paymentStatus = "EN_ATTENTE"; // EN_ATTENTE | ENVOYEE | PAYEE | EN_RETARD
+    private String paymentStatus = "EN_ATTENTE"; // EN_ATTENTE | ENVOYEE | PAYEE | EN_RETARD | ANNULEE
+
+    // FACTURE | AVOIR — une facture émise ne se supprime pas, elle s'annule par un avoir
+    @Column(name = "invoice_type", length = 10, nullable = false)
+    private String invoiceType = "FACTURE";
+
+    // Avoir -> facture d'origine qu'il annule
+    @Column(name = "credited_invoice_id")
+    private UUID creditedInvoiceId;
+
+    @Column(name = "seller_vat_number", length = 30)
+    private String sellerVatNumber;
+
+    @Column(name = "client_vat_number", length = 30)
+    private String clientVatNumber;
 
     @Column(name = "payment_received_date")
     private LocalDate paymentReceivedDate;
@@ -119,5 +133,6 @@ public class InvoiceEntity {
     void prePersist() {
         if (createdAt == null) createdAt = Instant.now();
         if (paymentStatus == null) paymentStatus = "EN_ATTENTE";
+        if (invoiceType == null) invoiceType = "FACTURE";
     }
 }

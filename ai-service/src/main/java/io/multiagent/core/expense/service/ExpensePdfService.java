@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +21,7 @@ import java.util.Locale;
 public class ExpensePdfService {
 
     private final ExpenseReportService expenseReportService;
+    private final io.multiagent.core.i18n.Messages messages;
 
     public byte[] buildPdf(String start, String end, String type, String currency, String company) {
         return buildPdf(start, end, type, currency, company, null);
@@ -113,23 +113,23 @@ public class ExpensePdfService {
                     y -= leading * 2;
                 }
                 cs.setFont(PDType1Font.HELVETICA_BOLD, 11);
-                writeLine(cs, margin, y, "Synthese");
+                writeLine(cs, margin, y, messages.get("report.summary"));
                 y -= leading;
                 cs.setFont(PDType1Font.HELVETICA, 10);
-                writeLine(cs, margin, y, "Total dép. personnelles (hors km et location) : " + safeMoney(totalPersonnelHorsKmLoc));
+                writeLine(cs, margin, y, messages.get("report.total.personal") + " : " + safeMoney(totalPersonnelHorsKmLoc));
                 y -= leading;
-                writeLine(cs, margin, y, "Total dép. business (hors km et location) : " + safeMoney(totalBusinessHorsKmLoc));
+                writeLine(cs, margin, y, messages.get("report.total.business") + " : " + safeMoney(totalBusinessHorsKmLoc));
                 y -= leading;
-                writeLine(cs, margin, y, "Total location (domiciliation) : " + safeMoney(totalLocation));
+                writeLine(cs, margin, y, messages.get("report.total.rent") + " : " + safeMoney(totalLocation));
                 y -= leading;
-                writeLine(cs, margin, y, "Km (dates de dépense, lun-ven) : " + safeMoney(totalKm));
+                writeLine(cs, margin, y, messages.get("report.total.km") + " : " + safeMoney(totalKm));
                 y -= leading;
-                writeLine(cs, margin, y, "Coût km : " + safeMoney(costKm));
+                writeLine(cs, margin, y, messages.get("report.total.kmCost") + " : " + safeMoney(costKm));
                 y -= leading;
-                writeLine(cs, margin, y, "Total général (perso + business + location + km) : " + safeMoney(totalGeneral));
+                writeLine(cs, margin, y, messages.get("report.total.general") + " : " + safeMoney(totalGeneral));
                 y -= leading * 2;
                 cs.setFont(PDType1Font.HELVETICA_BOLD, 11);
-                writeLine(cs, margin, y, "Total à rembourser (Personnel, incluant location & km) : " + safeMoney(totalRembPersonnel));
+                writeLine(cs, margin, y, messages.get("report.total.refund") + " : " + safeMoney(totalRembPersonnel));
             } finally {
                 if (cs != null) {
                     cs.close();
@@ -140,7 +140,7 @@ public class ExpensePdfService {
             doc.save(bos);
             return bos.toByteArray();
         } catch (Exception e) {
-            throw new IllegalStateException("Echec génération PDF : " + e.getMessage(), e);
+            throw new IllegalStateException("PDF generation failed: " + e.getMessage(), e);
         }
     }
 
@@ -150,7 +150,7 @@ public class ExpensePdfService {
 
     private String safeMoney(Double d) {
         if (d == null) return "";
-        return String.format(Locale.FRANCE, "%.2f", d);
+        return String.format(messages.locale(), "%.2f", d);
     }
 
     private String safeText(String s) {
@@ -200,20 +200,20 @@ public class ExpensePdfService {
     ) throws Exception {
         float y = page.getMediaBox().getHeight() - margin;
         cs.setFont(PDType1Font.HELVETICA_BOLD, 14);
-        writeLine(cs, margin, y, "Rapport de notes de frais");
+        writeLine(cs, margin, y, messages.get("report.title"));
         y -= leading;
         cs.setFont(PDType1Font.HELVETICA_BOLD, 12);
-        writeLine(cs, margin, y, safeText("Entreprise : " + report.getCompany()));
+        writeLine(cs, margin, y, safeText(messages.get("report.company", String.valueOf(report.getCompany()))));
         y -= leading;
         if (report.getConsultantEmail() != null && !report.getConsultantEmail().isBlank()) {
-            writeLine(cs, margin, y, safeText("Consultant : " + report.getConsultantEmail()));
+            writeLine(cs, margin, y, safeText(messages.get("report.consultant", report.getConsultantEmail())));
             y -= leading;
         }
         if (report.getProjectName() != null && !report.getProjectName().isBlank()) {
-            writeLine(cs, margin, y, safeText("Projet : " + report.getProjectName()));
+            writeLine(cs, margin, y, safeText(messages.get("report.project", report.getProjectName())));
             y -= leading;
         }
-        writeLine(cs, margin, y, safeText("Periode : " + report.getStart() + " -> " + report.getEnd()));
+        writeLine(cs, margin, y, safeText(messages.get("report.periodRange", String.valueOf(report.getStart()), String.valueOf(report.getEnd()))));
         y -= leading * 2;
         writeExpenseHeader(cs, y, xCols, headers);
         return y - leading;

@@ -43,4 +43,7 @@ public class SellerProfileEntity {
 
     @Column(name = "late_payment_clause", columnDefinition = "TEXT")
     private String latePaymentClause;
+
+    @Column(name = "vat_number", length = 30)
+    private String vatNumber;
 }

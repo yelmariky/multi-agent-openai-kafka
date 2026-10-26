@@ -32,6 +32,7 @@ public class PlatformBillingController {
     private static final BigDecimal ANNUAL_DISCOUNT = new BigDecimal("0.80");
 
     private final JdbcTemplate jdbc;
+    private final io.multiagent.core.i18n.Messages messages;
 
     /** Vue d'ensemble : chaque organisation avec son offre, ses consultants comptés, son MRR. */
     @GetMapping("/overview")
@@ -82,11 +83,11 @@ public class PlatformBillingController {
         }
         String offer = req.offer().trim().toUpperCase();
         if (!MONTHLY_PRICE_HT.containsKey(offer) && !"ENTERPRISE".equals(offer)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Offre inconnue : " + req.offer()));
+            return ResponseEntity.badRequest().body(Map.of("error", messages.get("billing.error.unknownOffer", String.valueOf(req.offer()))));
         }
         if ("ENTERPRISE".equals(offer)
                 && (req.negotiatedMonthlyPriceHt() == null || req.negotiatedMonthlyPriceHt().signum() <= 0)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "negotiatedMonthlyPriceHt obligatoire pour ENTERPRISE"));
+            return ResponseEntity.badRequest().body(Map.of("error", messages.get("billing.error.enterprisePriceRequired")));
         }
         String period = req.billingPeriod() == null ? "ANNUEL" : req.billingPeriod().trim().toUpperCase();
 
@@ -109,7 +110,7 @@ public class PlatformBillingController {
                 req.organizationId(), offer, period, req.negotiatedMonthlyPriceHt(),
                 req.clientAddress(), req.clientRcs(), req.startDate(), req.startDate());
 
-        return ResponseEntity.ok(Map.of("message", "Abonnement enregistré", "organizationId", req.organizationId()));
+        return ResponseEntity.ok(Map.of("message", messages.get("billing.subscriptionSaved"), "organizationId", req.organizationId()));
     }
 
     /** Suspend la facturation automatique d'une organisation (l'accès service n'est pas touché). */

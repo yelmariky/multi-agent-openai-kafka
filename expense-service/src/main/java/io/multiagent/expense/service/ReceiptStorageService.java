@@ -52,7 +52,7 @@ public class ReceiptStorageService {
             log.info("📥 Fichier reçu : {} ({} octets) → {}", safeName, file.getSize(), target);
             return target;
         } catch (Exception e) {
-            throw new IllegalStateException("Impossible de stocker le fichier uploadé", e);
+            throw new IllegalStateException("Unable to store the uploaded file", e);
         }
     }
 

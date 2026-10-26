@@ -28,6 +28,8 @@ class RAGServiceKmTest {
             RAGService svc = org.mockito.Mockito.mock(RAGService.class, org.mockito.Mockito.CALLS_REAL_METHODS);
             ReflectionTestUtils.setField(svc, "kmRate",  0.661);
             ReflectionTestUtils.setField(svc, "kmAnnual", 4999);
+            ReflectionTestUtils.setField(svc, "messages", io.multiagent.core.i18n.MessagesFixture.standard());
+            ReflectionTestUtils.setField(svc, "keywords", io.multiagent.core.config.TextKeywordsFixture.fromConfigMap());
             Method m = RAGService.class.getDeclaredMethod("tryExtractKmByRules", String.class);
             m.setAccessible(true);
             return m.invoke(svc, text);
@@ -90,6 +92,16 @@ class RAGServiceKmTest {
         }
 
         @Test
+        @DisplayName("texte anglais : round trip + daily + june")
+        void english_round_trip_daily() throws Exception {
+            Object item = invokeExtract("44 km round trip home-office daily june");
+            assertThat(item).hasFieldOrPropertyWithValue("km", 88.0);
+            assertThat(item).hasFieldOrPropertyWithValue("monthly", true);
+            Object date = ReflectionTestUtils.getField(item, "date");
+            assertThat(date.toString()).endsWith("-06-01");
+        }
+
+        @Test
         @DisplayName("null input → null output")
         void null_input() throws Exception {
             Object item = invokeExtract(null);
@@ -98,37 +110,104 @@ class RAGServiceKmTest {
     }
 
     @Nested
-    @DisplayName("Barème km — computeVoitureCostPerKm")
-    class Bareme {
+    @DisplayName("Barème km voiture — toutes tranches de puissance fiscale (BOI-BAREME-000001)")
+    class BaremeVoiture {
 
-        private double invokeBareme(int kmAnnual) throws Exception {
+        private double invokeBareme(int fiscalPower, int kmAnnual) throws Exception {
             RAGService svc = org.mockito.Mockito.mock(RAGService.class, org.mockito.Mockito.CALLS_REAL_METHODS);
             ReflectionTestUtils.setField(svc, "kmRate",  0.661);
             ReflectionTestUtils.setField(svc, "kmAnnual", 4999);
-            Method m = RAGService.class.getDeclaredMethod("computeVoitureCostPerKm", int.class);
+            ReflectionTestUtils.setField(svc, "messages", io.multiagent.core.i18n.MessagesFixture.standard());
+            Method m = RAGService.class.getDeclaredMethod("computeVoitureCostPerKm", int.class, int.class);
             m.setAccessible(true);
-            return (double) m.invoke(svc, kmAnnual);
+            return (double) m.invoke(svc, fiscalPower, kmAnnual);
         }
 
-        @Test @DisplayName("kmAnnual=3000 → palier 1 (d×0.697)/d = 0.697")
-        void palier1() throws Exception {
-            assertThat(invokeBareme(3000)).isEqualTo(0.697);
+        @Test @DisplayName("7 CV, 3000 km → palier 1 = 0.697 (non-régression)")
+        void septCv_palier1() throws Exception {
+            assertThat(invokeBareme(7, 3000)).isEqualTo(0.697);
         }
 
-        @Test @DisplayName("kmAnnual=11000 → palier 2 formule (d×0.394+1515)/d")
-        void palier2() throws Exception {
+        @Test @DisplayName("7 CV, 11000 km → palier 2 (d×0.394+1515)/d")
+        void septCv_palier2() throws Exception {
             double expected = (11000 * 0.394 + 1515.0) / 11000;
-            assertThat(invokeBareme(11000)).isCloseTo(expected, org.assertj.core.data.Offset.offset(0.0001));
+            assertThat(invokeBareme(7, 11000)).isCloseTo(expected, org.assertj.core.data.Offset.offset(0.0001));
         }
 
-        @Test @DisplayName("kmAnnual=25000 → palier 3 (d×0.470)/d = 0.470")
-        void palier3() throws Exception {
-            assertThat(invokeBareme(25000)).isEqualTo(0.470);
+        @Test @DisplayName("7 CV, 25000 km → palier 3 = 0.470")
+        void septCv_palier3() throws Exception {
+            assertThat(invokeBareme(7, 25000)).isEqualTo(0.470);
         }
 
         @Test @DisplayName("kmAnnual=0 → taux par défaut kmRate=0.661")
         void kmAnnualZero_defaultRate() throws Exception {
-            assertThat(invokeBareme(0)).isEqualTo(0.661);
+            assertThat(invokeBareme(7, 0)).isEqualTo(0.661);
+        }
+
+        // Le bug corrigé : avant ce fix, TOUTE puissance fiscale utilisait le taux 7CV — ces tests
+        // verrouillent que chaque tranche a maintenant son propre coefficient.
+        @Test @DisplayName("3 CV et moins, 3000 km → 0.529 (pas 0.697)")
+        void troisCv_palier1() throws Exception {
+            assertThat(invokeBareme(3, 3000)).isEqualTo(0.529);
+            assertThat(invokeBareme(1, 3000)).isEqualTo(0.529);
+        }
+
+        @Test @DisplayName("4 CV, 3000 km → 0.606")
+        void quatreCv_palier1() throws Exception {
+            assertThat(invokeBareme(4, 3000)).isEqualTo(0.606);
+        }
+
+        @Test @DisplayName("5 CV, 3000 km → 0.636 (vérifié BOFiP officiel)")
+        void cinqCv_palier1() throws Exception {
+            assertThat(invokeBareme(5, 3000)).isEqualTo(0.636);
+        }
+
+        @Test @DisplayName("5 CV, 8000 km → (d×0.357)+1395 — constante officielle vérifiée via BOFiP")
+        void cinqCv_palier2() throws Exception {
+            double expected = (8000 * 0.357 + 1395.0) / 8000;
+            assertThat(invokeBareme(5, 8000)).isCloseTo(expected, org.assertj.core.data.Offset.offset(0.0001));
+        }
+
+        @Test @DisplayName("6 CV, 3000 km → 0.665")
+        void sixCv_palier1() throws Exception {
+            assertThat(invokeBareme(6, 3000)).isEqualTo(0.665);
+        }
+
+        @Test @DisplayName("8 CV → même tranche que 7 CV et plus (barème officiel ne distingue pas au-delà)")
+        void huitCv_memeTrancheQue7() throws Exception {
+            assertThat(invokeBareme(8, 3000)).isEqualTo(invokeBareme(7, 3000));
+        }
+    }
+
+    @Nested
+    @DisplayName("Barème km moto — toutes tranches de puissance fiscale")
+    class BaremeMoto {
+
+        private double invokeBareme(int fiscalPower, int kmAnnual) throws Exception {
+            RAGService svc = org.mockito.Mockito.mock(RAGService.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+            Method m = RAGService.class.getDeclaredMethod("computeMotoCostPerKm", int.class, int.class);
+            m.setAccessible(true);
+            return (double) m.invoke(svc, fiscalPower, kmAnnual);
+        }
+
+        @Test @DisplayName("1-2 CV, 1000 km → 0.395")
+        void unDeuxCv() throws Exception {
+            assertThat(invokeBareme(2, 1000)).isEqualTo(0.395);
+        }
+
+        @Test @DisplayName("3-5 CV, 1000 km → 0.468")
+        void troisCinqCv() throws Exception {
+            assertThat(invokeBareme(4, 1000)).isEqualTo(0.468);
+        }
+
+        @Test @DisplayName("plus de 5 CV, 1000 km → 0.606 (non-régression de l'ancien comportement par défaut)")
+        void plusDeCinqCv() throws Exception {
+            assertThat(invokeBareme(6, 1000)).isEqualTo(0.606);
+        }
+
+        @Test @DisplayName("kmAnnual=0 → repli 0.412")
+        void kmAnnualZero() throws Exception {
+            assertThat(invokeBareme(6, 0)).isEqualTo(0.412);
         }
     }
 }

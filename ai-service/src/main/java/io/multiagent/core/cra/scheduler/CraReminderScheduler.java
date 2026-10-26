@@ -38,6 +38,7 @@ public class CraReminderScheduler {
     private final ConsultantProfileJpaRepository consultantProfileRepo;
     private final WeaviateService weaviateService;
     private final JavaMailSender mailSender;
+    private final io.multiagent.core.i18n.Messages messages;
 
     @Value("${ai-core.cra-reminder.enabled:true}")
     private boolean enabled;
@@ -58,10 +59,11 @@ public class CraReminderScheduler {
 
         YearMonth currentMonth = YearMonth.now();
         String monthStr   = currentMonth.toString();                          // "2026-06"
+        Locale locale     = messages.defaultLocale();
         String monthLabel = currentMonth.format(
-                DateTimeFormatter.ofPattern("MMMM yyyy", Locale.FRENCH));    // "juin 2026"
+                DateTimeFormatter.ofPattern("MMMM yyyy", locale));           // "juin 2026"
         String deadline   = currentMonth.atDay(26)
-                .format(DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.FRENCH)); // "26 juin 2026"
+                .format(DateTimeFormatter.ofPattern("dd MMMM yyyy", locale)); // "26 juin 2026"
 
         List<Organization> orgs = organizationRepository.findAll().stream()
                 .filter(o -> Boolean.TRUE.equals(o.getActive()))
@@ -143,7 +145,7 @@ public class CraReminderScheduler {
 
         helper.setFrom(fromAddress);
         helper.setTo(email);
-        helper.setSubject("[Action requise] Votre CRA de " + monthLabel + " est en attente");
+        helper.setSubject(messages.getDefault("mail.craReminder.subject", monthLabel));
         helper.setText(buildEmailHtml(name, monthLabel, deadline, currentStatus, realm), true);
 
         mailSender.send(message);
@@ -158,14 +160,16 @@ public class CraReminderScheduler {
         String firstName = extractFirstName(name);
         String statusNote = buildStatusNote(currentStatus, monthLabel);
         String craUrl = frontendUrl + "/" + realm + "/";
+        Locale locale = messages.defaultLocale();
+        String dir = "ar".equals(locale.getLanguage()) ? "rtl" : "ltr";
 
         return """
                 <!DOCTYPE html>
-                <html lang="fr">
+                <html lang="%s" dir="%s">
                 <head>
                   <meta charset="UTF-8">
                   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <title>Rappel CRA</title>
+                  <title>%s</title>
                 </head>
                 <body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
                   <table role="presentation" width="100%%" cellspacing="0" cellpadding="0"
@@ -180,7 +184,7 @@ public class CraReminderScheduler {
                           <td style="background:linear-gradient(135deg,#1e3a5f 0%%,#2d6a9f 100%%);
                                      padding:32px 40px;text-align:center;">
                             <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:.5px;">
-                              Rappel — CRA %s
+                              %s
                             </p>
                           </td>
                         </tr>
@@ -189,15 +193,13 @@ public class CraReminderScheduler {
                         <tr>
                           <td style="padding:36px 40px 24px;">
                             <p style="margin:0 0 20px;font-size:16px;color:#1a1a2e;font-weight:600;">
-                              Bonjour %s,
+                              %s
                             </p>
                             <p style="margin:0 0 16px;font-size:15px;color:#4a4a6a;line-height:1.6;">
                               %s
                             </p>
                             <p style="margin:0 0 28px;font-size:15px;color:#4a4a6a;line-height:1.6;">
-                              Pour que votre paie puisse être traitée dans les délais,
-                              merci de finaliser et de soumettre votre CRA
-                              <strong style="color:#1e3a5f;">avant le %s</strong>.
+                              %s
                             </p>
 
                             <!-- Alerte douce -->
@@ -207,9 +209,7 @@ public class CraReminderScheduler {
                                 <td style="background:#fff8e1;border-left:4px solid #f59e0b;
                                            border-radius:4px;padding:14px 18px;">
                                   <p style="margin:0;font-size:14px;color:#7c5f00;line-height:1.5;">
-                                    ⚠️&nbsp; Sans CRA soumis et validé avant la date limite,
-                                    le traitement de votre paiement pour <strong>%s</strong>
-                                    pourrait être retardé. Nous comptons sur vous !
+                                    %s
                                   </p>
                                 </td>
                               </tr>
@@ -226,15 +226,14 @@ public class CraReminderScheduler {
                                      style="display:inline-block;padding:14px 36px;
                                             font-size:15px;font-weight:600;color:#ffffff;
                                             text-decoration:none;letter-spacing:.3px;">
-                                    Saisir mon CRA →
+                                    %s
                                   </a>
                                 </td>
                               </tr>
                             </table>
 
                             <p style="margin:0;font-size:14px;color:#888;line-height:1.5;">
-                              En cas de difficulté ou de question, n'hésitez pas à contacter
-                              votre responsable ou l'équipe administrative.
+                              %s
                             </p>
                           </td>
                         </tr>
@@ -244,8 +243,7 @@ public class CraReminderScheduler {
                           <td style="background:#f8fafc;padding:20px 40px;
                                      border-top:1px solid #e8ecf0;text-align:center;">
                             <p style="margin:0;font-size:12px;color:#aab;line-height:1.5;">
-                              Ce message est envoyé automatiquement — merci de ne pas y répondre.<br>
-                              Plateforme multi-agent © %d
+                              %s
                             </p>
                           </td>
                         </tr>
@@ -256,39 +254,37 @@ public class CraReminderScheduler {
                 </body>
                 </html>
                 """.formatted(
-                monthLabel,
-                firstName,
+                locale.getLanguage(),
+                dir,
+                messages.getDefault("mail.craReminder.htmlTitle"),
+                messages.getDefault("mail.craReminder.header", monthLabel),
+                messages.getDefault("mail.craReminder.greeting", firstName),
                 statusNote,
-                deadline,
-                monthLabel,
+                messages.getDefault("mail.craReminder.deadline", deadline),
+                messages.getDefault("mail.craReminder.warning", monthLabel),
                 craUrl,
-                java.time.Year.now().getValue()
+                messages.getDefault("mail.craReminder.button"),
+                messages.getDefault("mail.craReminder.help"),
+                messages.getDefault("mail.craReminder.footer", String.valueOf(java.time.Year.now().getValue()))
         );
     }
 
     private String buildStatusNote(String status, String monthLabel) {
-        if (status == null) {
-            return "Nous n'avons pas encore reçu votre Compte Rendu d'Activité (CRA) "
-                    + "pour le mois de <strong style=\"color:#1e3a5f;\">" + monthLabel + "</strong>. "
-                    + "Il semble que vous n'ayez pas encore commencé la saisie.";
-        }
-        return switch (status) {
-            case "BROUILLON" -> "Votre CRA de <strong style=\"color:#1e3a5f;\">" + monthLabel + "</strong> "
-                    + "est en cours de saisie mais n'a pas encore été soumis pour validation. "
-                    + "Pensez à le finaliser et à cliquer sur <em>Soumettre</em> !";
-            case "REFUSE"    -> "Votre CRA de <strong style=\"color:#1e3a5f;\">" + monthLabel + "</strong> "
-                    + "a été refusé par votre responsable et nécessite des corrections. "
-                    + "Merci de le mettre à jour et de le soumettre à nouveau.";
-            default          -> "Votre CRA de <strong style=\"color:#1e3a5f;\">" + monthLabel + "</strong> "
-                    + "est en attente de finalisation.";
+        String month = "<strong style=\"color:#1e3a5f;\">" + monthLabel + "</strong>";
+        String key = status == null ? "mail.craReminder.status.absent" : switch (status) {
+            case "BROUILLON" -> "mail.craReminder.status.draft";
+            case "REFUSE"    -> "mail.craReminder.status.refused";
+            default          -> "mail.craReminder.status.pending";
         };
+        return messages.getDefault(key, month);
     }
 
     private String extractFirstName(String fullName) {
-        if (fullName == null || fullName.isBlank()) return "Consultant";
+        if (fullName == null || fullName.isBlank()) return messages.getDefault("mail.craReminder.defaultName");
         String[] parts = fullName.trim().split("\\s+");
         String firstName = parts[0];
         // Capitalize first letter
-        return firstName.substring(0, 1).toUpperCase(Locale.FRENCH) + firstName.substring(1).toLowerCase(Locale.FRENCH);
+        Locale locale = messages.defaultLocale();
+        return firstName.substring(0, 1).toUpperCase(locale) + firstName.substring(1).toLowerCase(locale);
     }
 }

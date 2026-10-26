@@ -3,15 +3,16 @@ package io.multiagent.invoice.controller;
 import io.multiagent.invoice.model.InvoiceLookupRequest;
 import io.multiagent.invoice.model.SimpleInvoiceRequest;
 import io.multiagent.invoice.model.SubscriptionInvoiceRequest;
-import io.multiagent.invoice.service.DeleteInvoiceService;
 import io.multiagent.invoice.service.InvoiceService;
 import io.multiagent.invoice.service.InvoicePaymentService;
 import io.multiagent.invoice.infrastructure.tenant.TenantContext;
+import io.multiagent.invoice.service.InvoiceCancellationService;
 import io.multiagent.invoice.service.InvoiceDunningService;
 import io.multiagent.invoice.service.SubscriptionBillingScheduler;
 import io.multiagent.invoice.service.SubscriptionInvoiceService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -29,25 +30,25 @@ public class InvoiceController {
     private static final String ATTACHMENT_PREFIX = "attachment; filename=\"";
 
     private final InvoiceService             invoiceService;
-    private final DeleteInvoiceService       deleteInvoiceService;
     private final InvoicePaymentService      invoicePaymentService;
     private final SubscriptionInvoiceService subscriptionInvoiceService;
     private final SubscriptionBillingScheduler subscriptionBillingScheduler;
     private final InvoiceDunningService      invoiceDunningService;
+    private final InvoiceCancellationService invoiceCancellationService;
 
     public InvoiceController(
             InvoiceService invoiceService,
-            DeleteInvoiceService deleteInvoiceService,
             InvoicePaymentService invoicePaymentService,
             SubscriptionInvoiceService subscriptionInvoiceService,
             SubscriptionBillingScheduler subscriptionBillingScheduler,
-            InvoiceDunningService invoiceDunningService) {
+            InvoiceDunningService invoiceDunningService,
+            InvoiceCancellationService invoiceCancellationService) {
         this.invoiceService               = invoiceService;
-        this.deleteInvoiceService         = deleteInvoiceService;
         this.invoicePaymentService        = invoicePaymentService;
         this.subscriptionInvoiceService   = subscriptionInvoiceService;
         this.subscriptionBillingScheduler = subscriptionBillingScheduler;
         this.invoiceDunningService        = invoiceDunningService;
+        this.invoiceCancellationService   = invoiceCancellationService;
     }
 
     @GetMapping("/report")
@@ -67,6 +68,8 @@ public class InvoiceController {
             var generated = invoiceService.generate(request);
             return ResponseEntity.ok(buildInvoiceResponse("Invoice generated successfully", generated.invoice(),
                     generated.pdfPath().toString(), generated.excelPath().toString()));
+        } catch (InvoiceService.InvoiceLockedException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("Failed to generate invoice: " + e.getMessage());
         }
@@ -157,28 +160,19 @@ public class InvoiceController {
         }
     }
 
-    @PostMapping("/delete")
-    public ResponseEntity<Object> deleteInvoice(@RequestBody InvoiceLookupRequest request) {
+    /** Annule une facture : brouillon → ANNULEE ; envoyée/en retard → ANNULEE + avoir. Jamais de suppression. */
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<Object> cancel(@PathVariable UUID id) {
         try {
-            int deleted = invoiceService.deleteFromDb(request);
-            return ResponseEntity.ok(Map.of(
-                    "deleted", deleted,
-                    "message", deleted > 0 ? "Invoice deleted successfully" : "No invoice found matching criteria",
-                    "invoiceName", request.invoiceName() == null ? "" : request.invoiceName()
-            ));
+            return ResponseEntity.ok(invoiceCancellationService.cancel(id));
+        } catch (InvoiceService.InvoiceLockedException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Failed to delete invoice: " + e.getMessage());
+            log.error("cancel failed for {}: {}", id, e.getMessage(), e);
+            return ResponseEntity.internalServerError().body(Map.of("error", String.valueOf(e.getMessage())));
         }
-    }
-
-    @PostMapping("/delete-by-text")
-    public ResponseEntity<Map<String, Object>> deleteByText(@RequestBody Map<String, String> body) {
-        String text = body.getOrDefault("text", "");
-        Map<String, Object> result = deleteInvoiceService.deleteByText(text);
-        if (result.containsKey("error") && result.get("deleted") instanceof Integer d && d <= 0) {
-            return ResponseEntity.badRequest().body(result);
-        }
-        return ResponseEntity.ok(result);
     }
 
     /** Marquer une facture comme envoyée au client. */
@@ -186,6 +180,8 @@ public class InvoiceController {
     public ResponseEntity<Object> markSent(@PathVariable UUID id) {
         try {
             return ResponseEntity.ok(invoicePaymentService.markSent(id));
+        } catch (InvoiceService.InvoiceLockedException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(e.getMessage());
         }
@@ -199,6 +195,8 @@ public class InvoiceController {
         try {
             String dateStr = body != null ? body.get("paymentDate") : null;
             return ResponseEntity.ok(invoicePaymentService.markPaid(id, dateStr));
+        } catch (InvoiceService.InvoiceLockedException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(e.getMessage());
         }

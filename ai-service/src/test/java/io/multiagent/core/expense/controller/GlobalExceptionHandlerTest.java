@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class GlobalExceptionHandlerTest {
 
-    private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+    private final GlobalExceptionHandler handler = new GlobalExceptionHandler(io.multiagent.core.i18n.MessagesFixture.standard());
 
     @Test
     void mapsInvalidReceiptFileExceptionTo400() {

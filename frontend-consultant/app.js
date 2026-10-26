@@ -60,6 +60,8 @@ function authHeaders(extra = {}) {
   return {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     'Content-Type': 'application/json',
+    // Langue de l'interface (<html lang>) → messages backend dans la même langue
+    'Accept-Language': document.documentElement.lang || 'fr',
     ...extra,
   };
 }
@@ -325,13 +327,13 @@ function connectConsultantSSE(user) {
         const n = JSON.parse(e.data);
         notifCount++;
         updateNotifBadge();
-        const toastType = (n.type === 'CRA_VALIDATED' || n.type === 'EXPENSE_APPROVED' || n.type === 'LEAVE_APPROVED') ? 'ok'
+        const toastType = (n.type === 'CRA_VALIDATED' || n.type === 'EXPENSE_APPROVED' || n.type === 'EXPENSE_MONTH_CLOSED' || n.type === 'LEAVE_APPROVED') ? 'ok'
                         : (n.type === 'CRA_REFUSED'   || n.type === 'EXPENSE_REFUSED'  || n.type === 'LEAVE_REFUSED')  ? 'err'
                         : 'info';
         showToast(n.message, toastType);
         const dropdown = document.getElementById('notif-dropdown');
         if (!dropdown.classList.contains('hidden')) loadNotifications(user);
-        if (n.type === 'EXPENSE_APPROVED' || n.type === 'EXPENSE_REFUSED') {
+        if (n.type === 'EXPENSE_APPROVED' || n.type === 'EXPENSE_REFUSED' || n.type === 'EXPENSE_MONTH_CLOSED') {
           const notesTab = document.getElementById('tab-notes');
           if (notesTab && notesTab.style.display !== 'none') loadNotesReport(user);
         }
@@ -371,7 +373,7 @@ async function loadNotifications(user) {
     }
     list.innerHTML = items.map(n => `
       <div class="notif-item" data-id="${escapeHtml(n.id)}" style="padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer">
-        <span style="font-size:16px">${['CRA_VALIDATED','EXPENSE_APPROVED','LEAVE_APPROVED'].includes(n.type) ? '✅' : ['CRA_REFUSED','EXPENSE_REFUSED','LEAVE_REFUSED'].includes(n.type) ? '❌' : n.type === 'LEAVE_REQUESTED' ? '🏖️' : 'ℹ️'}</span>
+        <span style="font-size:16px">${['CRA_VALIDATED','EXPENSE_APPROVED','EXPENSE_MONTH_CLOSED','LEAVE_APPROVED'].includes(n.type) ? '✅' : ['CRA_REFUSED','EXPENSE_REFUSED','LEAVE_REFUSED'].includes(n.type) ? '❌' : n.type === 'LEAVE_REQUESTED' ? '🏖️' : 'ℹ️'}</span>
         <div style="flex:1;min-width:0">
           <p style="margin:0;font-size:13px;color:#f0f0f0">${escapeHtml(n.message)}</p>
           <p style="margin:2px 0 0;font-size:11px;color:var(--muted,#8892a4)">${formatNotifTs(n.timestamp)}</p>
@@ -728,7 +730,10 @@ async function downloadCraPdfById(id, month, statusEl, projectId, projectName) {
       ? `${base()}/cra/pdf/${id}?projectId=${projectId}`
       : `${base()}/cra/pdf/${id}`;
     const res = await fetch(url, { headers: authHeaders() });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || ('HTTP ' + res.status));
+    }
     const blob = await res.blob();
     const objUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1603,6 +1608,11 @@ async function loadHistory(user) {
 }
 
 function renderHistPdfBtn(cra) {
+  // Pas de PDF tant que le CRA est en saisie (même règle que le backend /cra/pdf)
+  const rawStatus = cra.status || 'BROUILLON';
+  if (rawStatus === 'BROUILLON' || rawStatus === 'REFUSE') {
+    return '<span class="cell-muted" title="PDF disponible une fois le CRA soumis">—</span>';
+  }
   const pdfIcon = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`;
   const projs = Array.isArray(cra.projects) ? cra.projects.filter(p => p.id) : [];
   if (projs.length <= 1) {
@@ -2073,6 +2083,27 @@ function buildAbsenceInjection() {
 }
 
 // Étape 1 : upload du justificatif → extraction, sans création. Remplit l'aperçu éditable.
+/**
+ * Affiche (ou masque) le bandeau d'avertissement de conformité politique — purement informatif,
+ * ne bloque jamais la soumission. Voir PolicyComplianceService côté backend.
+ */
+function renderPolicyWarning(policyVerdictJson) {
+  const banner = document.getElementById('notes-policy-warning');
+  if (!banner) return;
+  let verdict = null;
+  try { verdict = policyVerdictJson ? JSON.parse(policyVerdictJson) : null; } catch { /* ignore */ }
+
+  if (!verdict || verdict.compliant !== false) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.innerHTML = '⚠️ Cette dépense ne semble pas correspondre à la politique de remboursement'
+    + (verdict.citedClause ? ' (' + escapeHtml(verdict.citedClause) + ')' : '') + '. '
+    + 'Vous pouvez quand même la soumettre — si elle est justifiée, précisez le contexte dans le '
+    + 'champ <strong>Motif / contexte</strong> ci-dessus pour aider votre responsable à l\'approuver.';
+  banner.style.display = '';
+}
+
 async function analyzeReceipt(user) {
   const fileInput = document.getElementById('notes-file');
   const modeEl    = document.getElementById('notes-payment-mode');
@@ -2108,6 +2139,7 @@ async function analyzeReceipt(user) {
     let expJson = null;
     try { expJson = data?.extractedExpenseJson ? JSON.parse(data.extractedExpenseJson) : null; } catch { /* ignore */ }
 
+    renderPolicyWarning(data.policyVerdictJson);
     resultEl.dataset.receiptId = data.id;
     document.getElementById('preview-type').value        = expJson?.type || '';
     document.getElementById('preview-amount').value       = expJson?.amount ?? '';
@@ -2195,6 +2227,7 @@ function cancelExpensePreview() {
   resultEl.style.display = 'none';
   delete resultEl.dataset.receiptId;
   document.getElementById('notes-status').textContent = '';
+  renderPolicyWarning(null);
 }
 
 async function downloadNotesReport(format, user) {

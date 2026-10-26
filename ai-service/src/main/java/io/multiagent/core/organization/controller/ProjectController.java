@@ -24,6 +24,7 @@ public class ProjectController {
     private final ProjectRepository projectRepository;
     private final OrganizationRepository organizationRepository;
     private final ConsultantProfileJpaRepository consultantProfileRepository;
+    private final io.multiagent.core.i18n.Messages messages;
 
     @GetMapping
     public List<ProjectEntity> list() {
@@ -59,7 +60,7 @@ public class ProjectController {
     @Transactional
     public ResponseEntity<Map<String, String>> delete(@PathVariable UUID id) {
         projectRepository.deleteById(id);
-        return ResponseEntity.ok(Map.of("message", "Projet supprimé"));
+        return ResponseEntity.ok(Map.of("message", messages.get("project.deleted")));
     }
 
     /** Assigner un ou plusieurs projets à un consultant */
@@ -76,7 +77,7 @@ public class ProjectController {
             consultant.getProjects().add(project);
             consultantProfileRepository.save(consultant);
         }
-        return ResponseEntity.ok(Map.of("message", "Consultant assigné au projet"));
+        return ResponseEntity.ok(Map.of("message", messages.get("project.consultantAssigned")));
     }
 
     /** Retirer un consultant d'un projet */
@@ -91,7 +92,7 @@ public class ProjectController {
                 .orElseThrow(() -> new IllegalArgumentException("Consultant not found: " + consultantId));
         consultant.getProjects().remove(project);
         consultantProfileRepository.save(consultant);
-        return ResponseEntity.ok(Map.of("message", "Consultant retiré du projet"));
+        return ResponseEntity.ok(Map.of("message", messages.get("project.consultantRemoved")));
     }
 
     /** Lister les projets d'un consultant par UUID */

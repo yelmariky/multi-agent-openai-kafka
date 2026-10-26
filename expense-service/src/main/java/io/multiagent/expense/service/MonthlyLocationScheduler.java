@@ -20,10 +20,13 @@ public class MonthlyLocationScheduler {
 
     private final ReasoningService reasoningService;
 
-    @Value("${ai-core.monthly-location.enabled:true}")
+    // Désactivé par défaut : ai-service exécute déjà ce job (MONTHLY_LOCATION_ENABLED) — l'activer ici aussi
+    // créerait une location en double chaque 1er du mois (et une par réplica, expense-service étant autoscalé).
+    // Réactivable via AI_CORE_MONTHLY_LOCATION_ENABLED=true si le job est un jour retiré d'ai-service.
+    @Value("${ai-core.monthly-location.enabled:false}")
     private boolean enabled;
 
-    @Value("${ai-core.monthly-location.text:je loue pour la domiciliation à 450 EUR ce mois-ci}")
+    @Value("${MONTHLY_LOCATION_TEXT:}")
     private String messageText;
 
     /**
@@ -32,6 +35,10 @@ public class MonthlyLocationScheduler {
     @Scheduled(cron = "0 0 8 1 * ?")
     public void sendMonthlyLocation() {
         if (!enabled) {
+            return;
+        }
+        if (messageText == null || messageText.isBlank()) {
+            log.warn("⚠️ MonthlyLocationScheduler : MONTHLY_LOCATION_TEXT vide — aucune location générée");
             return;
         }
         try {

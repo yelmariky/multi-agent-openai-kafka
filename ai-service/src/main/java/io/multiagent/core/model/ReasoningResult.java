@@ -57,7 +57,7 @@ public class ReasoningResult {
             .raw(message)
             .expenses(List.of())   // aucune dépense
             .metadata(Map.of(
-                "explanation", "Smalltalk hors périmètre",
+                "explanation", "Smalltalk out of scope",
                 "status", "SMALLTALK"
             ))
             .build();
@@ -71,7 +71,7 @@ public class ReasoningResult {
             .status("error")
             .expenses(List.of())
             .metadata(Map.of(
-                "explanation", "Erreur métier",
+                "explanation", "Business error",
                 "status", "ERROR"
             ))
             .build();

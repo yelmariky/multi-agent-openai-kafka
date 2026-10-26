@@ -28,6 +28,7 @@ public class LeaveService {
     private final LeaveBalanceRepository balanceRepo;
     private final WeaviateService        weaviateService;
     private final EventPublisher         eventPublisher;
+    private final io.multiagent.core.i18n.Messages messages;
 
     /** Consultant — soumet une demande de congé. */
     @Transactional
@@ -35,7 +36,7 @@ public class LeaveService {
         UUID tenantId = TenantContext.getTenantId();
         LocalDate start = LocalDate.parse(startStr);
         LocalDate end   = LocalDate.parse(endStr);
-        if (end.isBefore(start)) throw new IllegalArgumentException("La date de fin doit être après la date de début.");
+        if (end.isBefore(start)) throw new IllegalArgumentException(messages.get("leave.error.endBeforeStart"));
 
         double days = countWorkingDays(start, end);
 
@@ -58,8 +59,8 @@ public class LeaveService {
         String typeLabel = leaveTypeLabel(type);
         eventPublisher.notify(NotificationPayload.TARGET_ADMIN, consultantEmail,
                 "LEAVE_REQUESTED",
-                consultantEmail + " a demandé " + days + "j de " + typeLabel
-                        + " du " + start + " au " + end + ".",
+                messages.getDefault("notification.leave.requested",
+                        consultantEmail, String.valueOf(days), typeLabel, String.valueOf(start), String.valueOf(end)),
                 entity.getId().toString());
 
         return toMap(entity);
@@ -82,10 +83,9 @@ public class LeaveService {
                 entity.getStartDate(), entity.getEndDate(), tenantId);
 
         // Notifier le consultant
-        String approvedMsg = "Votre demande de " + leaveTypeLabel(entity.getType())
-                + " du " + entity.getStartDate() + " au " + entity.getEndDate()
-                + " (" + entity.getDaysCount().stripTrailingZeros().toPlainString() + "j) a été approuvée"
-                + " et ajoutée à votre CRA.";
+        String approvedMsg = messages.getDefault("notification.leave.approved",
+                leaveTypeLabel(entity.getType()), String.valueOf(entity.getStartDate()), String.valueOf(entity.getEndDate()),
+                entity.getDaysCount().stripTrailingZeros().toPlainString());
         eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
                 entity.getConsultantEmail(), "LEAVE_APPROVED", approvedMsg, entity.getId().toString());
 
@@ -107,11 +107,12 @@ public class LeaveService {
                 entity.getStartDate(), entity.getEndDate(), tenantId);
 
         // Notifier le consultant
-        String msg = "Votre demande de " + leaveTypeLabel(entity.getType())
-                + " du " + entity.getStartDate() + " au " + entity.getEndDate()
-                + " a été refusée"
-                + (reason != null && !reason.isBlank() ? " : " + reason : ".")
-                + " Les absences ont été retirées de votre CRA.";
+        String type = leaveTypeLabel(entity.getType());
+        String from = String.valueOf(entity.getStartDate());
+        String to   = String.valueOf(entity.getEndDate());
+        String msg = reason != null && !reason.isBlank()
+                ? messages.getDefault("notification.leave.refusedWithReason", type, from, to, reason)
+                : messages.getDefault("notification.leave.refused", type, from, to);
         eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
                 entity.getConsultantEmail(), "LEAVE_REFUSED", msg, entity.getId().toString());
 
@@ -166,11 +167,11 @@ public class LeaveService {
 
     private String leaveTypeLabel(String type) {
         return switch (type != null ? type.toUpperCase() : "") {
-            case "CP"        -> "congés payés";
-            case "RTT"       -> "RTT";
-            case "MALADIE"   -> "congé maladie";
-            case "FORMATION" -> "formation";
-            default          -> "congé";
+            case "CP"        -> messages.getDefault("leave.type.cp");
+            case "RTT"       -> messages.getDefault("leave.type.rtt");
+            case "MALADIE"   -> messages.getDefault("leave.type.sick");
+            case "FORMATION" -> messages.getDefault("leave.type.training");
+            default          -> messages.getDefault("leave.type.other");
         };
     }
 
@@ -203,7 +204,7 @@ public class LeaveService {
     private LeaveRequestEntity findSecure(UUID id, UUID tenantId) {
         return leaveRepo.findById(id)
                 .filter(e -> tenantId.equals(e.getTenantId()))
-                .orElseThrow(() -> new IllegalArgumentException("Demande introuvable : " + id));
+                .orElseThrow(() -> new IllegalArgumentException(messages.get("leave.error.notFound", String.valueOf(id))));
     }
 
     private int countWorkingDays(LocalDate start, LocalDate end) {

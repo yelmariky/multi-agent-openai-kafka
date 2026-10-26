@@ -32,6 +32,8 @@ class ClientControllerTest {
     @Mock OrganizationRepository organizationRepository;
     @Mock org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
+    @org.mockito.Spy io.multiagent.core.i18n.Messages messages = io.multiagent.core.i18n.MessagesFixture.standard();
+
     @InjectMocks ClientController controller;
 
     private final UUID tenantId = UUID.randomUUID();

@@ -26,7 +26,7 @@ class ChatbotServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ChatbotService(llm, new ObjectMapper(), "", "test-model");
+        service = new ChatbotService(llm, new ObjectMapper(), "PROMPT TEST", "test-model", io.multiagent.core.i18n.MessagesFixture.standard());
     }
 
     @Test
@@ -39,21 +39,17 @@ class ChatbotServiceTest {
     }
 
     @Test
-    @DisplayName("prompt configMap absent → prompt par défaut embarqué (contient les faits IA-INSIGHT)")
-    void blankPromptFallsBackToDefault() {
-        when(llm.extractJSONWithModel(anyString(), anyString(), anyString()))
-                .thenReturn("{\"reply\":\"ok\"}");
-        service.reply("tarifs ?");
-
-        ArgumentCaptor<String> system = ArgumentCaptor.forClass(String.class);
-        verify(llm).extractJSONWithModel(eq("test-model"), system.capture(), anyString());
-        assertThat(system.getValue()).contains("IA-INSIGHT").contains("29€").contains("demo@ia-insightservices.fr");
+    @DisplayName("prompt configMap absent → aucun appel LLM, réponse de secours avec les coordonnées")
+    void blankPromptReturnsFallbackWithoutLlm() {
+        ChatbotService noPrompt = new ChatbotService(llm, new ObjectMapper(), "", "test-model", io.multiagent.core.i18n.MessagesFixture.standard());
+        assertThat(noPrompt.reply("tarifs ?")).contains("demo@ia-insightservices.fr");
+        org.mockito.Mockito.verifyNoInteractions(llm);
     }
 
     @Test
     @DisplayName("prompt configMap fourni → utilisé tel quel")
     void configuredPromptIsUsed() {
-        ChatbotService custom = new ChatbotService(llm, new ObjectMapper(), "PROMPT CUSTOM", "m");
+        ChatbotService custom = new ChatbotService(llm, new ObjectMapper(), "PROMPT CUSTOM", "m", io.multiagent.core.i18n.MessagesFixture.standard());
         when(llm.extractJSONWithModel(anyString(), anyString(), anyString()))
                 .thenReturn("{\"reply\":\"ok\"}");
         custom.reply("question");

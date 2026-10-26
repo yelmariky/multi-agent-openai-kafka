@@ -13,6 +13,7 @@ import com.openai.models.completions.CompletionCreateParams;
 import com.openai.models.embeddings.CreateEmbeddingResponse;
 import com.openai.models.embeddings.Embedding;
 import com.openai.models.embeddings.EmbeddingCreateParams;
+import com.openai.models.models.Model;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
@@ -26,6 +27,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -160,12 +162,14 @@ public class LLMAIClient {
             // Circuit ouvert : Groq court-circuité sans retry — bascule immédiate (économise ~22s)
             log.warn("🔌 [CircuitBreaker OUVERT] Groq court-circuité, bascule directe sur OpenAI fallback model={}",
                     fallbackLlmModel);
+            countFallback("circuit_open", targetModel);
             ChatCompletionCreateParams fallbackParams = buildChatParams(fallbackLlmModel, system, user);
             return safeCall("chat.json.fallback(model=" + fallbackLlmModel + ")",
                     () -> client.chat().completions().create(fallbackParams));
         } catch (LLMClientException ex) {
             log.warn("⚠️ LLM provider indisponible ({}), bascule sur OpenAI fallback model={}: {}",
                     targetModel, fallbackLlmModel, ex.getMessage());
+            countFallback("provider_error", targetModel);
             ChatCompletionCreateParams fallbackParams = buildChatParams(fallbackLlmModel, system, user);
             return safeCall("chat.json.fallback(model=" + fallbackLlmModel + ")",
                     () -> client.chat().completions().create(fallbackParams));
@@ -280,27 +284,36 @@ public class LLMAIClient {
         return (candidate == null || candidate.isBlank()) ? fallback : candidate;
     }
 
-    private <T> T record(String metricSuffix, Supplier<T> supplier) {
+    /**
+     * Mesure un appel LLM : timer {@code llm.requests} taggé operation / model / provider / outcome
+     * (dashboard Grafana « LLM Intelligence »). {@code operation} a la forme {@code "chat.json(model=X)"}.
+     */
+    private <T> T record(String operation, Supplier<T> supplier) {
         if (metrics == null) {
             return supplier.get();
         }
+        int paren = operation.indexOf('(');
+        String op = paren > 0 ? operation.substring(0, paren) : operation;
+        int m = operation.indexOf("model=");
+        String model = m >= 0 ? operation.substring(m + 6, Math.max(m + 6, operation.lastIndexOf(')'))) : "unknown";
+        // Embeddings et fallback passent toujours par le client OpenAI ; le reste par le provider principal
+        String provider = (!hasFallback || op.startsWith("embeddings") || op.endsWith(".fallback")) ? "openai" : "groq";
 
         Timer.Sample sample = Timer.start(metrics);
+        String outcome = "success";
         try {
             return supplier.get();
+        } catch (RuntimeException e) {
+            outcome = "error";
+            throw e;
         } finally {
-            sample.stop(metrics.timer("openai." + metricSuffix));
+            sample.stop(Timer.builder("llm.requests")
+                    .tag("operation", op).tag("model", model).tag("provider", provider).tag("outcome", outcome)
+                    .publishPercentileHistogram()
+                    .register(metrics));
         }
     }
 
-    public String extractJSON(String prompt) {
-        ChatCompletion completion = chatJson(
-                null,
-                "Tu réponds uniquement en JSON strict sans texte supplémentaire.",
-                prompt
-        );
-        return extractContentOrThrow(completion);
-    }
 
     public String extractJSON(String systemPrompt, String userPrompt) {
         ChatCompletion completion = chatJson(
@@ -341,6 +354,24 @@ public class LLMAIClient {
 
     public String getEmbeddingModel() {
         return embeddingModel;
+    }
+
+    /** true si un provider LLM alternatif (Groq…) est configuré via OPENAI_LLM_BASE_URL. */
+    public boolean usesAlternateProvider() {
+        return hasFallback;
+    }
+
+    /** Ids des modèles proposés par le provider LLM (Groq si configuré, sinon OpenAI). */
+    public Set<String> listChatModels() {
+        return chatClient.models().list().data().stream()
+                .map(Model::id)
+                .collect(Collectors.toSet());
+    }
+
+    private void countFallback(String reason, String model) {
+        if (metrics != null) {
+            metrics.counter("llm.fallback", "reason", reason, "model", model).increment();
+        }
     }
 
     private <T> T safeCall(String operation, Supplier<T> supplier) {

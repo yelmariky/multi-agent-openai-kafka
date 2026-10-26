@@ -17,6 +17,7 @@ import java.util.UUID;
 public class LeaveController {
 
     private final LeaveService leaveService;
+    private final io.multiagent.core.i18n.Messages messages;
 
     /** Consultant — soumet une demande de congé. */
     @PostMapping("/request")
@@ -28,7 +29,7 @@ public class LeaveController {
             String end    = body.get("endDate");
             String reason = body.get("reason");
             if (email == null || type == null || start == null || end == null)
-                return ResponseEntity.badRequest().body("Champs requis : consultantEmail, type, startDate, endDate");
+                return ResponseEntity.badRequest().body(messages.get("leave.error.missingFields"));
             return ResponseEntity.ok(leaveService.request(email, type, start, end, reason));
         } catch (Exception e) {
             log.error("leave request error: {}", e.getMessage(), e);

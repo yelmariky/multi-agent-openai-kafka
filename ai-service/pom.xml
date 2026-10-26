@@ -179,6 +179,9 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Sprint 6 : logs JSON (Loki) + trace_id cross-service -->
+        <dependency><groupId>net.logstash.logback</groupId><artifactId>logstash-logback-encoder</artifactId><version>8.0</version></dependency>
+        <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-tracing-bridge-brave</artifactId></dependency>
 
         <dependency>
             <groupId>io.micrometer</groupId>
@@ -323,6 +326,8 @@
                         <!-- Services fichier / OCR — dépendances système -->
                         <exclude>**/OcrService*</exclude>
                         <exclude>**/ReceiptStorageService*</exclude>
+                        <exclude>**/PolicyFileStorageService*</exclude>
+                        <exclude>**/PolicyPdfRenderingService*</exclude>
                         <exclude>**/LLMUtils*</exclude>
                         <!-- Modèles request / réponse (records) -->
                         <exclude>**/IntentRequest*</exclude>

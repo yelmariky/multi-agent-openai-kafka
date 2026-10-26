@@ -27,6 +27,7 @@ import static org.mockito.Mockito.*;
 class InvoicePaymentServiceTest {
 
     @Mock InvoiceJpaRepository invoiceRepo;
+    @Mock InvoiceService invoiceService;
     @InjectMocks InvoicePaymentService service;
 
     private static final UUID TENANT = UUID.randomUUID();
@@ -35,7 +36,7 @@ class InvoicePaymentServiceTest {
 
     @Test
     @DisplayName("markSent() — status ENVOYEE + sentDate = aujourd'hui")
-    void markSent_setsStatusAndDate() {
+    void markSent_setsStatusAndDate() throws Exception {
         InvoiceEntity inv = invoice(UUID.randomUUID(), null);
         try (MockedStatic<TenantContext> tc = mockStatic(TenantContext.class)) {
             tc.when(TenantContext::getTenantId).thenReturn(TENANT);
@@ -47,6 +48,7 @@ class InvoicePaymentServiceTest {
             assertThat(result.get("paymentStatus")).isEqualTo("ENVOYEE");
             assertThat(inv.getSentDate()).isEqualTo(LocalDate.now());
             verify(invoiceRepo).save(inv);
+            verify(invoiceService).archivedPdf(inv); // original figé à l'envoi
         }
     }
 
@@ -166,6 +168,40 @@ class InvoicePaymentServiceTest {
             List<Map<String, Object>> result = service.list(null);
 
             assertThat(result.get(0).get("paymentStatus")).isEqualTo("PAYEE");
+        }
+    }
+
+    @Test
+    @DisplayName("markSent()/markPaid() — facture annulée ou avoir : refusé")
+    void cancelledOrCreditNote_isLocked() {
+        InvoiceEntity cancelled = invoice(UUID.randomUUID(), null);
+        cancelled.setPaymentStatus("ANNULEE");
+        InvoiceEntity credit = invoice(UUID.randomUUID(), null);
+        credit.setInvoiceType("AVOIR");
+        try (MockedStatic<TenantContext> tc = mockStatic(TenantContext.class)) {
+            tc.when(TenantContext::getTenantId).thenReturn(TENANT);
+            when(invoiceRepo.findById(cancelled.getId())).thenReturn(Optional.of(cancelled));
+            when(invoiceRepo.findById(credit.getId())).thenReturn(Optional.of(credit));
+
+            assertThatThrownBy(() -> service.markSent(cancelled.getId()))
+                .isInstanceOf(InvoiceService.InvoiceLockedException.class);
+            assertThatThrownBy(() -> service.markPaid(credit.getId(), null))
+                .isInstanceOf(InvoiceService.InvoiceLockedException.class);
+            verify(invoiceRepo, never()).save(any());
+        }
+    }
+
+    @Test
+    @DisplayName("list() — facture annulée jamais marquée EN_RETARD")
+    void list_cancelledNotMarkedOverdue() {
+        InvoiceEntity cancelled = invoice(UUID.randomUUID(), null);
+        cancelled.setPaymentStatus("ANNULEE");
+        cancelled.setPaymentDueDate(LocalDate.now().minusDays(10));
+        try (MockedStatic<TenantContext> tc = mockStatic(TenantContext.class)) {
+            tc.when(TenantContext::getTenantId).thenReturn(TENANT);
+            when(invoiceRepo.findByTenantId(TENANT)).thenReturn(List.of(cancelled));
+
+            assertThat(service.list(null).get(0).get("paymentStatus")).isEqualTo("ANNULEE");
         }
     }
 

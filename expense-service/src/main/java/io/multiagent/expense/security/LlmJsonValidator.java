@@ -37,7 +37,11 @@ public final class LlmJsonValidator {
     /** Résultat immuable d'une validation. */
     public record ValidationResult(boolean valid, String reason) {
         public static ValidationResult ok()              { return new ValidationResult(true, null); }
-        public static ValidationResult fail(String msg)  { return new ValidationResult(false, msg); }
+        public static ValidationResult fail(String msg)  {
+            // Taux d'erreur JSON LLM (dashboard « LLM Intelligence ») — registre global relié à Spring
+            io.micrometer.core.instrument.Metrics.counter("llm.json.invalid").increment();
+            return new ValidationResult(false, msg);
+        }
     }
 
     /**
@@ -47,17 +51,17 @@ public final class LlmJsonValidator {
      */
     public static ValidationResult validateExpense(String json) {
         if (json == null || json.isBlank()) {
-            return ValidationResult.fail("JSON vide");
+            return ValidationResult.fail("Empty JSON");
         }
         JsonNode node;
         try {
             node = MAPPER.readTree(json);
         } catch (Exception e) {
-            return ValidationResult.fail("JSON malformé : " + e.getMessage());
+            return ValidationResult.fail("Malformed JSON: " + e.getMessage());
         }
 
         if (!node.isObject()) {
-            return ValidationResult.fail("Réponse LLM n'est pas un objet JSON (reçu : " + node.getNodeType() + ")");
+            return ValidationResult.fail("LLM response is not a JSON object (got: " + node.getNodeType() + ")");
         }
 
         // Valider le type si présent
@@ -74,10 +78,10 @@ public final class LlmJsonValidator {
         JsonNode amountNode = node.get("amount");
         if (amountNode != null && !amountNode.isNull()) {
             if (!amountNode.isNumber()) {
-                return ValidationResult.fail("Champ 'amount' n'est pas un nombre : " + amountNode);
+                return ValidationResult.fail("Field 'amount' is not a number: " + amountNode);
             }
             if (amountNode.asDouble() < 0) {
-                return ValidationResult.fail("Champ 'amount' négatif : " + amountNode.asDouble());
+                return ValidationResult.fail("Field 'amount' is negative: " + amountNode.asDouble());
             }
         }
 
@@ -95,10 +99,10 @@ public final class LlmJsonValidator {
         JsonNode kmNode = node.get("km");
         if (kmNode != null && !kmNode.isNull()) {
             if (!kmNode.isNumber()) {
-                return ValidationResult.fail("Champ 'km' n'est pas un nombre : " + kmNode);
+                return ValidationResult.fail("Field 'km' is not a number: " + kmNode);
             }
             if (kmNode.asDouble() < 0) {
-                return ValidationResult.fail("Champ 'km' négatif : " + kmNode.asDouble());
+                return ValidationResult.fail("Field 'km' is negative: " + kmNode.asDouble());
             }
             if (kmNode.asDouble() > 2000) {
                 log.warn("🛡️ [JSON-SCHEMA] Kilométrage suspect : {} km/jour", kmNode.asDouble());
@@ -112,20 +116,20 @@ public final class LlmJsonValidator {
      * Valide le JSON d'un résultat de classification d'intent.
      */
     public static ValidationResult validateIntent(String json) {
-        if (json == null || json.isBlank()) return ValidationResult.fail("JSON vide");
+        if (json == null || json.isBlank()) return ValidationResult.fail("Empty JSON");
         try {
             JsonNode node = MAPPER.readTree(json);
-            if (!node.isObject())         return ValidationResult.fail("Pas un objet JSON");
-            if (!node.has("intent"))      return ValidationResult.fail("Champ 'intent' manquant");
-            if (!node.has("confidence"))  return ValidationResult.fail("Champ 'confidence' manquant");
+            if (!node.isObject())         return ValidationResult.fail("Not a JSON object");
+            if (!node.has("intent"))      return ValidationResult.fail("Missing field 'intent'");
+            if (!node.has("confidence"))  return ValidationResult.fail("Missing field 'confidence'");
 
             double confidence = node.path("confidence").asDouble(-1);
             if (confidence < 0 || confidence > 1) {
-                return ValidationResult.fail("confidence hors bornes [0,1] : " + confidence);
+                return ValidationResult.fail("confidence out of range [0,1]: " + confidence);
             }
             return ValidationResult.ok();
         } catch (Exception e) {
-            return ValidationResult.fail("JSON malformé : " + e.getMessage());
+            return ValidationResult.fail("Malformed JSON: " + e.getMessage());
         }
     }
 }

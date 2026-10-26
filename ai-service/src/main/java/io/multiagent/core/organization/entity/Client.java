@@ -33,6 +33,10 @@ public class Client {
     @Column(length = 100)
     private String rcs;
 
+    // N° de TVA intracommunautaire (mention obligatoire sur facture B2B)
+    @Column(name = "vat_number", length = 30)
+    private String vatNumber;
+
     @Column(name = "contact_name")
     private String contactName;
 

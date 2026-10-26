@@ -64,11 +64,23 @@ function clearSession() {
   _keycloak?.logout({ redirectUri: globalThis.location.origin + '/' });
 }
 
+/**
+ * Force un nouveau formulaire de connexion même si une session SSO Keycloak est déjà active dans
+ * le navigateur (ex: un autre compte connecté côté frontend-consultant dans un autre onglet) —
+ * sans ça, Keycloak réutiliserait silencieusement cette session et l'écran "Accès refusé" serait
+ * une impasse. Même technique que le rafraîchissement de token échoué (voir initKeycloak).
+ */
+function switchAccount() {
+  _keycloak?.login({ prompt: 'login' });
+}
+
 /** Headers avec JWT Bearer pour tous les appels API. */
 function authHeaders(extra = {}) {
   const token = _keycloak?.token;
   return {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    // Langue de l'interface (<html lang>) → messages backend dans la même langue
+    'Accept-Language': document.documentElement.lang || 'fr',
     ...extra,
   };
 }
@@ -91,7 +103,7 @@ function invoiceBase() {
 
 function adminHeaders(extra = {}) {
   const token = _keycloak?.token;
-  const h = { 'Content-Type': 'application/json', ...extra };
+  const h = { 'Content-Type': 'application/json', 'Accept-Language': document.documentElement.lang || 'fr', ...extra };
   if (token) h['Authorization'] = `Bearer ${token}`;
   return h;
 }
@@ -218,11 +230,13 @@ function startApp() {
           <h2 style="color:#f87171;margin-bottom:.5rem">Accès refusé</h2>
           <p style="color:#8892a4;margin-bottom:1.5rem">
             Cette console est réservée aux administrateurs.<br>
-            Votre compte <strong>${user.email}</strong> n'a pas les droits requis.
+            Votre compte <strong>${user.email}</strong> n'a pas les droits requis.<br>
+            <span style="font-size:.85rem">(session déjà active dans ce navigateur — peut-être
+            connectée depuis un autre onglet)</span>
           </p>
-          <button onclick="clearSession()" style="background:#2ce5a7;color:#0d1017;border:none;
+          <button onclick="switchAccount()" style="background:#2ce5a7;color:#0d1017;border:none;
             padding:.6rem 1.5rem;border-radius:6px;cursor:pointer;font-weight:600">
-            Se déconnecter
+            Se connecter avec un autre compte
           </button>
         </div>
       </div>`;
@@ -243,6 +257,7 @@ function startApp() {
   initNotifications();
   initConsultants(user);
   initSettingsDrawer();
+  initPolicySettings();
   initMainNavTabs();
   initProjects();
   initClients();
@@ -386,6 +401,7 @@ function fillSettingsForm(s) {
   if (get('set-company'))     get('set-company').value     = v.companyName       || tenantName();
   if (get('set-address'))     get('set-address').value     = v.address           || '';
   if (get('set-rcs'))         get('set-rcs').value         = v.rcs               || '';
+  if (get('set-vat'))         get('set-vat').value         = v.vatNumber         || '';
   if (get('set-capital'))     get('set-capital').value     = v.capital           || '';
   if (get('set-email'))       get('set-email').value       = v.email             || '';
   if (get('set-iban'))        get('set-iban').value        = v.iban              || '';
@@ -401,6 +417,7 @@ function openSettingsDrawer() {
   drawer.classList.remove('hidden');
   drawer.classList.add('slide-in');
   setStatus(document.getElementById('settings-status'), '');
+  loadPolicyVersions();
 }
 
 function closeSettingsDrawer() {
@@ -424,6 +441,7 @@ function initSettingsDrawer() {
       companyName:       (document.getElementById('set-company').value     || '').trim() || tenantName(),
       address:            document.getElementById('set-address').value.trim(),
       rcs:                document.getElementById('set-rcs').value.trim(),
+      vatNumber:          document.getElementById('set-vat').value.trim(),
       capital:            document.getElementById('set-capital').value.trim(),
       email:              document.getElementById('set-email').value.trim(),
       iban:               document.getElementById('set-iban').value.trim(),
@@ -441,7 +459,196 @@ function initSettingsDrawer() {
       sellerSettings = payload;
       setStatus(statusEl, 'Paramètres sauvegardés.', 'ok');
       showToast('Paramètres de facturation sauvegardés.', 'ok');
-      setTimeout(closeSettingsDrawer, 800);
+
+      // Un texte de politique tapé puis "Enregistrer" doit être pris en compte ici aussi — ne pas
+      // silencieusement l'ignorer parce que l'admin n'a pas cliqué le bouton dédié plus haut.
+      const policySubmitted = await submitPolicyTextIfPresent();
+      const policyFailed = document.getElementById('policy-status').className.includes('err');
+      if (policySubmitted && !policyFailed) showToast('Politique de remboursement également soumise comme brouillon.', 'ok');
+
+      // Ne pas refermer si la politique a échoué — laisser le message d'erreur visible.
+      if (!policyFailed) setTimeout(closeSettingsDrawer, 800);
+    } catch (e) {
+      setStatus(statusEl, 'Erreur : ' + e.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+// ============================================================
+// POLITIQUE DE REMBOURSEMENT (notes de frais)
+// ============================================================
+const POLICY_STATUS_BADGE = {
+  DRAFT:    '<span class="status-badge orange">Brouillon</span>',
+  ACTIVE:   '<span class="status-badge green">Active</span>',
+  ARCHIVED: '<span class="status-badge grey">Archivée</span>',
+};
+
+function formatPolicyDate(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch {
+    return '—';
+  }
+}
+
+async function loadPolicyVersions() {
+  const currentEl  = document.getElementById('policy-current');
+  const versionsEl = document.getElementById('policy-versions');
+  if (!currentEl || !versionsEl) return;
+  try {
+    const res = await fetch(`${base()}/settings/policies/expense-reimbursement`, { headers: authHeaders() });
+    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
+    const { versions = [] } = await res.json();
+    renderPolicyVersions(versions);
+  } catch (e) {
+    currentEl.textContent = 'Impossible de charger la politique : ' + e.message;
+    versionsEl.innerHTML = '';
+  }
+}
+
+function renderPolicyVersions(versions) {
+  const currentEl  = document.getElementById('policy-current');
+  const versionsEl = document.getElementById('policy-versions');
+
+  const active = versions.find(v => v.status === 'ACTIVE');
+  currentEl.innerHTML = active
+    ? `Version active : <strong>v${active.version}</strong> (activée le ${formatPolicyDate(active.activatedAt)})`
+    : 'Aucune politique active — les notes de frais ne sont pas évaluées pour le moment.';
+
+  if (!versions.length) {
+    versionsEl.innerHTML = '';
+    return;
+  }
+
+  versionsEl.innerHTML = versions.map(v => `
+    <div class="policy-version-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600">
+          <a href="#" class="policy-download-link" data-id="${escapeHtml(v.id)}" data-version="${v.version}"
+             style="color:inherit;text-decoration:underline;cursor:pointer" title="Télécharger en PDF">v${v.version} — ${escapeHtml(v.title || '')}</a>
+        </div>
+        <div style="font-size:11px;color:var(--muted)">Soumise le ${formatPolicyDate(v.createdAt)}</div>
+      </div>
+      ${POLICY_STATUS_BADGE[v.status] || ''}
+      ${v.status === 'DRAFT' ? `<button type="button" class="btn-xs policy-activate-btn" data-id="${escapeHtml(v.id)}">Activer</button>` : ''}
+    </div>`).join('');
+
+  versionsEl.querySelectorAll('.policy-download-link').forEach(link => {
+    link.addEventListener('click', async (e) => {
+      e.preventDefault();
+      try {
+        const res = await fetch(`${base()}/settings/policies/expense-reimbursement/${link.dataset.id}/pdf`, {
+          headers: authHeaders(),
+        });
+        if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = 'politique-remboursement-v' + link.dataset.version + '.pdf';
+        a.click();
+        URL.revokeObjectURL(objUrl);
+      } catch (err) {
+        showToast('Erreur téléchargement : ' + err.message, 'err');
+      }
+    });
+  });
+
+  versionsEl.querySelectorAll('.policy-activate-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const res = await fetch(`${base()}/settings/policies/expense-reimbursement/${btn.dataset.id}/activate`, {
+          method: 'POST',
+          headers: adminHeaders(),
+        });
+        if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
+        showToast('Politique activée.', 'ok');
+        loadPolicyVersions();
+      } catch (e) {
+        showToast('Erreur : ' + e.message, 'err');
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+/**
+ * Soumet le texte de politique saisi, si non vide. Réutilisée par le bouton dédié ET par le
+ * bouton "Enregistrer" du bas du tiroir — un admin qui tape du texte puis clique "Enregistrer"
+ * (le réflexe naturel pour "sauvegarder ce panneau") doit voir sa politique prise en compte,
+ * pas silencieusement ignorée (confusion réelle rencontrée : voir conversation).
+ * Retourne true si quelque chose a été soumis (avec succès ou en erreur affichée), false si le
+ * champ était vide (rien à faire, pas une erreur).
+ */
+async function submitPolicyTextIfPresent() {
+  const statusEl = document.getElementById('policy-status');
+  const textEl   = document.getElementById('policy-text');
+  const text     = textEl.value.trim();
+  if (!text) return false;
+
+  setStatus(statusEl, 'Envoi de la politique…', '');
+  try {
+    const res = await fetch(`${base()}/settings/policies/expense-reimbursement`, {
+      method: 'POST',
+      headers: adminHeaders(),
+      body: JSON.stringify({ policyText: text }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || ('Erreur serveur (' + res.status + ')'));
+    }
+    setStatus(statusEl, 'Brouillon de politique créé — activez-le ci-dessous pour le mettre en service.', 'ok');
+    textEl.value = '';
+    loadPolicyVersions();
+  } catch (e) {
+    setStatus(statusEl, 'Erreur politique : ' + e.message, 'err');
+  }
+  return true;
+}
+
+function initPolicySettings() {
+  document.getElementById('policy-submit').addEventListener('click', async () => {
+    const btn = document.getElementById('policy-submit');
+    const statusEl = document.getElementById('policy-status');
+    if (!document.getElementById('policy-text').value.trim()) {
+      setStatus(statusEl, 'Le texte de la politique ne peut pas être vide.', 'err');
+      return;
+    }
+    btn.disabled = true;
+    await submitPolicyTextIfPresent();
+    btn.disabled = false;
+  });
+
+  document.getElementById('policy-submit-pdf').addEventListener('click', async () => {
+    const btn      = document.getElementById('policy-submit-pdf');
+    const statusEl = document.getElementById('policy-status');
+    const fileEl   = document.getElementById('policy-pdf-file');
+    const file     = fileEl.files?.[0];
+    if (!file) {
+      setStatus(statusEl, 'Sélectionnez un fichier PDF.', 'err');
+      return;
+    }
+    btn.disabled = true;
+    setStatus(statusEl, 'Extraction du texte et envoi…', '');
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch(`${base()}/settings/policies/expense-reimbursement/pdf`, {
+        method: 'POST',
+        headers: authHeaders(), // pas de Content-Type : le navigateur fixe la boundary multipart
+        body: fd,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || ('Erreur serveur (' + res.status + ')'));
+      }
+      setStatus(statusEl, 'Brouillon créé à partir du PDF — activez-le ci-dessous pour le mettre en service.', 'ok');
+      fileEl.value = '';
+      loadPolicyVersions();
     } catch (e) {
       setStatus(statusEl, 'Erreur : ' + e.message, 'err');
     } finally {
@@ -534,7 +741,7 @@ async function loadNotifications() {
       return;
     }
     list.innerHTML = items.map(n => `
-      <div class="notif-item" data-id="${escapeHtml(n.id)}">
+      <div class="notif-item" data-id="${escapeHtml(n.id)}" data-consultant-email="${escapeHtml(n.consultantEmail || '')}"${n.consultantEmail ? ' title="Cliquer pour ouvrir la fiche consultant"' : ''}>
         <span class="notif-icon">${n.type === 'CRA_SUBMITTED' ? '📋' : n.type === 'LEAVE_REQUESTED' ? '🏖️' : '💶'}</span>
         <div class="notif-body">
           <p class="notif-msg">${escapeHtml(n.message)}</p>
@@ -547,6 +754,8 @@ async function loadNotifications() {
         item.style.opacity = '0.5';
         notifCount = Math.max(0, notifCount - 1);
         updateBadge();
+        const email = item.dataset.consultantEmail;
+        if (email) goToConsultantByEmail(email);
       });
     });
   } catch (e) {
@@ -801,7 +1010,7 @@ function initConsultants(user) {
 
   // Ouvre le mini-form inline et ferme au clic "Annuler"
   function openInlineClientForm() {
-    ['inline-client-name','inline-client-address','inline-client-rcs','inline-client-contact','inline-client-email']
+    ['inline-client-name','inline-client-address','inline-client-rcs','inline-client-vat','inline-client-contact','inline-client-email']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('inline-client-status').textContent = '';
     document.getElementById('cons-inline-client-form').style.display = '';
@@ -818,6 +1027,7 @@ function initConsultants(user) {
     const name    = document.getElementById('inline-client-name').value.trim();
     const address = document.getElementById('inline-client-address').value.trim();
     const rcs     = document.getElementById('inline-client-rcs').value.trim();
+    const vatNumber = document.getElementById('inline-client-vat').value.trim();
     const contact = document.getElementById('inline-client-contact').value.trim();
     const email   = document.getElementById('inline-client-email').value.trim();
     const statusEl = document.getElementById('inline-client-status');
@@ -838,7 +1048,7 @@ function initConsultants(user) {
       const res = await fetch(`${base()}/clients`, {
         method: 'POST',
         headers: adminHeaders(),
-        body: JSON.stringify({ name, address, rcs, contactName: contact, contactEmail: email }),
+        body: JSON.stringify({ name, address, rcs, vatNumber, contactName: contact, contactEmail: email }),
       });
       if (!res.ok) { const t = await res.text(); throw new Error(t || `HTTP ${res.status}`); }
       const created = await res.json();
@@ -1019,9 +1229,6 @@ function initConsultants(user) {
   document.getElementById('cons-inv-load').addEventListener('click', () => {
     if (currentConsultant) loadConsInvoices(currentConsultant);
   });
-  document.getElementById('cons-inv-delete-all').addEventListener('click', () => {
-    if (currentConsultant) deleteAllInvoices(currentConsultant);
-  });
 
   // Kick off async backend sync (non-blocking)
   initConsultantsData();
@@ -1198,6 +1405,19 @@ async function loadCardKpis(cons) {
  */
 function flushDetailEdits() {
   // No inline edits remain in the detail view — all edits go through modals.
+}
+
+/** Ouvre la fiche consultant depuis une notification — bascule sur l'onglet Consultants si besoin. */
+function goToConsultantByEmail(email) {
+  const cons = allConsultants.find(c => (c.email || '').toLowerCase() === email.toLowerCase());
+  if (!cons) {
+    showToast('Consultant introuvable : ' + email, 'err');
+    return;
+  }
+  document.getElementById('notif-dropdown').classList.add('hidden');
+  const consultantsTab = document.querySelector('.main-tab[data-view="consultants"]');
+  if (consultantsTab) consultantsTab.click();
+  openConsultantDetail(cons);
 }
 
 function openConsultantDetail(cons) {
@@ -1404,7 +1624,7 @@ function renderCraList(items) {
     const missionLabel = cra.missionTitle ? ' — ' + escapeHtml(cra.missionTitle) : '';
     const projs = Array.isArray(cra.projects) ? cra.projects.filter(p => p.id) : [];
     let pdfBtn = '';
-    if (cra.id && status !== 'BROUILLON') {
+    if (cra.id && status !== 'BROUILLON' && status !== 'REFUSE') {
       if (projs.length > 1) {
         const projsJson = escapeHtml(JSON.stringify(projs));
         pdfBtn = `<button class="btn-secondary btn-pdf-cra-multi" data-cra-id="${escapeHtml(cra.id)}" data-projects="${projsJson}" style="padding:4px 10px;font-size:11px;white-space:nowrap" title="Choisir le PDF à télécharger">PDF ▾</button>`;
@@ -1433,9 +1653,10 @@ function renderCraList(items) {
 
 /**
  * Génère une seule facture vers invoice-service.
- * opts: { clientName, clientAddress, clientRcs, projectName, tjm, days }
+ * opts: { clientName, clientAddress, clientRcs, clientVatNumber, projectName, invoiceName, tjm, days }
+ * invoiceName : numéro d'un brouillon EN_ATTENTE à régénérer sur place (null = nouveau numéro).
  */
-async function generateOneInvoice(cra, cons, { clientName, clientAddress, clientRcs, projectName, tjm, days }) {
+async function generateOneInvoice(cra, cons, { clientName, clientAddress, clientRcs, clientVatNumber = '', projectName, invoiceName = null, tjm, days }) {
   const totalHt  = Math.round(tjm * days * 100) / 100;
   const vatRate  = 0.20;
   const totalTtc = Math.round(totalHt * (1 + vatRate) * 100) / 100;
@@ -1447,8 +1668,11 @@ async function generateOneInvoice(cra, cons, { clientName, clientAddress, client
       body: JSON.stringify({
         // invoiceDate et paymentDueDate omis : le backend les calcule
         // depuis billingMonth (+1 mois) et consultant_assignment.payment_terms_days
+        invoiceName:       invoiceName || null,
         billingMonth:      cra.billingMonth,
         sellerCompanyName: tenantName(),
+        sellerVatNumber:   sellerSettings.vatNumber || '',
+        clientVatNumber,
         sellerAddress:     sellerSettings.address || '',
         sellerRcs:         sellerSettings.rcs     || '',
         clientCompanyName: clientName,
@@ -1473,7 +1697,8 @@ async function generateOneInvoice(cra, cons, { clientName, clientAddress, client
       const name = result.invoiceName ? ' ' + result.invoiceName : '';
       showToast(`Facture${name} générée — ${clientName} (${totalHt.toFixed(2)} € HT).`, 'ok');
     } else {
-      showToast(`CRA validé — facture non générée pour ${clientName}. Contactez votre administrateur.`, 'err');
+      const body = await res.json().catch(() => ({}));
+      showToast(`CRA validé — facture non générée pour ${clientName} : ${body.error || 'HTTP ' + res.status}`, 'err');
     }
   } catch (e) {
     showToast(`CRA validé — erreur génération facture : ${e.message}`, 'err');
@@ -1520,15 +1745,18 @@ async function generateInvoiceOnValidation(cra, cons) {
       const tjm  = parseFloat(assignment.tjm) || 0;
       if (tjm <= 0 || days <= 0) continue;
       const clientName = assignment.client?.name || '';
-      if (!(await replaceExistingInvoicesForClient(existingInvoices, clientName, cra.billingMonth))) {
-        generated++; // bloqué par une facture payée — traité, ne pas retomber sur le fallback
+      const existing = await resolveExistingInvoiceForClient(existingInvoices, clientName, cra.billingMonth);
+      if (!existing.ok) {
+        generated++; // bloqué par une facture déjà émise — traité, ne pas retomber sur le fallback
         continue;
       }
       await generateOneInvoice(cra, cons, {
         clientName,
-        clientAddress: assignment.client?.address || '',
-        clientRcs:     assignment.client?.rcs     || '',
-        projectName:   assignment.project?.name   || '',
+        clientAddress:   assignment.client?.address   || '',
+        clientRcs:       assignment.client?.rcs       || '',
+        clientVatNumber: assignment.client?.vatNumber || '',
+        projectName:     assignment.project?.name     || '',
+        invoiceName:     existing.invoiceName,
         tjm,
         days,
       });
@@ -1542,12 +1770,14 @@ async function generateInvoiceOnValidation(cra, cons) {
   const days = parseFloat(cra.totalDays) || 0;
   if (tjm <= 0 || days <= 0) return;
   const clientNameFallback = (cons.clientName || '').trim() || (cra.clientCompany || '').trim();
-  if (!(await replaceExistingInvoicesForClient(existingInvoices, clientNameFallback, cra.billingMonth))) return;
+  const existing = await resolveExistingInvoiceForClient(existingInvoices, clientNameFallback, cra.billingMonth);
+  if (!existing.ok) return;
   await generateOneInvoice(cra, cons, {
     clientName:    clientNameFallback,
     clientAddress: cons.clientAddress || '',
     clientRcs:     cons.clientRcs     || '',
     projectName:   '',
+    invoiceName:   existing.invoiceName,
     tjm,
     days,
   });
@@ -1567,66 +1797,54 @@ async function fetchExistingInvoicesForMonth(billingMonth, consultantEmail) {
 }
 
 /**
- * Supprime les factures existantes pour (client, mois) avant régénération.
- * Retourne false (et bloque la génération) si l'une d'elles est déjà marquée Payée.
+ * Vérifie s'il existe déjà une facture (mois, client) avant (ré)génération. Une facture émise ne se
+ * supprime jamais (numérotation continue, conservation légale) :
+ * - EN_ATTENTE (jamais envoyée) → régénérée sur place, son numéro est conservé ;
+ * - ENVOYÉE / EN RETARD / PAYÉE → génération bloquée : l'annuler d'abord par un avoir ;
+ * - ANNULÉE et avoirs → ignorés (la nouvelle facture prend un nouveau numéro).
+ * Renvoie { ok, invoiceName } — invoiceName = numéro du brouillon à régénérer, sinon null.
  */
-async function replaceExistingInvoicesForClient(existingInvoices, clientName, billingMonth) {
+async function resolveExistingInvoiceForClient(existingInvoices, clientName, billingMonth) {
   const norm = clientName.trim().toLowerCase();
-  const matches = existingInvoices.filter(i => (i.clientCompanyName || '').trim().toLowerCase() === norm);
-  if (!matches.length) return true;
+  const matches = existingInvoices.filter(i =>
+    (i.clientCompanyName || '').trim().toLowerCase() === norm
+    && i.invoiceType !== 'AVOIR' && i.paymentStatus !== 'ANNULEE');
+  if (!matches.length) return { ok: true, invoiceName: null };
 
-  const paid = matches.find(i => i.paymentStatus === 'PAYEE');
-  if (paid) {
-    showToast(`Facture ${paid.invoiceName} déjà payée pour ${clientName} (${billingMonth}) — génération bloquée, traitez-la manuellement.`, 'err');
-    return false;
+  const issued = matches.find(i => (i.paymentStatus || 'EN_ATTENTE') !== 'EN_ATTENTE');
+  if (issued) {
+    showToast(`Facture ${issued.invoiceName} déjà émise pour ${clientName} (${billingMonth}) — annulez-la d'abord par un avoir (onglet Factures).`, 'err');
+    return { ok: false, invoiceName: null };
   }
-
-  for (const inv of matches) {
-    try {
-      await fetch(`${invoiceBase()}/invoices/delete`, {
-        method:  'POST',
-        headers: adminHeaders(),
-        body: JSON.stringify({
-          invoiceName:       inv.invoiceName       || '',
-          billingMonth:      inv.billingMonth       || '',
-          sellerCompanyName: inv.sellerCompanyName  || '',
-        }),
-      });
-    } catch { /* non-bloquant */ }
-  }
-  showToast(`Facture existante pour ${clientName} (${billingMonth}) remplacée.`, '');
-  return true;
+  return { ok: true, invoiceName: matches[0].invoiceName };
 }
 
 /**
- * Apres un refus de CRA, cherche et supprime la facture associee si elle existe.
- * Silencieux si aucune facture n'est trouvee.
+ * Après un refus de CRA : annule les factures du mois encore EN_ATTENTE (jamais envoyées, numéro
+ * conservé). Une facture déjà émise n'est pas touchée : l'admin est alerté pour l'annuler par un avoir.
  */
-async function deleteInvoiceForCra(cra, cons) {
+async function cancelDraftInvoicesForCra(cra, cons) {
   try {
-    const bm    = cra.billingMonth;
-    const email = cons.email || '';
-    const p     = new URLSearchParams({ start: bm, end: bm });
-    if (email) p.set('consultantEmail', email);
+    const bm = cra.billingMonth;
+    const p  = new URLSearchParams({ start: bm, end: bm });
+    if (cons.email) p.set('consultantEmail', cons.email);
 
-    const res = await fetch(`${invoiceBase()}/invoices/report?${p}`, { headers: authHeaders() });
+    const res = await fetch(`${invoiceBase()}/invoices/report?${p}`, { headers: adminHeaders() });
     if (!res.ok) return;
-
-    const invoices = await res.json();
-    if (!invoices || invoices.length === 0) return;
+    const invoices = (await res.json() || []).filter(i => i.invoiceType !== 'AVOIR' && i.paymentStatus !== 'ANNULEE');
 
     for (const inv of invoices) {
-      const invoiceName = inv.invoiceName;
-      if (!invoiceName) continue;
-      const delRes = await fetch(`${invoiceBase()}/invoices/delete`, {
-        method:  'POST',
-        headers: adminHeaders(),
-        body:    JSON.stringify({ billingMonth: bm, sellerCompanyName: tenantName(), invoiceName }),
+      if ((inv.paymentStatus || 'EN_ATTENTE') !== 'EN_ATTENTE') {
+        showToast(`Facture ${inv.invoiceName} déjà émise : annulez-la par un avoir si le CRA ${bm} doit être refait.`, 'err');
+        continue;
+      }
+      const cancelRes = await fetch(`${invoiceBase()}/invoices/${encodeURIComponent(inv.id)}/cancel`, {
+        method: 'POST', headers: adminHeaders(),
       });
-      if (delRes.ok) showToast(`Facture ${invoiceName} supprimee (CRA refuse).`, 'ok');
+      if (cancelRes.ok) showToast(`Facture ${inv.invoiceName} annulée (CRA refusé).`, 'ok');
     }
   } catch (e) {
-    // non-bloquant — le refus CRA a deja reussi
+    // non-bloquant — le refus CRA a déjà réussi
   }
 }
 
@@ -1693,7 +1911,7 @@ function wireCraActions(container, cons) {
         });
         if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
         showToast(`CRA ${cra.billingMonth} refuse.`, 'ok');
-        await deleteInvoiceForCra(cra, cons);
+        await cancelDraftInvoicesForCra(cra, cons);
         loadConsCra(cons);
         loadDetailKpis(cons);
       } catch (e) { showToast('Erreur : ' + e.message, 'err'); btn.disabled = false; btn.textContent = '✗ Refuser'; }
@@ -1747,7 +1965,10 @@ function wireCraActions(container, cons) {
       try {
         const url = pid ? `${base()}/cra/pdf/${id}?projectId=${pid}` : `${base()}/cra/pdf/${id}`;
         const res = await fetch(url, { headers: authHeaders() });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || ('HTTP ' + res.status));
+        }
         const blob = await res.blob();
         const objUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1799,7 +2020,10 @@ async function downloadAdminPdf(craId, projectId, projectName) {
   try {
     const url = projectId ? `${base()}/cra/pdf/${craId}?projectId=${projectId}` : `${base()}/cra/pdf/${craId}`;
     const res = await fetch(url, { headers: authHeaders() });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || ('HTTP ' + res.status));
+    }
     const blob = await res.blob();
     const objUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1844,18 +2068,20 @@ async function loadConsNotes(cons) {
       return;
     }
 
-    setStatus(statusEl, `${expenses.length} depense${expenses.length > 1 ? 's' : ''} trouvee${expenses.length > 1 ? 's' : ''}.`, 'ok');
+    const pendingCount = expenses.filter(x => !x.approvalStatus || x.approvalStatus === 'PENDING').length;
+    const found = `${expenses.length} depense${expenses.length > 1 ? 's' : ''} trouvee${expenses.length > 1 ? 's' : ''}.`;
+    setStatus(statusEl, pendingCount
+      ? `${found} ${pendingCount} en attente — le PDF ne contiendra que les dépenses approuvées.`
+      : found, pendingCount ? '' : 'ok');
     resultEl.innerHTML = renderExpenseList(expenses);
     resultEl.style.display = '';
 
     // "Tout approuver" uniquement si des depenses sont encore PENDING
-    const hasPending = expenses.some(x => !x.approvalStatus || x.approvalStatus === 'PENDING');
-    approveAllBtn.style.display = hasPending ? '' : 'none';
+    approveAllBtn.style.display = pendingCount ? '' : 'none';
 
-    // PDF / Excel uniquement quand toutes les depenses ont un statut final
-    const allSettled = expenses.every(x => x.approvalStatus === 'APPROVED' || x.approvalStatus === 'REFUSED');
-    document.getElementById('cons-notes-pdf').style.display   = allSettled ? '' : 'none';
-    document.getElementById('cons-notes-excel').style.display = allSettled ? '' : 'none';
+    // PDF / Excel toujours disponibles : le PDF ne reprend que les dépenses APPROVED (ExpensePdfService)
+    document.getElementById('cons-notes-pdf').style.display   = '';
+    document.getElementById('cons-notes-excel').style.display = '';
 
     wireExpenseActions(resultEl, cons);
   } catch (e) {
@@ -1896,6 +2122,39 @@ function showReceiptModal(imageUrl) {
   document.body.appendChild(overlay);
 }
 
+/** Parse exp.policyVerdictJson (voir RAGService.evaluatePolicyCompliance) en badge consultatif. */
+function renderPolicyVerdictBadge(exp) {
+  if (!exp.policyVerdictJson) return '';
+  // Une fois la dépense APPROUVÉE/REFUSÉE, l'admin a déjà tranché — afficher encore "à vérifier"
+  // serait trompeur (la vérification a eu lieu). Le verdict reste en base pour la traçabilité,
+  // juste plus affiché une fois la décision prise.
+  if (exp.approvalStatus === 'APPROVED' || exp.approvalStatus === 'REFUSED') return '';
+  let verdict;
+  try { verdict = JSON.parse(exp.policyVerdictJson); } catch { return ''; }
+  if (!verdict || typeof verdict.compliant !== 'boolean') return '';
+  // Couleur neutre volontaire (pas vert/orange) : c'est une annotation IA secondaire, pas un
+  // statut — ne doit pas rivaliser visuellement avec le badge EN ATTENTE/APPROUVÉ/REFUSÉ, qui
+  // reste la seule information de statut réel (voir discussion ergonomie).
+  const tooltip = [verdict.citedClause, verdict.explanation].filter(Boolean).join(' — ');
+  if (verdict.compliant) return `<span class="status-badge grey" title="${escapeHtml(tooltip)}">🤖 conforme</span>`;
+  return verdict.capped === true
+    ? `<span class="status-badge grey" title="${escapeHtml(tooltip)}">🤖 plafonné</span>`
+    : `<span class="status-badge grey" title="${escapeHtml(tooltip)}">🤖 à vérifier</span>`;
+}
+
+/**
+ * Classe de ligne selon le verdict politique, tant que la dépense est EN ATTENTE (même règle que le
+ * badge) : 'policy-exceeded' si elle dépasse encore la politique, 'policy-capped' si le montant a
+ * déjà été ramené au plafond (frais km — déjà conforme, simple signalement).
+ */
+function policyRowClass(exp) {
+  if (!exp.policyVerdictJson || exp.approvalStatus === 'APPROVED' || exp.approvalStatus === 'REFUSED') return '';
+  let verdict;
+  try { verdict = JSON.parse(exp.policyVerdictJson); } catch { return ''; }
+  if (!verdict || verdict.compliant !== false) return '';
+  return verdict.capped === true ? ' policy-capped' : ' policy-exceeded';
+}
+
 function renderExpenseList(expenses) {
   const APPROVAL_BADGE = {
     APPROVED: '<span class="status-badge green">Approuve</span>',
@@ -1908,6 +2167,7 @@ function renderExpenseList(expenses) {
     const badge = approvalStatus
       ? (APPROVAL_BADGE[approvalStatus] || '<span class="status-badge grey">—</span>')
       : '<span class="status-badge grey">Non soumis</span>';
+    const policyBadge = renderPolicyVerdictBadge(exp);
 
     const expenseId = exp.weaviateId || (exp.id ? String(exp.id) : '') || '';
 
@@ -1924,7 +2184,7 @@ function renderExpenseList(expenses) {
     }
 
     return `
-      <div class="approval-row">
+      <div class="approval-row${policyRowClass(exp)}">
         <div class="approval-meta">
           <span class="approval-name">${escapeHtml(exp.date || '—')} — ${escapeHtml(exp.type || '—')}${exp.km != null ? ` (${Number(exp.km).toFixed(0)} km)` : ''}</span>
           ${(exp.company || exp.address) ? `<span class="approval-place">${escapeHtml(exp.company || '—')}${exp.address ? ' · ' + escapeHtml(exp.address) : ''}</span>` : ''}
@@ -1935,6 +2195,7 @@ function renderExpenseList(expenses) {
           ${exp.hasReceipt && expenseId ? `<button type="button" class="btn-view-receipt" data-id="${escapeHtml(expenseId)}" title="Voir le justificatif">📎 Justificatif</button>` : ''}
           <span class="approval-mode">${escapeHtml(exp.paymentMode || '')}</span>
           ${badge}
+          ${policyBadge}
           ${approvalStatus === 'REFUSED' && exp.approvalNote ? `<p class="refused-reason">${escapeHtml(exp.approvalNote)}</p>` : ''}
           ${actions}
         </div>
@@ -1990,8 +2251,8 @@ function wireExpenseActions(container, cons) {
 
 async function approveAllNotes(cons) {
   if (!loadedExpenses.length) return;
-  const toApprove = loadedExpenses.filter(e => (e.weaviateId || e.id) && e.approvalStatus !== 'APPROVED');
-  if (!toApprove.length) { showToast('Toutes les dépenses sont déjà approuvées.'); return; }
+  const toApprove = loadedExpenses.filter(e => (e.weaviateId || e.id) && (!e.approvalStatus || e.approvalStatus === 'PENDING'));
+  if (!toApprove.length) { showToast('Aucune dépense en attente.'); return; }
   if (!confirm(`Approuver les ${toApprove.length} depenses de ${cons.name} ?`)) return;
 
   let ok = 0, err = 0;
@@ -2046,19 +2307,15 @@ async function downloadAuthedFile(url, filename) {
 // ============================================================
 // FACTURES
 // ============================================================
-let loadedInvoices = [];
 
 async function loadConsInvoices(cons) {
   const start    = document.getElementById('cons-inv-start').value;
   const end      = document.getElementById('cons-inv-end').value;
   const statusEl = document.getElementById('cons-inv-status');
   const resultEl = document.getElementById('cons-inv-result');
-  const delAllBtn = document.getElementById('cons-inv-delete-all');
 
   setStatus(statusEl, 'Chargement…');
   resultEl.style.display = 'none';
-  delAllBtn.style.display = 'none';
-  loadedInvoices = [];
 
   try {
     const p   = new URLSearchParams({ start, end, consultantEmail: cons?.email || '' });
@@ -2068,11 +2325,9 @@ async function loadConsInvoices(cons) {
 
     if (!items.length) { setStatus(statusEl, 'Aucune facture trouvee.', ''); return; }
 
-    loadedInvoices = items;
     setStatus(statusEl, `${items.length} facture${items.length > 1 ? 's' : ''}.`, 'ok');
     resultEl.replaceChildren(renderInvoiceList(items, cons));
     resultEl.style.display = '';
-    delAllBtn.style.display = '';
   } catch (e) {
     setStatus(statusEl, 'Erreur : ' + e.message, 'err');
   }
@@ -2110,8 +2365,8 @@ async function downloadInvoiceFile(inv, format) {
   }
 }
 
-const INV_STATUS_LABEL = { EN_ATTENTE: 'En attente', ENVOYEE: 'Envoyée', PAYEE: 'Payée', EN_RETARD: 'En retard' };
-const INV_STATUS_COLOR = { EN_ATTENTE: 'grey', ENVOYEE: 'orange', PAYEE: 'green', EN_RETARD: 'red' };
+const INV_STATUS_LABEL = { EN_ATTENTE: 'En attente', ENVOYEE: 'Envoyée', PAYEE: 'Payée', EN_RETARD: 'En retard', ANNULEE: 'Annulée', EMIS: 'Avoir émis' };
+const INV_STATUS_COLOR = { EN_ATTENTE: 'grey', ENVOYEE: 'orange', PAYEE: 'green', EN_RETARD: 'red', ANNULEE: 'grey', EMIS: 'purple' };
 
 function renderInvoiceList(items, cons) {
   const rows = items.map((inv, idx) => {
@@ -2124,6 +2379,10 @@ function renderInvoiceList(items, cons) {
     const scolor  = INV_STATUS_COLOR[status] || 'grey';
     const due     = inv.paymentDueDate ? ` · Éch. ${escapeHtml(inv.paymentDueDate)}` : '';
     const invId   = inv.id || '';
+    const isCredit = inv.invoiceType === 'AVOIR';
+    const credited = isCredit ? items.find(i => i.id === inv.creditedInvoiceId) : null;
+    const creditInfo = isCredit ? ` · annule ${escapeHtml(credited?.invoiceName || 'une facture')}` : '';
+    const canCancel = !isCredit && ['EN_ATTENTE', 'ENVOYEE', 'EN_RETARD'].includes(status);
     const dunLabel = { 1: 'R1 rappel', 2: 'R2 relance', 3: 'R3 mise en demeure' };
     const dunInfo = inv.lastDunningStage
       ? ` · <span style="color:#f59e0b">Relancé ${dunLabel[inv.lastDunningStage] || 'R' + inv.lastDunningStage}${inv.lastDunningDate ? ' le ' + escapeHtml(String(inv.lastDunningDate).slice(0, 10).split('-').reverse().join('/')) : ''}</span>` : '';
@@ -2138,8 +2397,8 @@ function renderInvoiceList(items, cons) {
     return `
       <div class="approval-row" data-inv-idx="${idx}">
         <div class="approval-meta">
-          <span class="approval-name">${escapeHtml(name)}</span>
-          <span class="approval-detail">${escapeHtml(bm)} — ${escapeHtml(client)}${due}${dunInfo}</span>
+          <span class="approval-name">${isCredit ? '<span class="status-badge purple" style="margin-right:6px">AVOIR</span>' : ''}${escapeHtml(name)}</span>
+          <span class="approval-detail">${escapeHtml(bm)} — ${escapeHtml(client)}${creditInfo}${isCredit ? '' : due}${dunInfo}</span>
         </div>
         <div class="approval-right">
           <span class="status-badge ${scolor}">${escapeHtml(slabel)}</span>
@@ -2148,9 +2407,7 @@ function renderInvoiceList(items, cons) {
           ${actionDun}
           ${actionPaid}
           <button class="btn-secondary inv-dl-pdf" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px">PDF</button>
-          <button class="btn-inv-delete inv-delete" data-inv-idx="${idx}" title="Supprimer">
-            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-          </button>
+          ${canCancel ? `<button class="btn-secondary inv-cancel" data-inv-idx="${idx}" style="padding:4px 10px;font-size:11px;border-color:rgba(239,68,68,.4);color:#fca5a5" title="${status === 'EN_ATTENTE' ? 'Annuler (numéro conservé)' : 'Annuler par un avoir'}">${status === 'EN_ATTENTE' ? 'Annuler' : 'Annuler (avoir)'}</button>` : ''}
         </div>
       </div>`;
   }).join('');
@@ -2162,8 +2419,8 @@ function renderInvoiceList(items, cons) {
   wrap.querySelectorAll('.inv-dl-pdf').forEach(btn => {
     btn.addEventListener('click', () => downloadInvoiceFile(items[+btn.dataset.invIdx], 'pdf'));
   });
-  wrap.querySelectorAll('.inv-delete').forEach(btn => {
-    btn.addEventListener('click', () => deleteInvoice(items[+btn.dataset.invIdx], cons));
+  wrap.querySelectorAll('.inv-cancel').forEach(btn => {
+    btn.addEventListener('click', () => cancelInvoice(items[+btn.dataset.invIdx], cons));
   });
   wrap.querySelectorAll('.inv-mark-sent').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -2209,23 +2466,25 @@ function renderInvoiceList(items, cons) {
   return wrap;
 }
 
-async function deleteInvoice(inv, cons) {
-  if (!confirm(`Supprimer la facture ${inv.invoiceName || '—'} ?`)) return;
+/** Annule une facture : brouillon → annulée ; envoyée / en retard → annulée + avoir émis. */
+async function cancelInvoice(inv, cons) {
+  const issued = (inv.paymentStatus || 'EN_ATTENTE') !== 'EN_ATTENTE';
+  const msg = issued
+    ? `Annuler la facture ${inv.invoiceName} ? Elle a déjà été envoyée : un avoir du même montant sera émis.`
+    : `Annuler la facture ${inv.invoiceName} (jamais envoyée) ? Son numéro reste réservé.`;
+  if (!confirm(msg)) return;
   try {
-    const res = await fetch(`${invoiceBase()}/invoices/delete`, {
-      method:  'POST',
-      headers: adminHeaders(),
-      body:    JSON.stringify({
-        invoiceName:       inv.invoiceName       || '',
-        billingMonth:      inv.billingMonth       || '',
-        sellerCompanyName: inv.sellerCompanyName  || '',
-      }),
+    const res = await fetch(`${invoiceBase()}/invoices/${encodeURIComponent(inv.id)}/cancel`, {
+      method: 'POST', headers: adminHeaders(),
     });
-    if (!res.ok) throw new Error('Erreur serveur (' + res.status + ')');
-    showToast(`Facture ${inv.invoiceName} supprimee.`, 'ok');
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
+    showToast(body.creditNoteName
+      ? `Facture ${inv.invoiceName} annulée — avoir ${body.creditNoteName} émis.`
+      : `Facture ${inv.invoiceName} annulée.`, 'ok');
     loadConsInvoices(cons);
   } catch (e) {
-    showToast('Erreur suppression : ' + e.message, 'err');
+    showToast('Annulation impossible : ' + e.message, 'err');
   }
 }
 
@@ -2723,28 +2982,6 @@ async function deleteAssignment(cons, assignmentId, projectName = '', clientName
   }
 }
 
-async function deleteAllInvoices(cons) {
-  if (!loadedInvoices.length) return;
-  if (!confirm(`Supprimer les ${loadedInvoices.length} facture${loadedInvoices.length > 1 ? 's' : ''} de ${cons.name} ?`)) return;
-
-  let ok = 0, err = 0;
-  for (const inv of loadedInvoices) {
-    try {
-      const res = await fetch(`${invoiceBase()}/invoices/delete`, {
-        method:  'POST',
-        headers: adminHeaders(),
-        body:    JSON.stringify({
-          invoiceName:       inv.invoiceName       || '',
-          billingMonth:      inv.billingMonth       || '',
-          sellerCompanyName: inv.sellerCompanyName  || '',
-        }),
-      });
-      if (res.ok) ok++; else err++;
-    } catch { err++; }
-  }
-  showToast(`${ok} supprimee${ok > 1 ? 's' : ''}${err ? `, ${err} erreur(s)` : ''}.`, err ? '' : 'ok');
-  loadConsInvoices(cons);
-}
 
 // ============================================================
 // CLIENTS — CRUD
@@ -2876,7 +3113,7 @@ function initClients() {
     const btn = e.target.closest('[data-client-id]');
     if (!btn) return;
     const c = allClients.find(x => x.id === btn.dataset.clientId);
-    if (c) openEditClient(c.id, c.name, c.address || '', c.rcs || '', c.contactName || '', c.contactEmail || '');
+    if (c) openEditClient(c.id, c.name, c.address || '', c.rcs || '', c.contactName || '', c.contactEmail || '', c.vatNumber || '');
   });
 
   document.getElementById('client-add-btn').addEventListener('click', () => {
@@ -2884,6 +3121,7 @@ function initClients() {
     document.getElementById('client-form-name').value         = '';
     document.getElementById('client-form-address').value      = '';
     document.getElementById('client-form-rcs').value          = '';
+    document.getElementById('client-form-vat').value          = '';
     document.getElementById('client-form-contact-name').value = '';
     document.getElementById('client-form-contact-email').value = '';
     document.getElementById('client-form-title').textContent  = 'Nouveau client';
@@ -2899,11 +3137,12 @@ function initClients() {
   document.getElementById('client-form-save').addEventListener('click', saveClient);
 }
 
-function openEditClient(id, name, address, rcs, contactName, contactEmail) {
+function openEditClient(id, name, address, rcs, contactName, contactEmail, vatNumber = '') {
   document.getElementById('client-form-id').value            = id;
   document.getElementById('client-form-name').value          = name;
   document.getElementById('client-form-address').value       = address;
   document.getElementById('client-form-rcs').value           = rcs;
+  document.getElementById('client-form-vat').value           = vatNumber;
   document.getElementById('client-form-contact-name').value  = contactName;
   document.getElementById('client-form-contact-email').value = contactEmail;
   document.getElementById('client-form-title').textContent   = 'Modifier le client';
@@ -2917,6 +3156,7 @@ async function saveClient() {
   const name         = document.getElementById('client-form-name').value.trim();
   const address      = document.getElementById('client-form-address').value.trim();
   const rcs          = document.getElementById('client-form-rcs').value.trim();
+  const vatNumber    = document.getElementById('client-form-vat').value.trim();
   const contactName  = document.getElementById('client-form-contact-name').value.trim();
   const contactEmail = document.getElementById('client-form-contact-email').value.trim();
   const statusEl     = document.getElementById('client-form-status');
@@ -2932,7 +3172,7 @@ async function saveClient() {
     const res = await fetch(url, {
       method,
       headers: adminHeaders(),
-      body: JSON.stringify({ name, address, rcs, contactName, contactEmail }),
+      body: JSON.stringify({ name, address, rcs, vatNumber, contactName, contactEmail }),
     });
     restore();
     if (!res.ok) {

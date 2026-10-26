@@ -27,6 +27,7 @@ public class ExpenseApprovalController {
 
     private final WeaviateService weaviateService;
     private final EventPublisher  eventPublisher;
+    private final io.multiagent.core.i18n.Messages messages;
 
     @PostMapping("/approve")
     public ResponseEntity<Object> approve(@RequestBody Map<String, String> body) {
@@ -38,7 +39,7 @@ public class ExpenseApprovalController {
             ExpenseEntity expense = weaviateService.updateExpenseApproval(weaviateId, "APPROVED", note);
             eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
                     expense.getConsultantEmail(), "EXPENSE_APPROVED",
-                    "Votre note de frais" + expenseLabel(expense) + " a été approuvée.",
+                    messages.getDefault("notification.expense.approved", expenseLabel(expense)),
                     expense.getId().toString());
             return ResponseEntity.ok(Map.of("status", "APPROVED", "weaviateId", weaviateId));
         } catch (Exception e) {
@@ -55,8 +56,9 @@ public class ExpenseApprovalController {
             if (weaviateId == null || weaviateId.isBlank())
                 return ResponseEntity.badRequest().body("Missing 'weaviateId'");
             ExpenseEntity expense = weaviateService.updateExpenseApproval(weaviateId, "REFUSED", note);
-            String msg = "Votre note de frais" + expenseLabel(expense) + " a été refusée"
-                    + (note != null && !note.isBlank() ? " : " + note : ".");
+            String msg = note != null && !note.isBlank()
+                    ? messages.getDefault("notification.expense.refusedWithNote", expenseLabel(expense), note)
+                    : messages.getDefault("notification.expense.refused", expenseLabel(expense));
             eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
                     expense.getConsultantEmail(), "EXPENSE_REFUSED", msg, expense.getId().toString());
             return ResponseEntity.ok(Map.of("status", "REFUSED", "weaviateId", weaviateId));
@@ -98,7 +100,7 @@ public class ExpenseApprovalController {
 
     private String expenseLabel(ExpenseEntity e) {
         StringBuilder sb = new StringBuilder();
-        if (e.getExpenseDate() != null) sb.append(" du ").append(e.getExpenseDate());
+        if (e.getExpenseDate() != null) sb.append(messages.getDefault("notification.expense.labelDate", e.getExpenseDate().toString()));
         if (e.getType() != null && !e.getType().isBlank()) sb.append(" (").append(e.getType());
         if (e.getAmount() != null) {
             sb.append(e.getType() != null && !e.getType().isBlank() ? " - " : " (");

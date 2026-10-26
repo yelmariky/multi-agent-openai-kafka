@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ChatbotController {
 
     private final ChatbotService chatbotService;
+    private final io.multiagent.core.i18n.Messages messages;
 
     public record ChatRequest(String message) {}
     public record ChatReply(String reply) {}
@@ -28,12 +29,11 @@ public class ChatbotController {
     public ResponseEntity<ChatReply> chat(@RequestBody ChatRequest request, HttpServletRequest http) {
         if (request == null || request.message() == null || request.message().isBlank()) {
             return ResponseEntity.badRequest()
-                    .body(new ChatReply("Posez-moi une question sur IA-INSIGHT : tarifs, démo, services IA…"));
+                    .body(new ChatReply(messages.get("chatbot.emptyQuestion")));
         }
         if (!chatbotService.allow(clientIp(http))) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .body(new ChatReply("Vous allez un peu vite pour moi ! Réessayez dans une minute, "
-                            + "ou appelez-nous directement au 06 75 71 77 43."));
+                    .body(new ChatReply(messages.get("chatbot.rateLimit")));
         }
         return ResponseEntity.ok(new ChatReply(chatbotService.reply(request.message())));
     }

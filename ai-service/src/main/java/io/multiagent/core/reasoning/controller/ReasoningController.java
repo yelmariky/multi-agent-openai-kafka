@@ -2,6 +2,8 @@ package io.multiagent.core.reasoning.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.multiagent.core.config.TextKeywords;
+import io.multiagent.core.config.TextKeywords.Group;
 import io.multiagent.core.model.ReasoningResult;
 import io.multiagent.core.reasoning.service.ReasoningService;
 import io.multiagent.core.security.ScopeGuardService;
@@ -32,6 +34,8 @@ public class ReasoningController {
     private final ReasoningService reasoningService;
     private final ScopeGuardService scopeGuardService;
     private final ObjectMapper objectMapper;
+    private final TextKeywords keywords;
+    private final io.multiagent.core.i18n.Messages messages;
 
     @PostMapping("/analyze")
     public ReasoningResult analyze(
@@ -50,18 +54,14 @@ public class ReasoningController {
         if (suspectedIntent != null) {
             log.warn("🚫 [SCOPE REGEX] Opération bloquée sur /analyze (pattern={}), consultant={}",
                     suspectedIntent, maskEmail(consultantEmail));
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Cette opération n'est pas autorisée depuis le portail consultant. " +
-                    "Seule la saisie de notes de frais est acceptée ici.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, messages.get("reasoning.error.forbiddenOperation"));
         }
 
         // ── Garde 2 (LLM sémantique, toutes langues) : délégué à ScopeGuardService ─
         if (!scopeGuardService.isSafe(normalizedPayload)) {
             log.warn("🚫 [SCOPE LLM] Texte hors périmètre bloqué après classification sémantique, consultant={}",
                     maskEmail(consultantEmail));
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Cette opération n'est pas autorisée depuis le portail consultant. " +
-                    "Seule la saisie de notes de frais est acceptée ici.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, messages.get("reasoning.error.forbiddenOperation"));
         }
 
         ReasoningResult result = reasoningService.process(normalizedPayload, consultantEmail, paymentModeOverride);
@@ -70,9 +70,7 @@ public class ReasoningController {
         if (!CONSULTANT_ALLOWED_INTENTS.contains(result.getType())) {
             log.warn("🚫 [SCOPE] Intent '{}' hors périmètre consultant bloqué après classification, consultant={}",
                     result.getType(), maskEmail(consultantEmail));
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Cette opération n'est pas autorisée depuis le portail consultant. " +
-                    "Seule la saisie de notes de frais est acceptée ici.");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, messages.get("reasoning.error.forbiddenOperation"));
         }
         log.info("✅ /reasoning/analyze result: type={} status={} expenses={}",
                 result.getType(), result.getStatus(),
@@ -100,28 +98,14 @@ public class ReasoningController {
             }
         } catch (Exception ignored) { /* payload texte brut */ }
 
-        String lower = payload.toLowerCase(java.util.Locale.ROOT);
-
-        // Cas 2 : mots-clés destructifs FR
-        if (lower.contains("supprim") || lower.contains("efface") || lower.contains("enlev")
-                || lower.contains("retir")  || lower.contains("vider") || lower.contains("détruir")
-                || lower.contains("nettoy") || lower.contains("écras") || lower.contains("annul")) {
-            return "delete_suspected_fr";
+        // Cas 2 : mots-clés destructifs (AI_CORE_KEYWORDS_DELETE_VERBS, toutes langues)
+        if (keywords.any(payload, Group.DELETE_VERBS)) {
+            return "delete_suspected";
         }
 
-        // Cas 3 : mots-clés destructifs EN
-        if (lower.contains("delete") || lower.contains("remove") || lower.contains("erase")
-                || lower.contains("wipe")   || lower.contains("destroy") || lower.contains("drop")
-                || lower.contains("truncat") || lower.contains("purge")  || lower.contains("clear all")) {
-            return "delete_suspected_en";
-        }
-
-        // Cas 4 : croisement de domaines — gestion de factures (pas un simple "j'ai payé une facture")
-        // On bloque : "les factures de mai", "toutes les factures", "factures du mois"
-        // On NE bloque PAS : "une facture de restaurant", "la facture du taxi"
-        if ((lower.contains("factures") || lower.contains("invoices"))
-                && (lower.contains(" du mois") || lower.contains(" de mai") || lower.contains(" de juin")
-                    || lower.contains(" toutes") || lower.contains("toutes les") || lower.contains("all invoice"))) {
+        // Cas 3 : croisement de domaines — gestion de factures en masse (pas un simple "j'ai payé une facture")
+        // Pluriel (AI_CORE_KEYWORDS_INVOICE_PLURAL) + portée globale (AI_CORE_KEYWORDS_INVOICE_BULK)
+        if (keywords.any(payload, Group.INVOICE_PLURAL) && keywords.any(payload, Group.INVOICE_BULK)) {
             return "cross_domain_invoice";
         }
 

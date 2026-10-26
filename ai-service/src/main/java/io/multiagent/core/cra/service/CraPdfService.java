@@ -24,6 +24,9 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState;
+import org.apache.pdfbox.util.Matrix;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +37,6 @@ import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -50,6 +52,7 @@ public class CraPdfService {
     private final WeaviateService weaviateService;
     private final ObjectMapper objectMapper;
     private final ConsultantProfileJpaRepository consultantProfileRepo;
+    private final io.multiagent.core.i18n.Messages messages;
 
     private static final float MARGIN = 30;
     private static final float LEADING = 14f;
@@ -62,15 +65,39 @@ public class CraPdfService {
     private static final Color COLOR_FERIE = new Color(0xff, 0xf3, 0xcd);
     private static final Color COLOR_WEEKEND = new Color(0xe8, 0xe8, 0xe8);
 
+    /** PDF demandé pour un CRA encore en saisie (BROUILLON / REFUSE) : aucun document à produire. */
+    public static class CraPdfNotAvailableException extends RuntimeException {
+        public CraPdfNotAvailableException(String message) { super(message); }
+    }
+
+    /**
+     * Génère le PDF d'un CRA. Règles d'accès :
+     * <ul>
+     *   <li>un consultant ne télécharge que ses propres CRA (admin/manager : tous ceux du tenant) ;</li>
+     *   <li>BROUILLON / REFUSE : pas de PDF ({@link CraPdfNotAvailableException}) ;</li>
+     *   <li>SOUMIS : PDF « PROVISOIRE » en filigrane, sans bloc de signature — le client signe
+     *       uniquement après validation par l'ESN ;</li>
+     *   <li>VALIDE : PDF officiel avec bloc de signature client.</li>
+     * </ul>
+     */
     @Transactional(readOnly = true)
-    public byte[] generatePdf(UUID craId, UUID projectIdFilter) {
+    public byte[] generatePdf(UUID craId, UUID projectIdFilter, String requesterEmail, boolean privileged) {
         CraEntity cra = craRepo.findById(craId)
-                .orElseThrow(() -> new IllegalArgumentException("CRA introuvable : " + craId));
+                .orElseThrow(() -> new IllegalArgumentException(messages.get("cra.error.notFound", craId)));
 
         UUID tenantId = TenantContext.getTenantId();
         if (!cra.getTenantId().equals(tenantId)) {
-            throw new IllegalArgumentException("Acces interdit");
+            throw new IllegalArgumentException(messages.get("cra.error.forbidden"));
         }
+        // Propriété vérifiée avant le statut : ne rien révéler du CRA d'un autre consultant.
+        if (!privileged && (requesterEmail == null || !requesterEmail.equalsIgnoreCase(cra.getConsultant()))) {
+            throw new AccessDeniedException(messages.get("cra.error.notOwner"));
+        }
+        String status = cra.getStatus();
+        if (status == null || "BROUILLON".equals(status) || "REFUSE".equals(status)) {
+            throw new CraPdfNotAvailableException(messages.get("cra.error.pdfNotAvailable"));
+        }
+        boolean provisional = !"VALIDE".equals(status);
 
         // Resolve mission data
         Mission mission = null;
@@ -168,7 +195,7 @@ public class CraPdfService {
         // Parse month
         YearMonth ym = YearMonth.parse(cra.getBillingMonth());
         int daysInMonth = ym.lengthOfMonth();
-        String monthLabel = ym.getMonth().getDisplayName(TextStyle.FULL, Locale.FRANCE)
+        String monthLabel = ym.getMonth().getDisplayName(TextStyle.FULL, messages.locale())
                 + " " + ym.getYear();
 
         try (PDDocument doc = new PDDocument()) {
@@ -225,7 +252,7 @@ public class CraPdfService {
 
                     String label;
                     if ("__ABSENCE__".equals(pid)) {
-                        label = "Absences";
+                        label = messages.get("cra.pdf.absences");
                     } else if ("__fallback__".equals(pid)) {
                         label = fallbackLabel;
                     } else {
@@ -267,7 +294,7 @@ public class CraPdfService {
                             .sum();
                 }
                 cs.setFont(PDType1Font.HELVETICA_BOLD, 11);
-                writeLine(cs, MARGIN, y, "Total : " + formatDays(total) + " jours");
+                writeLine(cs, MARGIN, y, messages.get("cra.pdf.totalDays", formatDays(total)));
                 y -= LEADING;
 
                 // === LEGEND ===
@@ -276,7 +303,11 @@ public class CraPdfService {
 
                 // === SIGNATURE BLOCK ===
                 y -= 20;
-                y = drawSignatureBlock(cs, y, pageW);
+                y = drawSignatureBlock(cs, y, pageW, provisional);
+
+                if (provisional) {
+                    drawProvisionalWatermark(cs, pageW, pageH);
+                }
             }
 
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -286,7 +317,7 @@ public class CraPdfService {
             throw e;
         } catch (Exception e) {
             log.error("CRA PDF generation failed: {}", e.getMessage(), e);
-            throw new IllegalStateException("Echec generation PDF CRA : " + e.getMessage(), e);
+            throw new IllegalStateException("CRA PDF generation failed: " + e.getMessage(), e);
         }
     }
 
@@ -304,7 +335,7 @@ public class CraPdfService {
 
         cs.setNonStrokingColor(COLOR_HEADER_TEXT);
         cs.setFont(PDType1Font.HELVETICA_BOLD, 14);
-        writeLine(cs, MARGIN + 10, y - 22, "RAPPORT D'ACTIVITE");
+        writeLine(cs, MARGIN + 10, y - 22, messages.get("cra.pdf.title"));
 
         // Month + name right-aligned
         String rightText = safeText(consultant) + " - " + capitalize(monthLabel);
@@ -317,11 +348,11 @@ public class CraPdfService {
         // Status line
         if (status != null && !status.isBlank()) {
             cs.setFont(PDType1Font.HELVETICA, 9);
-            String statusLine = "Statut : " + status;
+            String statusLine = messages.get("cra.pdf.status", status);
             if ("VALIDE".equals(status) && validatedBy != null) {
-                statusLine += " par " + validatedBy;
+                statusLine += messages.get("cra.pdf.statusValidatedBy", validatedBy);
                 if (validatedAt != null && !validatedAt.isBlank()) {
-                    statusLine += " le " + validatedAt.substring(0, Math.min(10, validatedAt.length()));
+                    statusLine += messages.get("cra.pdf.statusValidatedOn", validatedAt.substring(0, Math.min(10, validatedAt.length())));
                 }
             }
             writeLine(cs, MARGIN, y, safeText(statusLine));
@@ -349,34 +380,34 @@ public class CraPdfService {
         // Prestataire block
         float infoY = startY - 14;
         cs.setFont(PDType1Font.HELVETICA_BOLD, 9);
-        writeLine(cs, MARGIN + 6, infoY, "PRESTATAIRE");
+        writeLine(cs, MARGIN + 6, infoY, messages.get("cra.pdf.provider"));
         infoY -= LEADING;
         cs.setFont(PDType1Font.HELVETICA, 9);
 
         String prestaSociete = seller != null && seller.companyName() != null ? seller.companyName() : "";
-        writeLine(cs, MARGIN + 6, infoY, "Societe : " + safeText(prestaSociete));
+        writeLine(cs, MARGIN + 6, infoY, messages.get("cra.pdf.company", safeText(prestaSociete)));
         infoY -= LEADING - 2;
 
         String prestaAddr = seller != null && seller.address() != null ? seller.address() : "";
-        writeLine(cs, MARGIN + 6, infoY, "Adresse : " + safeText(truncate(prestaAddr, 50)));
+        writeLine(cs, MARGIN + 6, infoY, messages.get("cra.pdf.address", safeText(truncate(prestaAddr, 50))));
         infoY -= LEADING - 2;
 
-        writeLine(cs, MARGIN + 6, infoY, "Contact : " + safeText(prestaContact));
+        writeLine(cs, MARGIN + 6, infoY, messages.get("cra.pdf.contact", safeText(prestaContact)));
 
         // Client block
         infoY = startY - 14;
         cs.setFont(PDType1Font.HELVETICA_BOLD, 9);
-        writeLine(cs, midX + 11, infoY, "CLIENT");
+        writeLine(cs, midX + 11, infoY, messages.get("cra.pdf.client"));
         infoY -= LEADING;
         cs.setFont(PDType1Font.HELVETICA, 9);
 
-        writeLine(cs, midX + 11, infoY, "Societe : " + safeText(clientSociete));
+        writeLine(cs, midX + 11, infoY, messages.get("cra.pdf.company", safeText(clientSociete)));
         infoY -= LEADING - 2;
 
-        writeLine(cs, midX + 11, infoY, "Adresse : " + safeText(truncate(clientAddr, 50)));
+        writeLine(cs, midX + 11, infoY, messages.get("cra.pdf.address", safeText(truncate(clientAddr, 50))));
         infoY -= LEADING - 2;
 
-        writeLine(cs, midX + 11, infoY, "Contact : " + safeText(clientContact));
+        writeLine(cs, midX + 11, infoY, messages.get("cra.pdf.contact", safeText(clientContact)));
 
         return startY - blockH - 4;
     }
@@ -402,7 +433,7 @@ public class CraPdfService {
         }
         cs.setNonStrokingColor(COLOR_HEADER_TEXT);
         cs.setFont(PDType1Font.HELVETICA_BOLD, 7);
-        writeLine(cs, gridLeft + 4, y - 13, "Projet / Type");
+        writeLine(cs, gridLeft + 4, y - 13, messages.get("cra.pdf.projectType"));
         for (int d = 1; d <= daysInMonth; d++) {
             float cx = gridLeft + labelW + (d - 1) * cellW + (cellW / 2) - 3;
             writeLine(cs, cx, y - 13, String.valueOf(d));
@@ -428,9 +459,9 @@ public class CraPdfService {
                 if (entry != null) {
                     switch (entry.type()) {
                         case "WEEKEND" -> bg = COLOR_WEEKEND;
-                        case "FERIE"   -> { bg = COLOR_FERIE;  lbl = "F"; }
+                        case "FERIE"   -> { bg = COLOR_FERIE;  lbl = messages.get("cra.pdf.code.holiday"); }
                         // Absences : affichées dans la grille mais NON comptées dans le total
-                        case "ABSENT"  -> { bg = COLOR_ABSENT; lbl = entry.value() < 1.0 ? "1/2" : "A"; }
+                        case "ABSENT"  -> { bg = COLOR_ABSENT; lbl = entry.value() < 1.0 ? "1/2" : messages.get("cra.pdf.code.absent"); }
                         default -> {
                             if (entry.value() >= 1.0)  { bg = COLOR_TRAVAIL; lbl = "1";   dayTotals[d] += entry.value(); }
                             else if (entry.value() > 0) { bg = COLOR_TRAVAIL; lbl = "0.5"; dayTotals[d] += entry.value(); }
@@ -459,7 +490,7 @@ public class CraPdfService {
         cs.fill();
         cs.setNonStrokingColor(COLOR_HEADER_TEXT);
         cs.setFont(PDType1Font.HELVETICA_BOLD, 7);
-        writeLine(cs, gridLeft + 4, y - 13, "Total");
+        writeLine(cs, gridLeft + 4, y - 13, messages.get("cra.pdf.total"));
         double grandTotal = 0;
         for (int d = 1; d <= daysInMonth; d++) {
             float cellX = gridLeft + labelW + (d - 1) * cellW;
@@ -501,10 +532,10 @@ public class CraPdfService {
         float gap = 6;
 
         String[][] legend = {
-                {"1 / 0.5", "Travail"},
-                {"A", "Absent"},
-                {"F", "Ferie"},
-                {"", "Weekend"}
+                {"1 / 0.5", messages.get("cra.pdf.legend.work")},
+                {messages.get("cra.pdf.code.absent"), messages.get("cra.pdf.legend.absent")},
+                {messages.get("cra.pdf.code.holiday"), messages.get("cra.pdf.legend.holiday")},
+                {"", messages.get("cra.pdf.legend.weekend")}
         };
         Color[] colors = {COLOR_TRAVAIL, COLOR_ABSENT, COLOR_FERIE, COLOR_WEEKEND};
 
@@ -524,7 +555,7 @@ public class CraPdfService {
         return y - 14;
     }
 
-    private float drawSignatureBlock(PDPageContentStream cs, float y, float pageW) throws Exception {
+    private float drawSignatureBlock(PDPageContentStream cs, float y, float pageW, boolean provisional) throws Exception {
         cs.setStrokingColor(new Color(200, 200, 200));
         cs.setLineWidth(0.5f);
         float boxW = 300;
@@ -536,11 +567,18 @@ public class CraPdfService {
         cs.setFont(PDType1Font.HELVETICA, 9);
         cs.setNonStrokingColor(Color.BLACK);
         float ty = y - 14;
-        writeLine(cs, boxX + 8, ty, "Date :");
+        if (provisional) {
+            // Le client ne signe qu'un CRA validé par l'ESN.
+            cs.setNonStrokingColor(Color.GRAY);
+            writeLine(cs, boxX + 8, ty, messages.get("cra.pdf.signatureTitle"));
+            cs.setNonStrokingColor(Color.BLACK);
+            return y - boxH - 10;
+        }
+        writeLine(cs, boxX + 8, ty, messages.get("cra.pdf.date"));
         ty -= LEADING;
-        writeLine(cs, boxX + 8, ty, "Nom Client :");
+        writeLine(cs, boxX + 8, ty, messages.get("cra.pdf.clientName"));
         ty -= LEADING;
-        writeLine(cs, boxX + 8, ty, "Signature Client :");
+        writeLine(cs, boxX + 8, ty, messages.get("cra.pdf.clientSignature"));
 
         return y - boxH - 10;
     }
@@ -561,7 +599,7 @@ public class CraPdfService {
         if (consultantProfile != null && !consultantProfile.getProjects().isEmpty()) {
             return safeText(consultantProfile.getProjects().get(0).getName());
         }
-        return "Activite normale";
+        return messages.get("cra.pdf.defaultActivity");
     }
 
     private CraDayEntry findEntry(List<CraDayEntry> entries, int dayOfMonth) {
@@ -581,6 +619,21 @@ public class CraPdfService {
             log.warn("Could not parse CRA entries JSON: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    /** Filigrane diagonal semi-transparent pour un CRA SOUMIS (non validé). */
+    private void drawProvisionalWatermark(PDPageContentStream cs, float pageW, float pageH) throws Exception {
+        PDExtendedGraphicsState translucent = new PDExtendedGraphicsState();
+        translucent.setNonStrokingAlphaConstant(0.18f);
+        cs.saveGraphicsState();
+        cs.setGraphicsStateParameters(translucent);
+        cs.setNonStrokingColor(new Color(0xc0, 0x39, 0x2b));
+        cs.beginText();
+        cs.setFont(PDType1Font.HELVETICA_BOLD, 44);
+        cs.setTextMatrix(Matrix.getRotateInstance(Math.toRadians(25), pageW * 0.12f, pageH * 0.22f));
+        cs.showText(safeText(messages.get("cra.pdf.provisional")));
+        cs.endText();
+        cs.restoreGraphicsState();
     }
 
     private void writeLine(PDPageContentStream cs, float x, float y, String text) throws Exception {
@@ -616,6 +669,6 @@ public class CraPdfService {
 
     private String formatDays(double d) {
         if (d == Math.floor(d)) return String.valueOf((int) d);
-        return String.format(Locale.FRANCE, "%.1f", d);
+        return String.format(messages.locale(), "%.1f", d);
     }
 }

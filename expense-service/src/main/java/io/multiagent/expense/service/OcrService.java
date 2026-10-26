@@ -70,13 +70,13 @@ public class OcrService {
             ));
 
             if (!Files.exists(txtPath)) {
-                throw new IllegalStateException("Tesseract n'a pas généré de sortie");
+                throw new IllegalStateException("Tesseract produced no output");
             }
 
             return Files.readString(txtPath);
 
         } catch (Exception e) {
-            throw new IllegalStateException("Échec OCR: " + e.getMessage(), e);
+            throw new IllegalStateException("OCR failed: " + e.getMessage(), e);
         } finally {
             temp.forEach(this::safeDelete);
         }
@@ -111,13 +111,13 @@ public class OcrService {
         boolean finished = p.waitFor(COMMAND_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
         if (!finished) {
             p.destroyForcibly();
-            throw new IllegalStateException("Commande OCR timeout: " + String.join(" ", command));
+            throw new IllegalStateException("OCR command timeout: " + String.join(" ", command));
         }
         if (p.exitValue() != 0) {
             String err = new BufferedReader(new InputStreamReader(p.getErrorStream(), StandardCharsets.UTF_8))
                     .lines()
                     .reduce("", (a, b) -> a + b + "\n");
-            throw new IllegalStateException("Commande OCR échec (" + p.exitValue() + "): " + err);
+            throw new IllegalStateException("OCR command failed (" + p.exitValue() + "): " + err);
         }
     }
 

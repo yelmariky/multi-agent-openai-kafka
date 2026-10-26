@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ReceiptFileValidatorTest {
 
-    private final ReceiptFileValidator validator = new ReceiptFileValidator();
+    private final ReceiptFileValidator validator = new ReceiptFileValidator(io.multiagent.core.i18n.MessagesFixture.standard());
 
     private static final byte[] PDF_BYTES = new byte[]{0x25, 0x50, 0x44, 0x46, '-', '1', '.', '4'};
     private static final byte[] JPEG_BYTES = new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0, 0, 0};

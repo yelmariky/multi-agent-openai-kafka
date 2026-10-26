@@ -23,6 +23,8 @@ public class OcrExtractionService {
 
     @Value("${AI_CORE_PROMPT_OCR_SINGLE_EXPENSE:}")
     private String ocrPromptEnv;
+    @Value("${AI_CORE_PROMPT_OCR_DATE_HINT:}")
+    private String dateHintTemplate;
 
     private String ocrPromptTemplate;
 
@@ -37,10 +39,13 @@ public class OcrExtractionService {
             if (ocrPromptEnv != null && !ocrPromptEnv.isBlank()) {
                 ocrPromptTemplate = ocrPromptEnv;
             } else {
-                throw new IllegalStateException("AI_CORE_PROMPT_OCR_SINGLE_EXPENSE non défini (ConfigMap/env requis)");
+                throw new IllegalStateException("AI_CORE_PROMPT_OCR_SINGLE_EXPENSE is not defined (ConfigMap/env required)");
+            }
+            if (dateHintTemplate == null || dateHintTemplate.isBlank()) {
+                throw new IllegalStateException("AI_CORE_PROMPT_OCR_DATE_HINT is not defined (ConfigMap/env required)");
             }
         } catch (Exception e) {
-            throw new IllegalStateException("Impossible de charger le prompt OCR", e);
+            throw new IllegalStateException("Unable to load OCR prompts", e);
         }
     }
 
@@ -129,7 +134,7 @@ public class OcrExtractionService {
         Matcher m = DATE_PATTERN.matcher(text);
         if (m.find()) {
             String dateFound = m.group().trim();
-            return "Date détectée (ne pas remplacer) : " + dateFound + "\n" + text;
+            return dateHintTemplate.replace("{date}", dateFound) + "\n" + text;
         }
         return text;
     }

@@ -6,7 +6,6 @@ import io.multiagent.core.model.IntentResult;
 import io.multiagent.core.model.ReasoningResult;
 import io.multiagent.core.expense.service.RAGService;
 import io.multiagent.core.expense.service.DeleteExpenseService;
-import io.multiagent.core.invoice.client.InvoiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,10 +17,13 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ReasoningService {
 
+    // Une facture émise ne se supprime pas (numérotation continue, conservation légale) : elle s'annule
+    // par un avoir depuis la console admin — plus de suppression en langage naturel.
+
     private final IntentClassifierService intentClassifierService;
     private final RAGService ragService;
     private final DeleteExpenseService deleteExpenseService;
-    private final InvoiceClient invoiceClient;
+    private final io.multiagent.core.i18n.Messages messages;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ReasoningResult process(String userText) {
@@ -64,14 +66,14 @@ public class ReasoningService {
             // 🔴 Suppression d’une note de frais par date
             case "delete_expense" -> deleteExpenseService.deleteByText(raw, intent);
 
-            // 🔴 Suppression d’une facture par mois/numéro — délégué à invoice-service
-            case "delete_invoice" -> buildDeleteInvoiceResult(raw, intent);
+            // 🔴 Suppression de facture désactivée : une facture émise s'annule par un avoir (console admin)
+            case "delete_invoice" -> ReasoningResult.error(messages.get("reasoning.error.invoiceDeletionDisabled"));
 
             // 🟡 Smalltalk = réponse non métier
-            case "smalltalk" -> ReasoningResult.smalltalk("Je suis un agent métier, pas un chatbot général.");
+            case "smalltalk" -> ReasoningResult.smalltalk(messages.get("reasoning.smalltalk"));
 
             // 🔴 Erreur de classification LLM (API indisponible, quota, réponse invalide)
-            case "error" -> ReasoningResult.error("Classification échouée - veuillez reformuler votre demande ou réessayer.");
+            case "error" -> ReasoningResult.error(messages.get("reasoning.error.classificationFailed"));
 
             // 🔴 Intent inconnu
             default -> ReasoningResult.builder()
@@ -82,27 +84,6 @@ public class ReasoningService {
                     .expenses(null)
                     .build();
         };
-    }
-
-    private ReasoningResult buildDeleteInvoiceResult(String raw, IntentResult intent) {
-        Map<String, Object> result = invoiceClient.deleteByText(raw);
-        int deleted = result.get("deleted") instanceof Number n ? n.intValue() : 0;
-        String error = result.get("error") instanceof String s ? s : null;
-
-        if (error != null && deleted <= 0) {
-            return ReasoningResult.error(error);
-        }
-
-        Map<String, Object> meta = new java.util.HashMap<>(result);
-        meta.remove("error");
-        return ReasoningResult.builder()
-                .type("delete_invoice")
-                .status("INVOICE_DELETED")
-                .confidence(intent != null ? intent.getConfidence() : 1.0)
-                .raw(raw)
-                .metadata(meta)
-                .expenses(null)
-                .build();
     }
 
     @SuppressWarnings("unchecked")

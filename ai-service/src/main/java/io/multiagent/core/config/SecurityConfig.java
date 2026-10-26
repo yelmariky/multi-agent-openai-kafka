@@ -83,6 +83,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.DELETE, "/consultants/profiles").hasRole(ROLE_ADMIN)
                 .requestMatchers(HttpMethod.GET, "/consultants/keycloak-users").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 .requestMatchers("/settings/seller-profile", "/settings/seller", "/settings/reindex-chunks").hasRole(ROLE_ADMIN)
+                .requestMatchers("/settings/policies/**").hasRole(ROLE_ADMIN)
                 // Dashboard manager
                 .requestMatchers("/dashboard/**").hasAnyRole(ROLE_ADMIN, ROLE_MANAGER)
                 // Aperçu tarifaire de l'abonnement du tenant (console admin — formulaire d'ajout consultant)

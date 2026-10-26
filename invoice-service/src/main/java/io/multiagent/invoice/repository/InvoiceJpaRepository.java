@@ -25,4 +25,7 @@ public interface InvoiceJpaRepository extends JpaRepository<InvoiceEntity, UUID>
             UUID tenantId, String invoiceName, String sellerCompanyName);
 
     List<InvoiceEntity> findByTenantIdAndConsultantEmailIgnoreCase(UUID tenantId, String consultantEmail);
+
+    /** Numérotation des avoirs (série A-AAAAMM-NN). */
+    List<InvoiceEntity> findByTenantIdAndInvoiceNameStartingWithIgnoreCase(UUID tenantId, String prefix);
 }

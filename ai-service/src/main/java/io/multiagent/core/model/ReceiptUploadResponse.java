@@ -21,4 +21,10 @@ public class ReceiptUploadResponse {
     private boolean success = true;
     /** Message explicatif quand success=false — affiché à l'utilisateur. */
     private String reason;
+    /**
+     * Verdict de conformité à la politique de remboursement (JSON : {compliant, citedClause,
+     * explanation}), si une politique ACTIVE existe pour ce tenant — voir PolicyComplianceService.
+     * Purement consultatif, null si aucune politique active ou évaluation indisponible.
+     */
+    private String policyVerdictJson;
 }

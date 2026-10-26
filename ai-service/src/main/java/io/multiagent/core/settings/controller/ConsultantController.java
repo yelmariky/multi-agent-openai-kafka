@@ -25,6 +25,7 @@ public class ConsultantController {
     private final WeaviateService weaviateService;
     private final KeycloakProvisioningService keycloakService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final io.multiagent.core.i18n.Messages messages;
 
     @GetMapping("/profiles")
     public ResponseEntity<List<ConsultantProfile>> getProfiles(
@@ -66,7 +67,7 @@ public class ConsultantController {
                     "id", id.toString(),
                     "email", profile.email() == null ? "" : profile.email()));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Erreur : " + e.getMessage());
+            return ResponseEntity.internalServerError().body(messages.get("common.error.generic", e.getMessage()));
         }
     }
 
@@ -74,9 +75,9 @@ public class ConsultantController {
     public ResponseEntity<Object> deleteProfile(@RequestParam String email) {
         try {
             weaviateService.deleteConsultantProfile(email);
-            return ResponseEntity.ok(Map.of("message", "Profil supprimé", "email", email));
+            return ResponseEntity.ok(Map.of("message", messages.get("consultant.profileDeleted"), "email", email));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Erreur : " + e.getMessage());
+            return ResponseEntity.internalServerError().body(messages.get("common.error.generic", e.getMessage()));
         }
     }
 
@@ -88,7 +89,7 @@ public class ConsultantController {
     public ResponseEntity<Object> inviteConsultant(@RequestBody Map<String, String> body) {
         String realm = TenantContext.getRealm();
         if (realm == null || realm.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Realm introuvable"));
+            return ResponseEntity.badRequest().body(Map.of("error", messages.get("consultant.error.realmNotFound")));
         }
 
         String email     = body.getOrDefault("email", "").trim().toLowerCase();
@@ -100,7 +101,7 @@ public class ConsultantController {
         String tempPassword = body.get("tempPassword"); // null for external IdP users
 
         if (email.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email obligatoire"));
+            return ResponseEntity.badRequest().body(Map.of("error", messages.get("consultant.error.emailRequired")));
         }
 
         try {
@@ -123,7 +124,7 @@ public class ConsultantController {
 
             log.info("Invited consultant '{}' in realm '{}' (keycloakId={})", email, realm, keycloakUserId);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                    "message", "Consultant invite",
+                    "message", messages.get("consultant.invited"),
                     "email", email,
                     "keycloakUserId", keycloakUserId));
         } catch (Exception e) {

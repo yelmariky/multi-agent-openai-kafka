@@ -19,9 +19,10 @@ deploy/secrets/*.env
 target/
 **/target/
 poc/
-docs/*.md
+docs/
 *.class
 *.log
 github.lock
-
+*.md
+deploy/
 **/.env

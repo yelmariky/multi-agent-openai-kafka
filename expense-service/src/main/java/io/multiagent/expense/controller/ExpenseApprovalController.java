@@ -1,6 +1,7 @@
 package io.multiagent.expense.controller;
 
 import io.multiagent.expense.entity.ExpenseEntity;
+import io.multiagent.expense.i18n.Messages;
 import io.multiagent.expense.infrastructure.kafka.EventPublisher;
 import io.multiagent.expense.infrastructure.kafka.NotificationPayload;
 import io.multiagent.expense.service.ExpenseDataService;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.YearMonth;
 import java.util.Locale;
 import java.util.Map;
 
@@ -27,6 +29,7 @@ public class ExpenseApprovalController {
 
     private final ExpenseDataService expenseDataService;
     private final EventPublisher  eventPublisher;
+    private final io.multiagent.expense.i18n.Messages messages;
 
     @PostMapping("/approve")
     public ResponseEntity<Object> approve(@RequestBody Map<String, String> body) {
@@ -38,8 +41,9 @@ public class ExpenseApprovalController {
             ExpenseEntity expense = expenseDataService.updateExpenseApproval(weaviateId, "APPROVED", note);
             eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
                     expense.getConsultantEmail(), "EXPENSE_APPROVED",
-                    "Votre note de frais" + expenseLabel(expense) + " a été approuvée.",
+                    messages.getDefault("notification.expense.approved", expenseLabel(expense)),
                     expense.getId().toString());
+            notifyIfMonthClosed(expense);
             return ResponseEntity.ok(Map.of("status", "APPROVED", "weaviateId", weaviateId));
         } catch (Exception e) {
             log.error("approve error: {}", e.getMessage(), e);
@@ -55,10 +59,12 @@ public class ExpenseApprovalController {
             if (weaviateId == null || weaviateId.isBlank())
                 return ResponseEntity.badRequest().body("Missing 'weaviateId'");
             ExpenseEntity expense = expenseDataService.updateExpenseApproval(weaviateId, "REFUSED", note);
-            String msg = "Votre note de frais" + expenseLabel(expense) + " a été refusée"
-                    + (note != null && !note.isBlank() ? " : " + note : ".");
+            String msg = note != null && !note.isBlank()
+                    ? messages.getDefault("notification.expense.refusedWithNote", expenseLabel(expense), note)
+                    : messages.getDefault("notification.expense.refused", expenseLabel(expense));
             eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
                     expense.getConsultantEmail(), "EXPENSE_REFUSED", msg, expense.getId().toString());
+            notifyIfMonthClosed(expense);
             return ResponseEntity.ok(Map.of("status", "REFUSED", "weaviateId", weaviateId));
         } catch (Exception e) {
             log.error("refuse error: {}", e.getMessage(), e);
@@ -96,9 +102,29 @@ public class ExpenseApprovalController {
         return MediaType.APPLICATION_OCTET_STREAM;
     }
 
+    /**
+     * Clôture mensuelle : quand la dernière dépense en attente du mois est tranchée, prévient le
+     * consultant que son PDF est disponible. Ne fait jamais échouer l'approbation/refus.
+     */
+    private void notifyIfMonthClosed(ExpenseEntity expense) {
+        if (expense.getExpenseDate() == null || expense.getConsultantEmail() == null) return;
+        try {
+            expenseDataService.approvedTotalIfMonthSettled(expense.getConsultantEmail(), expense.getExpenseDate())
+                    .ifPresent(total -> {
+                        String month = Messages.monthYear(YearMonth.from(expense.getExpenseDate()), messages.defaultLocale());
+                        eventPublisher.notify(NotificationPayload.TARGET_CONSULTANT,
+                                expense.getConsultantEmail(), "EXPENSE_MONTH_CLOSED",
+                                messages.getDefault("notification.expense.monthClosed", month, String.format("%.2f", total)),
+                                YearMonth.from(expense.getExpenseDate()).toString());
+                    });
+        } catch (Exception e) {
+            log.warn("notifyIfMonthClosed error: {}", e.getMessage());
+        }
+    }
+
     private String expenseLabel(ExpenseEntity e) {
         StringBuilder sb = new StringBuilder();
-        if (e.getExpenseDate() != null) sb.append(" du ").append(e.getExpenseDate());
+        if (e.getExpenseDate() != null) sb.append(messages.getDefault("notification.expense.labelDate", e.getExpenseDate().toString()));
         if (e.getType() != null && !e.getType().isBlank()) sb.append(" (").append(e.getType());
         if (e.getAmount() != null) {
             sb.append(e.getType() != null && !e.getType().isBlank() ? " - " : " (");

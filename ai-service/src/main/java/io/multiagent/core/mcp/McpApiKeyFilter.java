@@ -48,6 +48,7 @@ public class McpApiKeyFilter extends OncePerRequestFilter {
     private final WebMvcSseServerTransportProvider sseTransportProvider;
     private final Map<String, String> apiKeyToRealm;
     private final int maxRequestsPerMinute;
+    private final io.multiagent.core.i18n.Messages messages;
 
     // Résolu une seule fois (réflexion coûteuse) : accès au champ privé "sessions" du transport —
     // seul moyen d'obtenir le McpServerSession interne (et son id, DIFFÉRENT du sessionId HTTP de
@@ -64,7 +65,9 @@ public class McpApiKeyFilter extends OncePerRequestFilter {
             McpSessionTenantRegistry sessionTenantRegistry,
             WebMvcSseServerTransportProvider sseTransportProvider,
             @Value("${ai-core.mcp.api-keys:}") String apiKeysConfig,
-            @Value("${ai-core.mcp.max-requests-per-minute:30}") int maxRequestsPerMinute) {
+            @Value("${ai-core.mcp.max-requests-per-minute:30}") int maxRequestsPerMinute,
+            io.multiagent.core.i18n.Messages messages) {
+        this.messages = messages;
         this.organizationRepository = organizationRepository;
         this.sessionTenantRegistry = sessionTenantRegistry;
         this.sseTransportProvider = sseTransportProvider;
@@ -91,23 +94,23 @@ public class McpApiKeyFilter extends OncePerRequestFilter {
         try {
             String apiKey = request.getHeader(HEADER);
             if (isBlank(apiKey)) {
-                reject(response, HttpServletResponse.SC_UNAUTHORIZED, "Clé API manquante (en-tête " + HEADER + ")");
+                reject(response, HttpServletResponse.SC_UNAUTHORIZED, messages.get("mcp.error.apiKeyMissing", HEADER));
                 return;
             }
             String realm = apiKeyToRealm.get(apiKey);
             if (realm == null) {
                 log.warn("🔌 [MCP] Clé API invalide : {}", maskKey(apiKey));
-                reject(response, HttpServletResponse.SC_UNAUTHORIZED, "Clé API invalide");
+                reject(response, HttpServletResponse.SC_UNAUTHORIZED, messages.get("mcp.error.apiKeyInvalid"));
                 return;
             }
             if (!withinRateLimit(apiKey)) {
                 log.warn("🔌 [MCP] Rate limit dépassé pour {}", maskKey(apiKey));
-                reject(response, 429, "Trop de requêtes — réessayez plus tard");
+                reject(response, 429, messages.get("mcp.error.rateLimit"));
                 return;
             }
             Optional<Organization> orgOpt = organizationRepository.findByKeycloakRealm(realm);
             if (orgOpt.isEmpty() || Boolean.FALSE.equals(orgOpt.get().getActive())) {
-                reject(response, HttpServletResponse.SC_FORBIDDEN, "Organisation introuvable ou désactivée");
+                reject(response, HttpServletResponse.SC_FORBIDDEN, messages.get("mcp.error.orgUnavailable"));
                 return;
             }
             Organization org = orgOpt.get();

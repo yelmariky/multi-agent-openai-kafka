@@ -74,9 +74,17 @@ management:
     web:
       exposure:
         include: ["health", "prometheus"]
+  # Sprint 6 — trace_id/span_id dans chaque log (Micrometer Tracing, aucun export de traces)
+  tracing:
+    sampling:
+      probability: 1.0
   metrics:
     tags:
       application: ${spring.application.name}
+    # Histogramme HTTP → latence p95 (alerte Prometheus > 1 s)
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
   # Le serveur mail ne conditionne jamais la disponibilité du service (panne SMTP = relances échouent proprement)
   health:
     mail:

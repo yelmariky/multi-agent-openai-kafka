@@ -6,7 +6,12 @@ import io.multiagent.core.cra.service.CraPdfService;
 import io.multiagent.core.cra.service.CraService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,17 +32,28 @@ public class CraController {
     }
 
     @GetMapping(value = "/pdf/{id}", produces = "application/pdf")
-    public ResponseEntity<byte[]> downloadPdf(
+    public ResponseEntity<?> downloadPdf(
             @PathVariable UUID id,
-            @RequestParam(name = "projectId", required = false) UUID projectId) {
+            @RequestParam(name = "projectId", required = false) UUID projectId,
+            Authentication auth) {
         try {
-            byte[] pdf = craPdfService.generatePdf(id, projectId);
+            boolean privileged = auth != null && auth.getAuthorities().stream()
+                    .anyMatch(a -> "ROLE_admin".equals(a.getAuthority()) || "ROLE_manager".equals(a.getAuthority()));
+            String email = auth instanceof JwtAuthenticationToken jwt ? jwt.getToken().getClaimAsString("email") : null;
+            byte[] pdf = craPdfService.generatePdf(id, projectId, email, privileged);
             String filename = projectId != null
                     ? "cra-" + id + "-" + projectId + ".pdf"
                     : "cra-" + id + ".pdf";
             HttpHeaders headers = new HttpHeaders();
             headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"");
             return ResponseEntity.ok().headers(headers).body(pdf);
+        } catch (AccessDeniedException e) {
+            // Content-Type explicite : l'endpoint produit application/pdf, sans quoi le JSON n'est pas écrit (500)
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (CraPdfService.CraPdfNotAvailableException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         } catch (Exception e) {

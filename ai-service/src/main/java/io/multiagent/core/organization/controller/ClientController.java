@@ -24,6 +24,7 @@ public class ClientController {
     private final ClientRepository clientRepository;
     private final OrganizationRepository organizationRepository;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final io.multiagent.core.i18n.Messages messages;
 
     /** Consultants ACTIFS rattachés à un client (via affectation ou champ texte hérité). */
     private List<String> activeConsultantsOnClient(UUID tenantId, String clientName) {
@@ -52,7 +53,7 @@ public class ClientController {
         boolean exists = clientRepository.findByTenantIdAndName(tenantId, client.getName()).isPresent();
         if (exists) {
             return ResponseEntity.status(409)
-                    .body("Un client avec le nom \"" + client.getName() + "\" existe déjà.");
+                    .body(messages.get("client.error.nameExists", client.getName()));
         }
         Organization tenant = organizationRepository.getReferenceById(tenantId);
         client.setTenant(tenant);
@@ -91,15 +92,15 @@ public class ClientController {
             if (conflict.isPresent()) {
                 boolean archived = !conflict.get().isActive();
                 String msg = archived
-                        ? "Un client archivé porte déjà le nom \"" + updates.getName() + "\". "
-                          + "Réactivez-le ou renommez-le d'abord (bouton « Nettoyer doublons » pour fusionner)."
-                        : "Un client actif porte déjà le nom \"" + updates.getName() + "\".";
+                        ? messages.get("client.error.nameTakenArchived", updates.getName())
+                        : messages.get("client.error.nameTakenActive", updates.getName());
                 return ResponseEntity.status(409).body(msg);
             }
             existing.setName(updates.getName());
         }
         if (updates.getAddress() != null) existing.setAddress(updates.getAddress());
         if (updates.getRcs() != null) existing.setRcs(updates.getRcs());
+        if (updates.getVatNumber() != null) existing.setVatNumber(updates.getVatNumber());
         if (updates.getContactName() != null) existing.setContactName(updates.getContactName());
         if (updates.getContactEmail() != null) existing.setContactEmail(updates.getContactEmail());
         return ResponseEntity.ok(clientRepository.save(existing));
@@ -115,8 +116,7 @@ public class ClientController {
         List<String> activeConsultants = activeConsultantsOnClient(tenantId, client.getName());
         if (!activeConsultants.isEmpty()) {
             return ResponseEntity.status(409)
-                    .body("Impossible d'archiver \"" + client.getName() + "\" — consultant(s) actif(s) rattaché(s) : "
-                          + String.join(", ", activeConsultants) + ".");
+                    .body(messages.get("client.error.archiveWithConsultants", client.getName(), String.join(", ", activeConsultants)));
         }
         client.setActive(false);
         clientRepository.save(client);
@@ -135,8 +135,7 @@ public class ClientController {
                 .isPresent();
         if (nameTaken) {
             return ResponseEntity.status(409)
-                    .body("Un client actif porte déjà le nom \"" + client.getName()
-                          + "\". Renommez ou fusionnez avant de réactiver.");
+                    .body(messages.get("client.error.reactivateNameTaken", client.getName()));
         }
         client.setActive(true);
         return ResponseEntity.ok(clientRepository.save(client));

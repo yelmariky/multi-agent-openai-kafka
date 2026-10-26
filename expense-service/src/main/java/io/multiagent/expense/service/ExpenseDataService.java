@@ -136,6 +136,7 @@ public class ExpenseDataService {
                 } catch (Exception ex) { log.warn("Could not serialize absencePeriods: {}", ex.getMessage()); }
             }
             expenseRepo.save(entity);
+            io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "expense", "event", "created").increment();
             log.info("Expense indexed (expenseId={})", item.getId());
         } catch (Exception e) {
             log.error("Exception indexExpense: {}", e.getMessage(), e);
@@ -243,8 +244,26 @@ public class ExpenseDataService {
         entity.setApprovalStatus(status);
         if (note != null) entity.setApprovalNote(note);
         expenseRepo.save(entity);
+        io.micrometer.core.instrument.Metrics.counter("business.events", "domain", "expense", "event", status.toLowerCase(Locale.ROOT)).increment();
         log.info("Expense approval updated: id={}, status={}", entityId, status);
         return entity;
+    }
+
+    /**
+     * Clôture mensuelle : si plus aucune dépense du consultant n'est en attente (PENDING ou null) sur
+     * le mois de {@code anyDayOfMonth}, renvoie le total approuvé du mois ; sinon {@link Optional#empty()}.
+     */
+    public Optional<BigDecimal> approvedTotalIfMonthSettled(String consultantEmail, LocalDate anyDayOfMonth) {
+        YearMonth ym = YearMonth.from(anyDayOfMonth);
+        List<ExpenseEntity> month = expenseRepo.findByTenantIdAndExpenseDateBetweenAndConsultantEmailIgnoreCase(
+                TenantContext.getTenantId(), ym.atDay(1), ym.atEndOfMonth(), consultantEmail);
+        boolean hasPending = month.stream()
+                .anyMatch(e -> e.getApprovalStatus() == null || "PENDING".equals(e.getApprovalStatus()));
+        if (hasPending) return Optional.empty();
+        return Optional.of(month.stream()
+                .filter(e -> "APPROVED".equals(e.getApprovalStatus()) && e.getAmount() != null)
+                .map(ExpenseEntity::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
     public List<ExpenseItem.AbsencePeriod> findKmExpenseAbsences(String company, String month) {

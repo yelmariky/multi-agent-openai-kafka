@@ -89,6 +89,9 @@ public class ExpenseEntity {
     @Column(name = "source_text", columnDefinition = "TEXT")
     private String sourceText;
 
+    @Column(name = "policy_verdict_json", columnDefinition = "TEXT")
+    private String policyVerdictJson;
+
     @Column(name = "created_at")
     private Instant createdAt;
 

@@ -1865,6 +1865,18 @@ dialog.modal-backdrop::backdrop {
   flex-wrap: wrap;
 }
 
+/* Dépense EN ATTENTE qui dépasse la politique de remboursement (verdict compliant=false). */
+.approval-row.policy-exceeded {
+  background: rgba(239,68,68,.08);
+  border-color: rgba(239,68,68,.35);
+  border-left: 4px solid #ef4444;
+}
+
+/* Frais km ramenés automatiquement au plafond journalier : déjà conformes, simple signalement. */
+.approval-row.policy-capped {
+  border-left: 4px solid rgba(251,191,36,.7);
+}
+
 .approval-meta {
   flex: 1;
   min-width: 160px;

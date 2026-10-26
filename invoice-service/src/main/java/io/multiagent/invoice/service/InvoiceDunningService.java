@@ -103,6 +103,9 @@ public class InvoiceDunningService {
         if ("PAYEE".equalsIgnoreCase(inv.getPaymentStatus())) {
             return Map.of("invoice", inv.getInvoiceName(), "status", "SKIPPED_PAID");
         }
+        if (!InvoicePaymentService.isOpen(inv)) {
+            return Map.of("invoice", inv.getInvoiceName(), "status", "SKIPPED_CANCELLED");
+        }
         int daysLate = inv.getPaymentDueDate() != null
                 ? (int) ChronoUnit.DAYS.between(inv.getPaymentDueDate(), today) : 0;
         int stage = Math.max(1, dueStage(daysLate));   // relance manuelle : au moins R1

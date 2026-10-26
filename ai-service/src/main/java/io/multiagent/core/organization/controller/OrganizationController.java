@@ -21,6 +21,7 @@ public class OrganizationController {
 
     private final OrganizationService organizationService;
     private final KeycloakProvisioningService keycloakProvisioning;
+    private final io.multiagent.core.i18n.Messages messages;
 
     @GetMapping
     public List<Organization> list() {
@@ -91,7 +92,7 @@ public class OrganizationController {
 
         log.info("Tenant désactivé — slug={} keycloakDisabled={}", org.getSlug(), keycloakDisabled);
         return ResponseEntity.ok(Map.of(
-                "message", "Tenant désactivé",
+                "message", messages.get("tenant.deactivated"),
                 "slug", org.getSlug(),
                 "keycloakDisabled", keycloakDisabled
         ));
@@ -115,7 +116,7 @@ public class OrganizationController {
 
         log.info("Tenant réactivé — slug={} keycloakEnabled={}", org.getSlug(), keycloakEnabled);
         return ResponseEntity.ok(Map.of(
-                "message", "Tenant réactivé",
+                "message", messages.get("tenant.reactivated"),
                 "slug", org.getSlug(),
                 "keycloakEnabled", keycloakEnabled
         ));

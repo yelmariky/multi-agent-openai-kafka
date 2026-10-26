@@ -11,7 +11,7 @@ import java.util.UUID;
 public interface InvoiceDashboardRepository extends JpaRepository<InvoiceSummaryEntity, UUID> {
 
     /** Factures en retard : échéance dépassée et non payées. */
-    @Query("SELECT i FROM InvoiceSummaryEntity i WHERE i.tenantId = :tid AND i.paymentDueDate < :today AND (i.paymentStatus IS NULL OR i.paymentStatus != 'PAYEE')")
+    @Query("SELECT i FROM InvoiceSummaryEntity i WHERE i.tenantId = :tid AND i.paymentDueDate < :today AND (i.paymentStatus IS NULL OR i.paymentStatus NOT IN ('PAYEE', 'ANNULEE', 'EMIS'))")
     List<InvoiceSummaryEntity> findOverdue(@Param("tid") UUID tenantId, @Param("today") LocalDate today);
 
     List<InvoiceSummaryEntity> findByTenantId(UUID tenantId);

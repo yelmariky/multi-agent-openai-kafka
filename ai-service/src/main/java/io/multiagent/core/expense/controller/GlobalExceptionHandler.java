@@ -12,7 +12,10 @@ import java.util.Map;
 
 @RestControllerAdvice
 @Slf4j
+@lombok.RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final io.multiagent.core.i18n.Messages messages;
 
     @ExceptionHandler(InvalidReceiptFileException.class)
     public ResponseEntity<Map<String, String>> handleInvalidReceiptFile(InvalidReceiptFileException e) {
@@ -21,6 +24,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> handleMaxUploadSize(MaxUploadSizeExceededException e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Fichier trop volumineux (8 Mo maximum)."));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", messages.get("upload.error.tooLarge")));
     }
 }

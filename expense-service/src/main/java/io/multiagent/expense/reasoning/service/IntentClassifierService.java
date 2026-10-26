@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.multiagent.expense.client.LLMAIClient;
+import io.multiagent.expense.config.TextKeywords;
 import io.multiagent.expense.security.LlmJsonValidator;
 import io.multiagent.expense.security.PromptGuard;
 import io.multiagent.expense.model.IntentResult;
@@ -23,6 +24,7 @@ import org.springframework.beans.factory.annotation.Value;
 public class IntentClassifierService {
 
     private final LLMAIClient openai;
+    private final TextKeywords keywords;
     private final ObjectMapper mapper = new ObjectMapper();
 
     private String systemPrompt;
@@ -38,7 +40,7 @@ public class IntentClassifierService {
             systemPrompt = resolvePrompt(systemPromptEnv, "prompts/prompt_classifier_system.txt");
             examplesPrompt = resolvePrompt(examplesPromptEnv, "prompts/prompt_classifier_examples.txt");
         } catch (Exception e) {
-            throw new IllegalStateException("Impossible de charger les prompts du classifieur", e);
+            throw new IllegalStateException("Unable to load classifier prompts", e);
         }
     }
 
@@ -101,7 +103,7 @@ public class IntentClassifierService {
             return fallback(userText, info);
         } catch (Exception e) {
             log.error("❌ Intent classification error", e);
-            return fallback(userText, "Erreur JSON-mode / OpenAI");
+            return fallback(userText, "JSON-mode / OpenAI error");
         }
     }
 
@@ -112,7 +114,7 @@ public class IntentClassifierService {
             IntentResult km = new IntentResult();
             km.setIntent("create_expense");
             km.setConfidence(0.85);
-            km.setExplanation("Détection règle: frais km");
+            km.setExplanation("Rule-based detection: mileage expense");
             km.setOriginalText(userText);
             return km;
         }
@@ -126,9 +128,8 @@ public class IntentClassifierService {
 
     private boolean isKmExpenseText(String text) {
         if (text == null || text.isBlank()) return false;
-        String lower = text.toLowerCase();
-        boolean hasKmKeyword = lower.contains("km") || lower.contains("kilom");
-        boolean hasNumber = lower.matches(".*\\d+.*");
+        boolean hasKmKeyword = keywords.any(text, TextKeywords.Group.KM);
+        boolean hasNumber = text.matches("(?s).*\\d+.*");
         return hasKmKeyword && hasNumber;
     }
 }

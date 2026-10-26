@@ -24,6 +24,7 @@ public class ExpenseController {
 
     private final ExpenseReportService reportService;
     private final ExpensePdfService expensePdfService;
+    private final io.multiagent.expense.i18n.Messages messages;
 
     @GetMapping("/report")
     public ExpenseReportResponse report(
@@ -59,7 +60,7 @@ public class ExpenseController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         }
         HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"rapport-notes-frais.xlsx\"");
+        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + messages.get("report.filename") + ".xlsx\"");
         return ResponseEntity.ok().headers(headers).body(bytes);
     }
 
@@ -75,7 +76,7 @@ public class ExpenseController {
         try {
             ym = YearMonth.parse(month);
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Paramètre month attendu au format YYYY-MM", e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, messages.get("report.error.monthFormat"), e);
         }
         String start = ym.atDay(1).toString();
         String end = ym.atEndOfMonth().toString();
@@ -87,7 +88,7 @@ public class ExpenseController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage(), e);
         }
         HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"rapport-notes-frais.pdf\"");
+        headers.set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + messages.get("report.filename") + ".pdf\"");
         return ResponseEntity.ok().headers(headers).body(bytes);
     }
 }

@@ -28,6 +28,7 @@ public class ReasoningService {
     private final IntentClassifierService intentClassifierService;
     private final RAGService              ragService;
     private final DeleteExpenseService    deleteExpenseService;
+    private final io.multiagent.expense.i18n.Messages messages;
     private final ObjectMapper            mapper = new ObjectMapper();
 
     public ReasoningResult process(String userText, String consultantEmail) {
@@ -36,7 +37,7 @@ public class ReasoningService {
 
     public ReasoningResult process(String userText, String consultantEmail, String paymentModeOverride) {
         if (userText == null || userText.isBlank()) {
-            return ReasoningResult.error("Texte vide.");
+            return ReasoningResult.error(messages.get("reasoning.error.emptyText"));
         }
 
         IntentResult intent = tryParseIntent(userText);
@@ -49,8 +50,8 @@ public class ReasoningService {
         if ("error".equals(intent.getIntent())) {
             return ReasoningResult.builder()
                     .type("error").status("error").confidence(0.0)
-                    .raw("Classification échouée - veuillez reformuler votre demande ou réessayer.")
-                    .metadata(java.util.Map.of("explanation", "Erreur métier", "status", "ERROR"))
+                    .raw(messages.get("reasoning.error.classificationFailed"))
+                    .metadata(java.util.Map.of("explanation", "Business error", "status", "ERROR"))
                     .build();
         }
 

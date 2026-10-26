@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sprint 6 — logs structurés.
+  - Par défaut (cluster) : une ligne JSON par événement sur stdout, collectée par Promtail → Loki.
+    Champs : @timestamp, level, logger, thread, message, stack_trace, service, traceId, spanId (MDC Micrometer Tracing).
+  - Profil "local" (mvn spring-boot:run -Dspring-boot.run.profiles=local) : format texte lisible.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <springProperty scope="context" name="service" source="spring.application.name"/>
+
+    <springProfile name="local">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!local">
+        <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <customFields>{"service":"${service}"}</customFields>
+                <fieldNames>
+                    <levelValue>[ignore]</levelValue>
+                    <version>[ignore]</version>
+                </fieldNames>
+                <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                    <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                    <rootCauseFirst>true</rootCauseFirst>
+                </throwableConverter>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="JSON"/>
+        </root>
+    </springProfile>
+</configuration>

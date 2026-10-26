@@ -1,9 +1,13 @@
 package io.multiagent.core.expense.service;
 
+import io.multiagent.core.config.TextKeywords;
 import io.multiagent.core.infrastructure.tenant.TenantContext;
 import io.multiagent.core.model.ReceiptDuplicateInfo;
 import io.multiagent.core.model.ReceiptUploadResponse;
 import io.multiagent.core.model.ExpenseItem;
+import io.multiagent.core.notification.service.NotificationService;
+import io.multiagent.core.policy.service.PolicyComplianceService;
+import io.multiagent.core.settings.repository.ConsultantProfileJpaRepository;
 import io.multiagent.core.util.DateProvider;
 import io.multiagent.core.service.WeaviateService;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +41,11 @@ public class ReceiptUploadService {
     private final DateProvider dateProvider;
     private final ExpenseIdGenerator idGenerator;
     private final ReceiptFileValidator fileValidator;
+    private final PolicyComplianceService policyComplianceService;
+    private final NotificationService notificationService;
+    private final ConsultantProfileJpaRepository consultantProfileRepo;
+    private final TextKeywords keywords;
+    private final io.multiagent.core.i18n.Messages messages;
 
     /**
      * Étape 1 : analyse pure du justificatif (OCR + Vision + extraction LLM), sans persistance.
@@ -98,19 +107,23 @@ public class ReceiptUploadService {
             ExpenseItem expense = parseExpense(extracted);
             if (expense == null) {
                 responseBuilder.success(false)
-                        .reason("Impossible d'extraire une dépense de ce document — vérifiez qu'il s'agit bien d'une facture ou d'un ticket lisible.");
+                        .reason(messages.get("receipt.error.noExpense"));
             } else if (expense.getAmount() == null || expense.getAmount() <= 0) {
                 responseBuilder.success(false)
-                        .reason("Aucun montant détecté sur ce document — vérifiez qu'il s'agit bien d'une facture ou d'un ticket lisible.");
+                        .reason(messages.get("receipt.error.noAmount"));
             } else if (isDuplicate(expense, consultantEmail)) {
                 // Bloqué dès l'extraction — inutile de laisser éditer un doublon dans l'aperçu.
                 responseBuilder.success(false)
-                        .reason("Une note de frais identique (même type, montant et description) existe déjà pour ce jour — évitez les doublons.");
+                        .reason(messages.get("expense.error.duplicate"));
+            } else {
+                // Consultatif uniquement — affiché au consultant dans l'aperçu pour qu'il puisse
+                // justifier (champ Motif) avant confirmation si l'IA détecte un possible écart.
+                responseBuilder.policyVerdictJson(policyComplianceService.evaluate(expense));
             }
 
             return CompletableFuture.completedFuture(responseBuilder.build());
         } catch (Exception e) {
-            throw new IllegalStateException("Upload échoué: " + e.getMessage(), e);
+            throw new IllegalStateException("Upload failed: " + e.getMessage(), e);
         } finally {
             TenantContext.clear();
         }
@@ -130,11 +143,11 @@ public class ReceiptUploadService {
             if (saved == null) {
                 return CompletableFuture.completedFuture(ReceiptUploadResponse.builder()
                         .id(id).success(false)
-                        .reason("Justificatif introuvable — veuillez ré-uploader le document.").build());
+                        .reason(messages.get("receipt.error.notFound")).build());
             }
             if (edited == null || edited.getAmount() == null || edited.getAmount() <= 0) {
                 return CompletableFuture.completedFuture(ReceiptUploadResponse.builder()
-                        .id(id).success(false).reason("Montant invalide.").build());
+                        .id(id).success(false).reason(messages.get("receipt.error.invalidAmount")).build());
             }
 
             try {
@@ -150,23 +163,30 @@ public class ReceiptUploadService {
                 edited.setPaymentMode(isBlank(paymentMode) ? "Personnel" : paymentMode);
             }
             if (isBlank(edited.getAddress())) {
-                edited.setAddress("inconnue");
+                edited.setAddress(messages.getDefault("expense.default.unknownAddress"));
             }
 
             // Ré-exécuté par sécurité : les champs ont pu être édités dans l'aperçu depuis l'extraction.
             if (isDuplicate(edited, consultantEmail)) {
                 return CompletableFuture.completedFuture(ReceiptUploadResponse.builder()
                         .id(id).success(false)
-                        .reason("Une note de frais identique (même type, montant et description) existe déjà pour ce jour — évitez les doublons.")
+                        .reason(messages.get("expense.error.duplicate"))
                         .build());
             }
 
+            // Recalculé sur les valeurs finales (montant/type ont pu être édités dans l'aperçu) —
+            // le verdict de l'aperçu peut être périmé, celui persisté doit correspondre à ce qui
+            // est réellement soumis.
+            edited.setPolicyVerdictJson(policyComplianceService.evaluate(edited));
+
             String binaryHash = sha256(java.nio.file.Files.readAllBytes(saved));
             weaviateService.indexExpense(id, edited, "receipt", false, binaryHash, saved.toString());
+            notifyAdmin(edited);
 
-            return CompletableFuture.completedFuture(ReceiptUploadResponse.builder().id(id).success(true).build());
+            return CompletableFuture.completedFuture(ReceiptUploadResponse.builder()
+                    .id(id).success(true).policyVerdictJson(edited.getPolicyVerdictJson()).build());
         } catch (Exception e) {
-            throw new IllegalStateException("Confirmation échouée: " + e.getMessage(), e);
+            throw new IllegalStateException("Confirmation failed: " + e.getMessage(), e);
         } finally {
             TenantContext.clear();
         }
@@ -182,7 +202,7 @@ public class ReceiptUploadService {
             }
             return sb.toString();
         } catch (Exception e) {
-            throw new RuntimeException("Impossible de calculer SHA-256", e);
+            throw new RuntimeException("Unable to compute SHA-256", e);
         }
     }
 
@@ -195,12 +215,19 @@ public class ReceiptUploadService {
         return compact.replaceAll("\\s+", " ").trim();
     }
 
-    private static final java.util.regex.Pattern UNKNOWN_PAYMENT_MENTION = java.util.regex.Pattern.compile(
-            "(?i)\\s*[,;\\-\\u2013(]*\\s*paiement\\s+non\\s+pr[ée]cis[ée]?\\)?\\.?");
+    // Mention "paiement inconnu" ajoutée par le LLM — expressions AI_CORE_KEYWORDS_UNKNOWN_PAYMENT
+    private java.util.regex.Pattern unknownPaymentMention;
+
+    @jakarta.annotation.PostConstruct
+    void compileUnknownPaymentMention() {
+        unknownPaymentMention = java.util.regex.Pattern.compile(
+                "\\s*[,;\\-\\u2013(]*\\s*" + keywords.alternation(TextKeywords.Group.UNKNOWN_PAYMENT) + "\\)?\\.?",
+                java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+    }
 
     private String stripUnknownPaymentMention(String json) {
         if (json == null || json.isBlank()) return json;
-        return UNKNOWN_PAYMENT_MENTION.matcher(json).replaceAll("");
+        return unknownPaymentMention.matcher(json).replaceAll("");
     }
 
     private ExpenseItem parseExpense(String json) {
@@ -215,6 +242,36 @@ public class ReceiptUploadService {
             log.warn("⚠️ Impossible de parser la dépense extraite: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Notifie l'admin (cloche de la console) de la nouvelle dépense — manquait sur ce pipeline
+     * (upload de justificatif, celui réellement utilisé par la majorité des notes de frais) alors
+     * que le pipeline texte libre le fait déjà depuis toujours. Best-effort : une erreur ici ne
+     * doit jamais faire échouer la création de la dépense, déjà persistée à ce stade.
+     */
+    private void notifyAdmin(ExpenseItem expense) {
+        try {
+            String email = isBlank(expense.getConsultantEmail()) ? messages.getDefault("expense.default.unknownConsultant") : expense.getConsultantEmail();
+            String name = resolveConsultantName(email);
+            String message = messages.getDefault("notification.expense.created", name,
+                    expense.getType() != null ? expense.getType() : messages.getDefault("expense.default.genericType"),
+                    String.valueOf(expense.getAmount()), String.valueOf(expense.getDate()));
+            notificationService.push("EXPENSE_CREATED", name, expense.getConsultantEmail(), message,
+                    String.valueOf(expense.getId()));
+        } catch (Exception e) {
+            log.warn("⚠️ Notification admin ignorée (non bloquant) : {}", e.getMessage());
+        }
+    }
+
+    /** Résout le nom affichable du consultant — email en repli si profil absent. */
+    private String resolveConsultantName(String consultantEmail) {
+        if (isBlank(consultantEmail)) return consultantEmail;
+        return consultantProfileRepo
+                .findByTenantIdAndEmailIgnoreCase(TenantContext.getTenantId(), consultantEmail)
+                .map(io.multiagent.core.settings.entity.ConsultantProfileEntity::getName)
+                .filter(n -> n != null && !n.isBlank())
+                .orElse(consultantEmail);
     }
 
     private LocalDate resolveDate(String date) {

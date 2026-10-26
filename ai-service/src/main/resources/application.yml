@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: ai-service
+  messages:
+    basename: i18n/messages   # textes utilisateur — voir io.multiagent.core.i18n.Messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
+    always-use-message-format: true   # apostrophes doublées ('') dans tous les fichiers
   datasource:
     url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/ia_insight}
     username: ${POSTGRES_USER:ia_insight}
@@ -52,6 +57,11 @@ spring:
     type: caffeine
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    # Propagation du trace_id dans les en-têtes Kafka (producteur + consommateur)
+    template:
+      observation-enabled: true
+    listener:
+      observation-enabled: true
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -80,9 +90,17 @@ management:
     web:
       exposure:
         include: ["prometheus", "health", "metrics"]
+  # Sprint 6 — trace_id/span_id dans chaque log (Micrometer Tracing, aucun export de traces)
+  tracing:
+    sampling:
+      probability: 1.0
   metrics:
     tags:
       application: ${spring.application.name}
+    # Histogramme HTTP → latence p95 (alerte Prometheus > 1 s)
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
 
 openai:
   api-key: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
@@ -131,7 +149,7 @@ ai-core:
     scope-fail-open: ${AI_CORE_GUARD_SCOPE_FAIL_OPEN:true}
   monthly-location:
     enabled: ${MONTHLY_LOCATION_ENABLED:true}
-    text: ${MONTHLY_LOCATION_TEXT:"je loue pour la domiciliation à 450 EUR ce mois-ci"}
+    text: ${MONTHLY_LOCATION_TEXT:}
   cra-reminder:
     enabled: ${CRA_REMINDER_ENABLED:true}
     from: ${MAIL_FROM:${MAIL_USERNAME:noreply@example.com}}
@@ -151,10 +169,6 @@ ai-core:
 keycloak:
   base-url: ${KEYCLOAK_BASE_URL:http://localhost:8090}
   internal-url: ${KEYCLOAK_INTERNAL_URL:${KEYCLOAK_BASE_URL:http://localhost:8090}}
-
-invoice:
-  service:
-    url: ${INVOICE_SERVICE_URL:http://invoice-service:8083}
 
 caffeine:
   spec: maximumSize=3000,expireAfterWrite=10m

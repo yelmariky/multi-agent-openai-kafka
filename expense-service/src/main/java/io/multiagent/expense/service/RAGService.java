@@ -18,7 +18,6 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.MonthDay;
 import java.time.YearMonth;
-import java.time.format.TextStyle;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -34,7 +33,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.time.Instant;
-import java.util.Locale;
+import io.multiagent.expense.config.TextKeywords;
+import io.multiagent.expense.i18n.Messages;
+import io.multiagent.expense.config.TextKeywords.Group;
 
 /**
  * Orchestrates the full RAG flow (rewrite → search → rerank → reasoning LLM).
@@ -59,6 +60,8 @@ public class RAGService {
     private final NotificationService notificationService;
     private final io.multiagent.expense.settings.repository.ConsultantProfileJpaRepository consultantProfileRepo;
     private final io.multiagent.expense.repository.ExpenseJpaRepository expenseRepo;
+    private final TextKeywords keywords;
+    private final Messages messages;
 
     // Kafka best-effort : null si le broker n'est pas disponible en dev local
     @Autowired(required = false)
@@ -75,6 +78,8 @@ public class RAGService {
     private String expenseListPromptEnv;
     @Value("${AI_CORE_PROMPT_INVOICE:}")
     private String invoicePromptEnv;
+    @Value("${AI_CORE_PROMPT_SINGLE_EXPENSE_USER:}")
+    private String singleExpenseUserPromptEnv;
     // Modèle dédié à l'extraction JSON complexe (notes de frais, factures)
     // openai/gpt-oss-120b : remplace llama-3.3-70b-versatile (déprécié Groq 2026-08-16)
     @Value("${OPENAI_EXPENSE_MODEL:openai/gpt-oss-120b}")
@@ -82,6 +87,7 @@ public class RAGService {
     private String singleExpensePromptTemplate;
     private String expenseListPromptTemplate;
     private String invoicePromptTemplate;
+    private String singleExpenseUserPromptTemplate;
 
     @PostConstruct
     public void loadPrompts() {
@@ -89,8 +95,9 @@ public class RAGService {
             singleExpensePromptTemplate = resolvePrompt(singleExpensePromptEnv, "AI_CORE_PROMPT_SINGLE_EXPENSE");
             expenseListPromptTemplate = resolvePrompt(expenseListPromptEnv, "AI_CORE_PROMPT_EXPENSE_LIST");
             invoicePromptTemplate = resolvePrompt(invoicePromptEnv, "AI_CORE_PROMPT_INVOICE");
+            singleExpenseUserPromptTemplate = resolvePrompt(singleExpenseUserPromptEnv, "AI_CORE_PROMPT_SINGLE_EXPENSE_USER");
         } catch (Exception e) {
-            throw new IllegalStateException("Impossible de charger les prompts RAG", e);
+            throw new IllegalStateException("Unable to load RAG prompts", e);
         }
     }
 
@@ -98,7 +105,7 @@ public class RAGService {
         if (envValue != null && !envValue.isBlank()) {
             return envValue;
         }
-        throw new IllegalStateException("Le prompt " + envName + " doit être fourni via la ConfigMap/ENV");
+        throw new IllegalStateException("Prompt " + envName + " must be provided via ConfigMap/ENV");
     }
 
     // ===========================================================
@@ -130,9 +137,7 @@ public class RAGService {
             log.warn("⚠️ LLM indisponible pour extraction expense ({}), tentative règle km", llmEx.getMessage());
             ExpenseItem kmItem = tryExtractKmByRules(text);
             if (kmItem == null) {
-                return ReasoningResult.error(
-                        "Le service LLM est temporairement indisponible. " +
-                        "Pour les frais kilométriques, reformulez ainsi : '44 km aller-retour domicile-bureau par jour juin'.");
+                return ReasoningResult.error(messages.get("expense.error.llmUnavailable"));
             }
             ReasoningResult kmValidation = prepareExpense(kmItem, text, consultantEmail, paymentModeOverride);
             if (kmValidation != null) return kmValidation;
@@ -161,7 +166,7 @@ public class RAGService {
         }
         if (items.isEmpty()) {
             log.error("❌ Impossible d'extraire une dépense structurée du JSON retourné par le LLM pour le texte : {}", text);
-            return ReasoningResult.error("Le LLM n'a pas pu extraire de dépense valide à partir du texte fourni.");
+            return ReasoningResult.error(messages.get("expense.error.noValidExpense"));
         }
 
         ExpenseItem expense = items.get(0);
@@ -195,7 +200,7 @@ public class RAGService {
     private ExpenseItem tryExtractKmByRules(String text) {
         if (text == null) return null;
         String lower = text.toLowerCase();
-        if (!lower.contains("km") && !lower.contains("kilom")) return null;
+        if (!keywords.any(lower, Group.KM)) return null;
 
         // Distance
         java.util.regex.Matcher dm = java.util.regex.Pattern.compile("(\\d+(?:[.,]\\d+)?)\\s*km").matcher(lower);
@@ -203,30 +208,22 @@ public class RAGService {
         double km = Double.parseDouble(dm.group(1).replace(",", "."));
 
         // Aller-retour → double
-        if (lower.contains("aller-retour") || lower.contains("aller retour") || lower.contains(" a/r")) km *= 2;
+        if (keywords.any(lower, Group.ROUND_TRIP)) km *= 2;
 
-        // Mois (français)
-        String[] FR_MONTHS = {"janvier","février","fevrier","mars","avril","mai","juin",
-                               "juillet","août","aout","septembre","octobre","novembre","décembre","decembre"};
-        int[]    MONTH_NUM  = {1,2,2,3,4,5,6,7,8,8,9,10,11,12,12};
-        int monthNum = -1;
-        for (int i = 0; i < FR_MONTHS.length; i++) {
-            if (lower.contains(FR_MONTHS[i])) { monthNum = MONTH_NUM[i]; break; }
-        }
+        // Mois nommé dans le texte (langues AI_CORE_TEXT_LOCALES), sinon mois courant
         java.time.LocalDate today = java.time.LocalDate.now();
-        if (monthNum < 1) monthNum = today.getMonthValue();
+        int monthNum = keywords.findMonth(lower).orElse(today.getMonthValue());
 
-        // Mensuel = "par jour" / "chaque jour" / "/jour"
-        boolean monthly = lower.contains("par jour") || lower.contains("/jour")
-                || lower.contains("chaque jour") || lower.contains("tous les jours");
+        // Mensuel = mots-clés AI_CORE_KEYWORDS_DAILY
+        boolean monthly = keywords.any(lower, Group.DAILY);
 
         ExpenseItem item = new ExpenseItem();
         item.setType("frais_km");
         item.setKm(km);
         item.setMonthly(monthly);
         item.setDate(java.time.YearMonth.of(today.getYear(), monthNum).atDay(1).toString());
-        item.setDescription("Frais km" + (km % 1 == 0 ? " (" + (int) km + " km)" : " (" + km + " km)")
-                + (monthly ? " mensuel" : ""));
+        item.setDescription(messages.getDefault(monthly ? "expense.default.kmDescriptionMonthly" : "expense.default.kmDescription",
+                km % 1 == 0 ? String.valueOf((int) km) : String.valueOf(km)));
         item.setCurrency("EUR");
         item.setOriginalText(text);
         log.info("🛤️ Frais km extraits par règle : km={} monthly={} mois={}", km, monthly, monthNum);
@@ -264,9 +261,7 @@ public class RAGService {
         // types. frais_km (indemnité calculée) et carte_transport (remboursement forfaitaire 50%, calculé
         // uniquement dans ce chemin texte) n'ont pas de facture à joindre et restent exemptés.
         if (!"frais_km".equalsIgnoreCase(expense.getType()) && !"carte_transport".equalsIgnoreCase(expense.getType())) {
-            return ReasoningResult.error(
-                    "Un justificatif (photo ou PDF de la facture) est requis pour ce type de dépense. "
-                    + "Utilisez le bouton d'envoi de justificatif plutôt que la saisie texte seule.");
+            return ReasoningResult.error(messages.get("expense.error.receiptRequired"));
         }
         if ("carte_transport".equalsIgnoreCase(expense.getType())) {
             applyTransportCardReimbursement(expense);
@@ -286,17 +281,16 @@ public class RAGService {
             }
         }
         if (expenseDataService.hasDuplicate(expense, resolveDate(expense.getDate()))) {
-            return ReasoningResult.error(
-                    "Une note de frais identique (même type, montant et description) existe déjà pour ce jour — évitez les doublons.");
+            return ReasoningResult.error(messages.get("expense.error.duplicate"));
         }
         if (isBlank(expense.getCompany()) && !isBlank(defaultCompanyName)) expense.setCompany(defaultCompanyName);
         if (isBlank(expense.getCompany())) {
-            String msg = "Société/organisation manquante : indiquez le nom ou configurez AI_CORE_COMPANY_NAME";
+            String msg = messages.get("expense.error.companyMissing");
             log.error("❌ {}", msg);
             return ReasoningResult.error(msg);
         }
         if (isBlank(expense.getCurrency())) expense.setCurrency("EUR");
-        if (isBlank(expense.getAddress())) expense.setAddress("Paris, France");
+        if (isBlank(expense.getAddress())) expense.setAddress(messages.getDefault("expense.default.address"));
         return null;
     }
 
@@ -311,12 +305,11 @@ public class RAGService {
         // ── Validation montant ───────────────────────────────────────────────────
         if (e.getAmount() != null) {
             if (e.getAmount() < 0) {
-                return ReasoningResult.error("Montant négatif détecté (" + e.getAmount() + "€) — veuillez vérifier le montant saisi.");
+                return ReasoningResult.error(messages.get("expense.error.negativeAmount", String.valueOf(e.getAmount())));
             }
             if (e.getAmount() > MAX_EXPENSE_AMOUNT) {
-                return ReasoningResult.error(
-                    "Montant excessif détecté (" + e.getAmount() + "€ > " + MAX_EXPENSE_AMOUNT + "€ max par dépense). "
-                    + "Pour des montants importants, contactez votre gestionnaire.");
+                return ReasoningResult.error(messages.get("expense.error.excessiveAmount",
+                    String.valueOf(e.getAmount()), String.valueOf(MAX_EXPENSE_AMOUNT)));
             }
             // Alertes par type (montants suspects mais non bloquants)
             String type = e.getType() != null ? e.getType().toLowerCase() : "";
@@ -342,12 +335,10 @@ public class RAGService {
                 java.time.LocalDate today   = dateProvider.todayUtc();
                 // Tolérance de 7 jours : le LLM peut légèrement se tromper sur la date (ex: J+1)
                 if (expDate.isAfter(today.plusDays(7))) {
-                    return ReasoningResult.error(
-                        "Date future détectée (" + e.getDate() + ") — une note de frais ne peut pas être dans le futur.");
+                    return ReasoningResult.error(messages.get("expense.error.futureDate", e.getDate()));
                 }
                 if (expDate.isBefore(today.minusDays(MAX_EXPENSE_DATE_DAYS_AGO))) {
-                    return ReasoningResult.error(
-                        "Date trop ancienne (" + e.getDate() + ") — les dépenses de plus de 2 ans ne sont pas acceptées.");
+                    return ReasoningResult.error(messages.get("expense.error.tooOld", e.getDate()));
                 }
             } catch (Exception ignored) { /* date invalide gérée ailleurs */ }
         }
@@ -370,12 +361,13 @@ public class RAGService {
                 valid.add(exp);
                 // frais_km : notification groupée envoyée par extractSingleExpense — on skip ici
                 if (!"frais_km".equalsIgnoreCase(exp.getType())) {
-                    String email = exp.getConsultantEmail() != null ? exp.getConsultantEmail() : "inconnu";
+                    String email = exp.getConsultantEmail() != null ? exp.getConsultantEmail() : messages.getDefault("expense.default.unknownConsultant");
                     notificationService.push(
                             "EXPENSE_CREATED",
                             email,
                             exp.getConsultantEmail(),
-                            email + " — " + safeType(exp.getType()) + " " + exp.getAmount() + " EUR le " + safeDate(exp.getDate()),
+                            messages.getDefault("notification.expense.created",
+                                    email, safeType(exp.getType()), String.valueOf(exp.getAmount()), safeDate(exp.getDate())),
                             String.valueOf(exp.getId())
                     );
                 }
@@ -407,16 +399,18 @@ public class RAGService {
                                          String consultantEmail, boolean monthly) {
         if (valid.isEmpty()) return;
         if (!"frais_km".equalsIgnoreCase(base.getType())) return; // non-km déjà notifiés
-        String email = consultantEmail != null ? consultantEmail : "inconnu";
+        String email = consultantEmail != null ? consultantEmail : messages.getDefault("expense.default.unknownConsultant");
         String refId = String.valueOf(valid.get(0).getId());
         String message;
         if (monthly) {
             YearMonth ym = YearMonth.from(resolveDate(base.getDate()));
-            String mois = ym.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH) + " " + ym.getYear();
+            String mois = Messages.monthYear(ym, messages.defaultLocale());
             int km = base.getKm() != null ? base.getKm().intValue() : 0;
-            message = email + " — frais km mensuel " + mois + " : " + valid.size() + " jours × " + km + " km";
+            message = messages.getDefault("notification.expense.kmMonthly",
+                    email, mois, String.valueOf(valid.size()), String.valueOf(km));
         } else {
-            message = email + " — frais_km " + base.getAmount() + " EUR le " + safeDate(base.getDate());
+            message = messages.getDefault("notification.expense.kmSingle",
+                    email, String.valueOf(base.getAmount()), safeDate(base.getDate()));
         }
         notificationService.push("EXPENSE_CREATED", email, consultantEmail, message, refId);
     }
@@ -533,8 +527,9 @@ public class RAGService {
 
     private String buildSingleExpenseUserPrompt(String original, List<String> context) {
         String ctx = context == null || context.isEmpty() ? "n/a" : String.join("\n---\n", context);
-        return "TEXTE:\n" + (original == null ? "" : original)
-                + "\n\nCONTEXTE:\n" + ctx;
+        return singleExpenseUserPromptTemplate
+                .replace("{context}", ctx)
+                .replace("{text}", original == null ? "" : original);
     }
 
     private String buildExpenseListPrompt(List<String> docs) {
@@ -547,19 +542,6 @@ public class RAGService {
 
     private String safeType(String t) { return t == null ? "" : t; }
     private String safeDate(String d) { return d == null ? "?" : d; }
-
-    private boolean containsAny(String value, String... needles) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-        String normalized = value.toLowerCase(Locale.ROOT);
-        for (String needle : needles) {
-            if (normalized.contains(needle)) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     /**
      * Fallback minimal : on n’enrichit plus amount/currency/type/date/address,
@@ -584,15 +566,15 @@ public class RAGService {
 
         String type = e.getType();
         String description = e.getDescription();
-        boolean locationExpense = containsAny(type, "location", "domiciliation", "rent", "loyer")
-                || containsAny(description, "domiciliation", "location", "rent", "loyer")
-                || containsAny(raw, "domiciliation", "location", "rent", "loyer", "je loue");
+        boolean locationExpense = keywords.any(type, Group.RENT)
+                || keywords.any(description, Group.RENT)
+                || keywords.any(raw, Group.RENT);
 
         if (locationExpense) {
             e.setType("location");
             e.setPaymentMode(PAYMENT_MODE_PERSONNEL);
             if (isBlank(e.getDescription())) {
-                e.setDescription("Location / domiciliation");
+                e.setDescription(messages.getDefault("expense.default.rentDescription"));
             }
         }
     }
@@ -625,11 +607,7 @@ public class RAGService {
 
         if (vp.vehicleType() == io.multiagent.expense.model.VehicleType.NONE) {
             log.warn("⚠️ Frais km refusés : consultant {} n’a pas de véhicule enregistré", consultantEmail);
-            return ReasoningResult.error(
-                    "Votre profil n’indique aucun véhicule personnel. " +
-                    "Les frais kilométriques ne peuvent pas être remboursés sans véhicule. " +
-                    "Si vous utilisez les transports en commun, soumettez votre abonnement de transport " +
-                    "en précisant le montant de votre carte ou pass mensuel.");
+            return ReasoningResult.error(messages.get("expense.error.noVehicle"));
         }
 
         if (e.getKm() != null && (e.getAmount() == null || e.getAmount() == 0.0)) {
@@ -641,10 +619,12 @@ public class RAGService {
         }
         if (isBlank(e.getCurrency())) e.setCurrency("EUR");
         if (isBlank(e.getDescription())) {
-            e.setDescription("Frais km automatiques" + (e.getKm() != null ? " (" + e.getKm().intValue() + " km)" : ""));
+            e.setDescription(e.getKm() != null
+                    ? messages.getDefault("expense.default.kmAutoDescriptionWithKm", String.valueOf(e.getKm().intValue()))
+                    : messages.getDefault("expense.default.kmAutoDescription"));
         }
         if (isBlank(e.getPaymentMode())) e.setPaymentMode(PAYMENT_MODE_PERSONNEL);
-        if (isBlank(e.getAddress())) e.setAddress("lieu de déplacement");
+        if (isBlank(e.getAddress())) e.setAddress(messages.getDefault("expense.default.kmAddress"));
         return null;
     }
 
@@ -653,8 +633,8 @@ public class RAGService {
         if (e.getAmount() != null) {
             double fullAmount = e.getAmount();
             e.setAmount(round2(fullAmount * 0.50));
-            String base = isBlank(e.getDescription()) ? "Carte de transport" : e.getDescription();
-            e.setDescription(base + String.format(" — remboursement 50%% (abonnement %.2f€)", fullAmount));
+            String base = isBlank(e.getDescription()) ? messages.getDefault("expense.default.transportCard") : e.getDescription();
+            e.setDescription(messages.getDefault("expense.default.transportCardRefund", base, String.format("%.2f", fullAmount)));
         }
         if (isBlank(e.getCurrency())) e.setCurrency("EUR");
         e.setPaymentMode(PAYMENT_MODE_PERSONNEL);
@@ -676,15 +656,11 @@ public class RAGService {
 
         if (hasConflict) {
             if ("frais_km".equalsIgnoreCase(type)) {
-                return ReasoningResult.error(
-                        "Vous avez déjà enregistré un remboursement de carte de transport ce mois-ci (" +
-                        expenseDate.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH) + " " + expenseDate.getYear() + "). " +
-                        "Il n’est pas possible de cumuler frais kilométriques et carte de transport sur le même mois.");
+                return ReasoningResult.error(messages.get("expense.error.kmAfterTransportCard",
+                        Messages.monthYear(YearMonth.from(expenseDate), messages.locale())));
             } else {
-                return ReasoningResult.error(
-                        "Vous avez déjà des frais kilométriques enregistrés ce mois-ci (" +
-                        expenseDate.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH) + " " + expenseDate.getYear() + "). " +
-                        "Il n’est pas possible de cumuler frais kilométriques et carte de transport sur le même mois.");
+                return ReasoningResult.error(messages.get("expense.error.transportCardAfterKm",
+                        Messages.monthYear(YearMonth.from(expenseDate), messages.locale())));
             }
         }
         return null;
@@ -843,7 +819,7 @@ public class RAGService {
         if (defaultCompanyName != null && !defaultCompanyName.isBlank()) {
             return defaultCompanyName;
         }
-        throw new IllegalStateException("Le nom de société / organisation est requis pour générer un rapport.");
+        throw new IllegalStateException(messages.get("expense.error.reportCompanyRequired"));
     }
 
     // Suppression de l'expansion mensuelle côté code : la gestion des mentions de mois est déléguée au prompt.
@@ -859,14 +835,14 @@ public class RAGService {
                 YearMonth ym = YearMonth.parse(start.substring(0, 7));
                 boolean sameMonth = ym.equals(YearMonth.parse(end.substring(0, 7)));
                 if (sameMonth) {
-                    label = ym.getMonth().getDisplayName(TextStyle.FULL, Locale.FRENCH).toLowerCase(Locale.ROOT);
+                    label = ym.toString();
                 } else {
                     label = start + "_to_" + end;
                 }
             } catch (Exception ignored) {
                 label = start + "_to_" + end;
             }
-            String filename = "/tmp/rapport-" + label + "-" + safeCompany + ".pdf";
+            String filename = "/tmp/expense-report-" + label + "-" + safeCompany + ".pdf";
             byte[] pdfBytes = expensePdfService.buildPdf(start, end, null, null, company);
             Files.write(Path.of(filename), pdfBytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             log.info("📄 Rapport PDF généré: {}", filename);

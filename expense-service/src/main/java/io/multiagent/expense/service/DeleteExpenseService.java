@@ -2,7 +2,11 @@ package io.multiagent.expense.service;
 
 import io.multiagent.expense.model.IntentResult;
 import io.multiagent.expense.model.ReasoningResult;
-import io.multiagent.expense.service.ExpenseDataService;import lombok.RequiredArgsConstructor;
+import io.multiagent.expense.config.TextKeywords;
+import io.multiagent.expense.config.TextKeywords.Group;
+import io.multiagent.expense.service.ExpenseDataService;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +25,23 @@ import java.util.regex.Pattern;
 public class DeleteExpenseService {
 
     private final ExpenseDataService expenseDataService;
+    private final TextKeywords keywords;
+    private final io.multiagent.expense.i18n.Messages messages;
+
+    // Construites au démarrage depuis AI_CORE_KEYWORDS_DELETE_TARGET / _LIST_SEPARATORS / _COMPANY_PREFIX
+    private Pattern groupedIdsPattern;
+    private Pattern singleIdPattern;
+    private Pattern companyPattern;
+
+    @PostConstruct
+    void compilePatterns() {
+        String target = keywords.alternation(Group.DELETE_TARGET);
+        String separator = "(?:\\s*[,;-]\\s*|\\s+(?:" + keywords.alternation(Group.LIST_SEPARATORS) + "\\s+)?)";
+        groupedIdsPattern = Pattern.compile(target + "\\s+(\\d+(?:" + separator + "\\d+)*)", Pattern.UNICODE_CASE);
+        singleIdPattern = Pattern.compile(target + "\\s*(\\d+)", Pattern.UNICODE_CASE);
+        companyPattern = Pattern.compile("\\b" + keywords.alternation(Group.COMPANY_PREFIX) + "\\s+([^\\.,;]+)",
+                Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    }
 
     public ReasoningResult deleteByText(String text, IntentResult intent) {
         ParsedDelete parsed = parse(text);
@@ -46,7 +67,7 @@ public class DeleteExpenseService {
             }
         }
         if (parsed.company == null || parsed.company.isBlank()) {
-            return ReasoningResult.error("Suppression impossible : le nom de la société/organisation doit être précisé.");
+            return ReasoningResult.error(messages.get("delete.error.companyRequired"));
         }
         int deleted = 0;
 
@@ -76,7 +97,7 @@ public class DeleteExpenseService {
             deleted = expenseDataService.deleteExpensesByDate(parsed.date, parsed.company);
             log.info("🗑️ DeleteExpenseService -> date={}, company={}, deleted={}", parsed.date, parsed.company, deleted);
         } else {
-            return ReasoningResult.error("Impossible de déterminer la date ou l'id à supprimer");
+            return ReasoningResult.error(messages.get("delete.error.noTarget"));
         }
 
         var meta = new HashMap<String, Object>();
@@ -87,12 +108,10 @@ public class DeleteExpenseService {
         meta.put("deleted", deleted);
 
         if (deleted == 0) {
-            return ReasoningResult.error(
-                    "Aucune note de frais supprimée pour ids=%s, month=%s, company=%s"
-                            .formatted(parsed.expenseIds,
-                                    parsed.month != null ? parsed.month : "null",
-                                    parsed.company)
-            );
+            return ReasoningResult.error(messages.get("delete.error.nothingDeleted",
+                    String.valueOf(parsed.expenseIds),
+                    parsed.month != null ? parsed.month.toString() : "null",
+                    parsed.company));
         }
 
         return ReasoningResult.builder()
@@ -110,11 +129,8 @@ public class DeleteExpenseService {
         if (text == null) return p;
         String lower = text.toLowerCase(Locale.ROOT);
 
-        // ids groupés (ex: "numéro 31 et 34 et 58", "ids 12, 13, 14")
-        // Regex simplifiée pour éviter le backtracking catastrophique (ReDOS)
-        Matcher groupedIds = Pattern.compile(
-                "(?:note[s]? de frais|dépense[s]?|num(?:e|é)?ro|ids?|notes?)\\s+(\\d+(?:[\\s,;etou-]+\\d+)*)"
-        ).matcher(lower);
+        // ids groupés (ex: "<cible> 31 <séparateur> 34 <séparateur> 58", "ids 12, 13, 14")
+        Matcher groupedIds = groupedIdsPattern.matcher(lower);
         while (groupedIds.find()) {
             Matcher numberMatcher = Pattern.compile("\\d+").matcher(groupedIds.group(1));
             while (numberMatcher.find()) {
@@ -122,8 +138,8 @@ public class DeleteExpenseService {
             }
         }
 
-        // ids simples (ex: "note de frais 6", "numéro 5")
-        Matcher mid = Pattern.compile("(?:note[s]? de frais|dépense[s]?|num(?:e|é)?ro|id)\\s*(\\d+)").matcher(lower);
+        // ids simples (ex: "<cible> 6")
+        Matcher mid = singleIdPattern.matcher(lower);
         while (mid.find()) {
             addId(p, mid.group(1));
         }
@@ -168,7 +184,7 @@ public class DeleteExpenseService {
 
         // société en texte brut si le classifieur ne l'a pas fournie
         if (p.company == null || p.company.isBlank()) {
-            Matcher companyMatcher = Pattern.compile("(?i)\\bpour\\s+la\\s+soci(?:e|é)t(?:e|é)\\s+([^\\.,;]+)").matcher(text);
+            Matcher companyMatcher = companyPattern.matcher(text);
             if (companyMatcher.find()) {
                 p.company = companyMatcher.group(1).trim();
             }

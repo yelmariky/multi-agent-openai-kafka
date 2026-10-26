@@ -35,7 +35,7 @@ class ExpenseInvoiceMcpToolsTest {
 
     @BeforeEach
     void setUp() {
-        tools = new ExpenseInvoiceMcpTools(weaviateService, invoiceRepository, sessionTenantRegistry);
+        tools = new ExpenseInvoiceMcpTools(weaviateService, invoiceRepository, sessionTenantRegistry, io.multiagent.core.i18n.MessagesFixture.standard());
         // ThreadLocal déjà posé (chemin rapide) — le ToolContext/registry de secours n'est pas sollicité.
         TenantContext.set(UUID.randomUUID(), "ia-insight");
     }

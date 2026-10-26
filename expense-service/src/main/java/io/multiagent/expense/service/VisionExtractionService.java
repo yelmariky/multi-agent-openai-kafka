@@ -30,11 +30,17 @@ public class VisionExtractionService {
 
     private final String apiKey;
     private final ObjectMapper mapper;
+    private final String userPrompt;
 
     public VisionExtractionService(
             @Value("${openai.api-key}") String apiKey,
+            @Value("${AI_CORE_PROMPT_VISION_USER:}") String userPrompt,
             ObjectMapper mapper) {
+        if (userPrompt == null || userPrompt.isBlank()) {
+            throw new IllegalStateException("AI_CORE_PROMPT_VISION_USER must be provided via ConfigMap/ENV");
+        }
         this.apiKey = apiKey;
+        this.userPrompt = userPrompt;
         this.mapper = mapper;
     }
 
@@ -65,7 +71,7 @@ public class VisionExtractionService {
                     ),
                     Map.of(
                         "type", "text",
-                        "text", "Extrais les informations de dépense de ce justificatif et retourne uniquement le JSON demandé."
+                        "text", userPrompt
                     )
                 ))
             )
@@ -93,11 +99,11 @@ public class VisionExtractionService {
         var root   = mapper.readTree(resp.body());
         var choice = root.path("choices").get(0);
         if (choice == null) {
-            throw new IllegalStateException("OpenAI Vision: aucun choix dans la réponse");
+            throw new IllegalStateException("OpenAI Vision: no choice in response");
         }
         String content = choice.path("message").path("content").asText("");
         if (content.isBlank()) {
-            throw new IllegalStateException("OpenAI Vision: contenu vide");
+            throw new IllegalStateException("OpenAI Vision: empty content");
         }
         log.info("🔭 Vision extraction réussie via {} (image={})", VISION_MODEL, imagePath.getFileName());
         return content;

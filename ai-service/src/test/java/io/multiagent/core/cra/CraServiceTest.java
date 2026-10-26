@@ -30,6 +30,8 @@ class CraServiceTest {
     @Mock LeaveRequestRepository leaveRepo;
     @Mock EventPublisher         eventPublisher;
 
+    @org.mockito.Spy io.multiagent.core.i18n.Messages messages = io.multiagent.core.i18n.MessagesFixture.standard();
+
     @InjectMocks CraService craService;
 
     private CraRequest brouillon;

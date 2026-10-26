@@ -13,12 +13,13 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class ExpenseExcelService {
+
+    private final io.multiagent.core.i18n.Messages messages;
 
     @Value("${ai-core.expense.km-per-day:50}")
     private int kmPerDay;
@@ -39,8 +40,11 @@ public class ExpenseExcelService {
         double kmCost = round2(costPerKm * totalKm);
         try (Workbook wb = new XSSFWorkbook()) {
             CreationHelper helper = wb.getCreationHelper();
-            Sheet detail = wb.createSheet("Depenses");
-            Sheet recap = wb.createSheet("Synthese");
+            String detailName = messages.get("report.sheet.detail");
+            Sheet detail = wb.createSheet(detailName);
+            Sheet recap = wb.createSheet(messages.get("report.sheet.summary"));
+            // Référence d'onglet pour les formules (nom traduit, entre quotes car il peut contenir espaces/accents)
+            String ref = "'" + detailName.replace("'", "''") + "'!";
 
             // Styles
             CellStyle header = wb.createCellStyle();
@@ -56,26 +60,26 @@ public class ExpenseExcelService {
 
             // Entête personnalisée (4 premières lignes)
             Row title = detail.createRow(0);
-            title.createCell(0).setCellValue("Rapport de notes de frais");
+            title.createCell(0).setCellValue(messages.get("report.title"));
             title.getCell(0).setCellStyle(header);
             detail.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 3));
 
             Row company = detail.createRow(1);
-            company.createCell(0).setCellValue("Entreprise : " + nvl(report.getCompany(), "Non fournie"));
+            company.createCell(0).setCellValue(messages.get("report.company", nvl(report.getCompany(), messages.get("report.companyMissing"))));
             company.getCell(0).setCellStyle(header);
             detail.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 1, 0, 3));
 
             int nextRow = 2;
             if (report.getConsultantEmail() != null && !report.getConsultantEmail().isBlank()) {
                 Row consultantRow = detail.createRow(nextRow);
-                consultantRow.createCell(0).setCellValue("Consultant : " + report.getConsultantEmail());
+                consultantRow.createCell(0).setCellValue(messages.get("report.consultant", report.getConsultantEmail()));
                 consultantRow.getCell(0).setCellStyle(header);
                 detail.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(nextRow, nextRow, 0, 3));
                 nextRow++;
             }
             if (report.getProjectName() != null && !report.getProjectName().isBlank()) {
                 Row projectRow = detail.createRow(nextRow);
-                projectRow.createCell(0).setCellValue("Projet : " + report.getProjectName());
+                projectRow.createCell(0).setCellValue(messages.get("report.project", report.getProjectName()));
                 projectRow.getCell(0).setCellStyle(header);
                 detail.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(nextRow, nextRow, 0, 3));
                 nextRow++;
@@ -83,7 +87,7 @@ public class ExpenseExcelService {
 
             String monthLabel = formatMonthLabel(report);
             Row monthRow = detail.createRow(nextRow);
-            monthRow.createCell(0).setCellValue("Mois : " + monthLabel);
+            monthRow.createCell(0).setCellValue(messages.get("report.month", monthLabel));
             monthRow.getCell(0).setCellStyle(header);
             detail.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(nextRow, nextRow, 0, 3));
             nextRow++;
@@ -161,32 +165,32 @@ public class ExpenseExcelService {
             // Pas d'ajout automatique de lignes km : on respecte les données en base
             // Recap sheet
             Row rh = recap.createRow(0);
-            rh.createCell(0).setCellValue("Période");
+            rh.createCell(0).setCellValue(messages.get("report.period"));
             rh.createCell(1).setCellValue(report.getStart().toString() + " → " + report.getEnd().toString());
 
             Row r1 = recap.createRow(2);
-            r1.createCell(0).setCellValue("Total dép. personnelles (hors km et location)");
-            r1.createCell(1).setCellFormula("SUMIFS(Depenses!C:C,Depenses!F:F,\"Personnel\",Depenses!E:E,\"<>frais_km\",Depenses!E:E,\"<>location\")");
+            r1.createCell(0).setCellValue(messages.get("report.total.personal"));
+            r1.createCell(1).setCellFormula("SUMIFS(" + ref + "C:C," + ref + "F:F,\"Personnel\"," + ref + "E:E,\"<>frais_km\"," + ref + "E:E,\"<>location\")");
             Row r2 = recap.createRow(3);
-            r2.createCell(0).setCellValue("Total dép. business (hors km et location)");
-            r2.createCell(1).setCellFormula("SUMIFS(Depenses!C:C,Depenses!F:F,\"Business\",Depenses!E:E,\"<>frais_km\",Depenses!E:E,\"<>location\")");
+            r2.createCell(0).setCellValue(messages.get("report.total.business"));
+            r2.createCell(1).setCellFormula("SUMIFS(" + ref + "C:C," + ref + "F:F,\"Business\"," + ref + "E:E,\"<>frais_km\"," + ref + "E:E,\"<>location\")");
             Row rLoc = recap.createRow(4);
-            rLoc.createCell(0).setCellValue("Total location (domiciliation)");
-            rLoc.createCell(1).setCellFormula("SUMIFS(Depenses!C:C,Depenses!E:E,\"location\")");
+            rLoc.createCell(0).setCellValue(messages.get("report.total.rent"));
+            rLoc.createCell(1).setCellFormula("SUMIFS(" + ref + "C:C," + ref + "E:E,\"location\")");
             Row r3 = recap.createRow(5);
-            r3.createCell(0).setCellValue("Km (dates de dépense, lun-ven)");
+            r3.createCell(0).setCellValue(messages.get("report.total.km"));
             r3.createCell(1).setCellValue(totalKm);
             Row r4 = recap.createRow(6);
-            r4.createCell(0).setCellValue("Coût km");
+            r4.createCell(0).setCellValue(messages.get("report.total.kmCost"));
             r4.createCell(1).setCellValue(kmCost);
             Row r5 = recap.createRow(7);
-            r5.createCell(0).setCellValue("Total général (perso + business + location + km)");
+            r5.createCell(0).setCellValue(messages.get("report.total.general"));
             r5.createCell(1).setCellFormula("SUM(B3,B4,B5,B7)");
 
             // Total remboursement (somme des dépenses personnelles uniquement, hors km et location)
             Row r6 = recap.createRow(9);
             Cell totalRembLabel = r6.createCell(0);
-            totalRembLabel.setCellValue("Total à rembourser (Personnel, incluant location & km)");
+            totalRembLabel.setCellValue(messages.get("report.total.refund"));
             CellStyle redBold = wb.createCellStyle();
             Font redBoldFont = wb.createFont();
             redBoldFont.setBold(true);
@@ -195,7 +199,7 @@ public class ExpenseExcelService {
             totalRembLabel.setCellStyle(redBold);
 
             Cell totalRembValue = r6.createCell(1);
-            totalRembValue.setCellFormula("SUMIFS(Depenses!C:C,Depenses!F:F,\"Personnel\")");
+            totalRembValue.setCellFormula("SUMIFS(" + ref + "C:C," + ref + "F:F,\"Personnel\")");
             CellStyle redBoldMoney = wb.createCellStyle();
             redBoldMoney.cloneStyleFrom(money);
             Font redBoldFont2 = wb.createFont();
@@ -215,7 +219,7 @@ public class ExpenseExcelService {
             wb.write(bos);
             return bos.toByteArray();
         } catch (Exception e) {
-            throw new IllegalStateException("Échec génération Excel : " + e.getMessage(), e);
+            throw new IllegalStateException("Excel generation failed: " + e.getMessage(), e);
         }
     }
 
@@ -273,14 +277,14 @@ public class ExpenseExcelService {
 
     private String formatDateForExcel(java.time.LocalDate date) {
         if (date == null) return "";
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", Locale.FRENCH);
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", messages.locale());
         return date.format(fmt);
     }
 
     private String formatMonthLabel(ExpenseReportResponse report) {
         if (report.getStart() == null) return "";
         java.time.LocalDate start = report.getStart();
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.FRENCH);
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("MMMM yyyy", messages.locale());
         return start.format(fmt);
     }
 }

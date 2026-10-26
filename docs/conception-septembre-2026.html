@@ -379,6 +379,32 @@ S8                                                            ██████
         </div>
       </div>
 
+      <h4>Migration des modèles LLM Groq + supervision des modèles</h4>
+      <p>Imprévu traité pendant le sprint. Groq a retiré <code>llama-3.1-8b-instant</code> (passé en offre Enterprise) et <code>meta-llama/llama-4-scout-17b-16e-instruct</code> de son catalogue : chaque appel d'intent, de rewrite et de RAG répondait 404 et basculait silencieusement sur OpenAI <code>gpt-4.1-mini</code> (payant, +1 à 3 s par requête) — sans aucune alerte, découvert par hasard. Remplacement par les modèles open source <code>openai/gpt-oss-20b</code> et <code>openai/gpt-oss-120b</code> (Apache 2.0, offre gratuite Groq), et ajout d'une supervision pour détecter les prochains retraits le jour même.</p>
+      <div class="g2">
+        <div>
+          <h4>Migration des modèles (configMap)</h4>
+          <ul class="ul check">
+            <li><code>OPENAI_MODEL</code>, <code>AI_CORE_INTENT_MODEL</code>, <code>AI_CORE_REWRITE_MODEL</code> : <code>llama-3.1-8b-instant</code> → <code>openai/gpt-oss-20b</code> (≈0,5 s, JSON fiable)</li>
+            <li><code>AI_CORE_RAG_MODEL</code> (RAG + chatbot public) : <code>meta-llama/llama-4-scout-17b-16e-instruct</code> → <code>openai/gpt-oss-120b</code></li>
+            <li><code>OPENAI_EXPENSE_MODEL</code> (extraction notes de frais) : <code>openai/gpt-oss-120b</code> — inchangé</li>
+            <li>Embeddings (<code>text-embedding-3-large</code>) et secours (<code>gpt-4.1-mini</code>) : OpenAI — inchangés</li>
+            <li>Aucun rebuild : changement de configMap + redémarrage ai-service, expense-service, activity-service</li>
+            <li>Doc mise à jour : CLAUDE.md, INFRA.md, SECURITY.md, PRODUCTION-KEYS.md (limites free tier + prix offre payante)</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Supervision (ai-service)</h4>
+          <ul class="ul check">
+            <li><code>LlmModelsHealthIndicator</code> : au démarrage, compare les modèles configurés au catalogue <code>GET /models</code> du provider — log <code>❌ [LLM] Modèles introuvables</code> si l'un a été retiré, composant <code>llm</code> DOWN (sans impacter les probes liveness/readiness)</li>
+            <li>Résultat mis en cache 10 min ; panne réseau → UNKNOWN (distinct d'un modèle retiré)</li>
+            <li>Compteur <code>llm_fallback_total{reason, model}</code> sur <code>/actuator/prometheus</code> : chaque bascule vers OpenAI est comptée (<code>provider_error</code> / <code>circuit_open</code>)</li>
+            <li>Constat : le circuit breaker Groq est partagé entre modèles — un modèle retiré l'ouvre et envoie aussi les modèles valides vers OpenAI (résolu par la migration)</li>
+            <li><code>init-secret.sh</code> : <code>kubectl patch</code> au lieu de <code>apply</code> — l'ancien script supprimait les clés Keycloak / mail / admin / MCP de <code>openai-secret</code></li>
+          </ul>
+        </div>
+      </div>
+
       <div class="dod">
         <h4>Definition of Done — Sprint 5</h4>
         <ul>
@@ -391,6 +417,8 @@ S8                                                            ██████
           <li>Aperçu justificatif accessible depuis la console admin lors de la validation d'une note de frais — livré</li>
           <li>Enseigne et ville affichées distinctement (admin + consultant) — livré</li>
           <li>Détection de doublons bloquante (extraction + confirmation), basée DB — livrée et testée (unit tests DuplicateExpenseMatcher)</li>
+          <li>Modèles LLM migrés vers <code>gpt-oss-20b</code> / <code>gpt-oss-120b</code> — vérifié en réel : log <code>✅ [LLM] Modèles vérifiés</code>, 0 bascule OpenAI sur une saisie de note de frais (contre 3 avant)</li>
+          <li>Supervision des modèles livrée et testée : 7 tests <code>LlmModelsHealthIndicatorTest</code>, détection des modèles retirés vérifiée en réel avant migration, <code>mvn verify</code> vert (couverture ≥ 80 %)</li>
         </ul>
       </div>
     </div>
@@ -505,6 +533,13 @@ S8                                                            ██████
         <li>En tant que platform_admin, je consulte le nombre de notes de frais créées par tenant sur le mois courant</li>
         <li>En tant que DevOps, tous les logs des 5 microservices sont centralisés dans Loki avec trace_id permettant de reconstituer une requête cross-service</li>
         <li>En tant que Tech Lead, je dispose d'un runbook pour chaque type d'alerte critique (pod down, DB connexions saturées, circuit breaker ouvert)</li>
+      </ul>
+
+      <h4>Facturation — suite (reporté du Sprint 5)</h4>
+      <p>Le Sprint 5 a rendu la facturation conforme (accès réservés admin/manager, factures émises immuables et annulées par avoir, numérotation jamais réutilisée, n° de TVA intracommunautaire, archivage des PDF émis). Restent deux évolutions de fond :</p>
+      <ul class="ul">
+        <li><strong>Paiements partiels</strong> : saisie du montant reçu à chaque encaissement, statut PARTIELLEMENT PAYÉE, reste dû affiché, relances calculées sur le reste dû (et non le total).</li>
+        <li><strong>Génération des factures côté serveur</strong> : invoice-service consomme l'événement Kafka <code>cra.validated</code> et génère lui-même les factures (TJM et client lus depuis <code>consultant_assignment</code>) au lieu du navigateur admin — plus de facture manquante si l'onglet est fermé. Nécessite spring-kafka dans invoice-service et une règle NetworkPolicy vers <code>agent-system:9092</code>.</li>
       </ul>
 
       <div class="dod">

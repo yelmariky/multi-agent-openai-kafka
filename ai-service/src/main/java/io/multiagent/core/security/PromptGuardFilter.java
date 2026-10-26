@@ -30,9 +30,10 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class PromptGuardFilter extends OncePerRequestFilter {
 
-    // Endpoints exclus du guard (fichiers binaires, multipart, auth)
+    // Endpoints exclus du guard (fichiers binaires, multipart, auth) — la vérification PromptGuard
+    // est appliquée explicitement par le controller sur le texte extrait, voir PolicyController.
     private static final Set<String> EXCLUDED_PREFIXES = Set.of(
-            "/actuator", "/error", "/receipts/upload"
+            "/actuator", "/error", "/receipts/upload", "/settings/policies/expense-reimbursement/pdf"
     );
 
     // Champs JSON contenant du texte libre à inspecter

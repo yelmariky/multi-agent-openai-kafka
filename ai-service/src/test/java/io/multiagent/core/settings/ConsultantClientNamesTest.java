@@ -31,6 +31,8 @@ class ConsultantClientNamesTest {
     @Mock KeycloakProvisioningService keycloakService;
     @Mock JdbcTemplate jdbcTemplate;
 
+    @org.mockito.Spy io.multiagent.core.i18n.Messages messages = io.multiagent.core.i18n.MessagesFixture.standard();
+
     @InjectMocks ConsultantController controller;
 
     @BeforeEach
